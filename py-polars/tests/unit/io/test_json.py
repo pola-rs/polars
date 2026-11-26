@@ -1149,21 +1149,7 @@ def test_ndjson_late_key_ignored_29330(engine: Any) -> None:
     assert_frame_equal(lf.collect(engine=engine), expected)
 
     lf = pl.scan_ndjson(io.BytesIO(data), schema=schema, extra_columns="raise")
-    with pytest.raises(ComputeError, match="the field is not in the given schema"):
-        lf.collect(engine=engine)
-
-
-@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_ndjson_late_key_schema_overrides_29330(engine: Any) -> None:
-    data = _ndjson_with_late_row(
-        {"a": 1, "s": {"x": 1}}, {"a": 2, "s": {"x": 2, "y": 3}}
-    )
-    lf = pl.scan_ndjson(
-        io.BytesIO(data), schema_overrides={"s": pl.Struct({"x": pl.Int64})}
-    )
-    with pytest.raises(
-        ComputeError, match=re.escape("extra field in NDJSON data: s.y")
-    ):
+    with pytest.raises(ComputeError, match="extra field in NDJSON data"):
         lf.collect(engine=engine)
 
 
@@ -1198,12 +1184,67 @@ def test_ndjson_duplicate_known_key_is_not_extra_29330() -> None:
 
 
 def test_ndjson_map_keys_are_not_extra_29330() -> None:
+    m = pl.Map(pl.String, pl.Int64)
     data = _ndjson_with_late_row({"m": {"k": 1}}, {"m": {"other": 2}})
-    df = pl.read_ndjson(data, schema_overrides={"m": pl.Map(pl.String, pl.Int64)})
-    assert df.height == 101
-    data = _ndjson_with_late_row({"m": {"k": 1}}, {"m": {"k": 2}, "b": 3})
+    assert pl.read_ndjson(data, schema_overrides={"m": m}).height == 101
+
+
+@pytest.mark.parametrize(
+    ("first", "late", "dtypes", "path"),
+    [
+        (
+            {"s": {"x": 1}},
+            {"s": {"x": 2, "y": 3}},
+            {"s": pl.Struct({"x": pl.Int64})},
+            "s.y",
+        ),
+        (
+            {"l": [{"x": 1}]},
+            {"l": [{"x": 2, "y": 3}]},
+            {"l": pl.Array(pl.Struct({"x": pl.Int64}), 1)},
+            "l[].y",
+        ),
+        (
+            {"m": {"k": 1}},
+            {"m": {"k": 2}, "b": 3},
+            {"m": pl.Map(pl.String, pl.Int64)},
+            "b",
+        ),
+        (
+            {"s": {"m": {"k": 1}}},
+            {"s": {"m": {"k": 2}, "y": 3}},
+            {"s": pl.Struct({"m": pl.Map(pl.String, pl.Int64)})},
+            "s.y",
+        ),
+        (
+            {"m": {"k": {"x": 1}}},
+            {"m": {"k": {"x": 2, "y": 3}}},
+            {"m": pl.Map(pl.String, pl.Struct({"x": pl.Int64}))},
+            "m[].value.y",
+        ),
+    ],
+)
+def test_ndjson_extra_field_in_overridden_dtype_29330(
+    first: dict[str, Any], late: dict[str, Any], dtypes: dict[str, Any], path: str
+) -> None:
+    data = _ndjson_with_late_row(first, late)
+    msg = re.escape(f"extra field in NDJSON data: {path},")
+    with pytest.raises(ComputeError, match=msg):
+        pl.read_ndjson(data, schema_overrides=dtypes)
+    with pytest.raises(ComputeError, match=msg):
+        pl.read_ndjson(data, schema=dtypes, extra_columns="raise")
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_ndjson_sliced_read_skips_check_29330(engine: Any) -> None:
+    # A sliced read also parses the rows next to the slice, so it doesn't check.
+    data = b'{"a": 0}\n{"a": 1, "b": 2}\n{"a": 2}\n'
+    assert pl.read_ndjson(data, infer_schema_length=1, n_rows=1)["a"].to_list() == [0]
+    lf = pl.scan_ndjson(io.BytesIO(data), infer_schema_length=1)
+    assert lf.head(1).collect(engine=engine)["a"].to_list() == [0]
+    assert lf.tail(1).collect(engine=engine)["a"].to_list() == [2]
     with pytest.raises(ComputeError, match="extra field in NDJSON data: b"):
-        pl.read_ndjson(data, schema_overrides={"m": pl.Map(pl.String, pl.Int64)})
+        lf.collect(engine=engine)
 
 
 @pytest.mark.write_disk
@@ -1216,9 +1257,9 @@ def test_ndjson_late_key_in_later_file_29330(tmp_path: Path, engine: Any) -> Non
         lf.collect(engine=engine)
     assert "extra field in NDJSON data: b in file '" in str(exc.value)
     assert "2.ndjson'" in str(exc.value)
-    assert "the schema is inferred from the first file" in str(exc.value)
 
 
+@pytest.mark.write_disk
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 def test_ndjson_late_key_with_row_index_and_paths_29330(
     tmp_path: Path, engine: Any
@@ -1235,26 +1276,12 @@ def test_ndjson_late_key_with_row_index_and_paths_29330(
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_ndjson_late_key_empty_schema_with_slices_29330(engine: Any) -> None:
-    def sources() -> list[IO[bytes]]:
-        return [io.BytesIO(b'{}\n{"b": 3}\n'), io.BytesIO(b"{}\n")]
-
-    lf = pl.scan_ndjson(sources(), infer_schema_length=1)
-    for q in [lf.head(3), lf.slice(1, 2), lf.select(pl.len())]:
+def test_ndjson_late_key_empty_schema_29330(engine: Any) -> None:
+    sources: list[IO[bytes]] = [io.BytesIO(b'{}\n{"b": 3}\n'), io.BytesIO(b"{}\n")]
+    lf = pl.scan_ndjson(sources, infer_schema_length=1)
+    for q in [lf, lf.select(pl.len())]:
         with pytest.raises(ComputeError, match="extra field in NDJSON data: b"):
             q.collect(engine=engine)
-    lf = pl.scan_ndjson(sources(), infer_schema_length=1, n_rows=3)
-    with pytest.raises(ComputeError, match="extra field in NDJSON data: b"):
-        lf.collect(engine=engine)
-
-
-def test_ndjson_late_key_in_array_of_structs_29330() -> None:
-    data = _ndjson_with_late_row({"l": [{"x": 1}]}, {"l": [{"x": 2, "y": 3}]})
-    dtype = pl.Array(pl.Struct({"x": pl.Int64}), 1)
-    with pytest.raises(
-        ComputeError, match=re.escape("extra field in NDJSON data: l[].y")
-    ):
-        pl.read_ndjson(data, schema_overrides={"l": dtype})
 
 
 @pytest.mark.write_disk

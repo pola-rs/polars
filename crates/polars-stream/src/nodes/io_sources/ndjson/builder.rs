@@ -25,10 +25,9 @@ use crate::nodes::io_sources::shared::file_init::CLOUD_PRE_INIT_LIMIT;
 pub struct NDJsonReaderBuilder {
     pub options: Arc<NDJsonReadOptions>,
     /// The full file schema.
-    pub file_schema: Option<SchemaRef>,
-    /// Not taken per read: row-count reads pass defaults.
+    pub file_schema: SchemaRef,
+    /// Applies to keys at every level. Taken from the scan, since row-count reads pass defaults.
     pub extra_columns_policy: ExtraColumnsPolicy,
-    pub extra_struct_fields_policy: ExtraColumnsPolicy,
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
@@ -106,31 +105,20 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
         &self,
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
-        scan_source_idx: usize,
+        _scan_source_idx: usize,
     ) -> PolarsResult<Box<dyn FileReader>> {
-        use polars_io::prelude::ExtraKeysHint;
-
         use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::shared::file_init::ChunkPrefetchSync;
 
         let scan_source = source;
-        let hint = if self.options.schema.is_some() {
-            ExtraKeysHint::GivenSchema
-        } else if scan_source_idx > 0 {
-            ExtraKeysHint::FirstSource
-        } else {
-            ExtraKeysHint::InferSchemaLength
-        };
         let chunk_reader_builder = ChunkReaderBuilder::NDJson {
             ignore_errors: self.options.ignore_errors,
             file_schema: self.file_schema.clone(),
-            extra_columns_policy: self.extra_columns_policy,
-            extra_struct_fields_policy: self.extra_struct_fields_policy,
+            raise_on_extra_keys: matches!(self.extra_columns_policy, ExtraColumnsPolicy::Raise),
             source: match &scan_source {
-                ScanSource::Path(path) => Some(PlSmallStr::from_str(path.as_str())),
+                ScanSource::Path(path) => Some(strip_url_secrets(path)),
                 ScanSource::File(_) | ScanSource::Buffer(_) => None,
             },
-            hint,
         };
         let verbose = config::verbose();
 
@@ -162,4 +150,24 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
 
         Ok(Box::new(reader) as _)
     }
+}
+
+/// `path` without the query, fragment or HTTP credentials of a URL, for error messages.
+#[cfg(feature = "json")]
+fn strip_url_secrets(path: &polars_utils::pl_path::PlPath) -> PlSmallStr {
+    use polars_utils::pl_path::CloudScheme;
+
+    let Some(scheme) = path.scheme() else {
+        return path.as_str().into();
+    };
+    let rest = path.strip_scheme();
+    let prefix = &path.as_str()[..path.as_str().len() - rest.len()];
+    let rest = rest.split(['?', '#']).next().unwrap_or_default();
+    let (authority, tail) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+    // Elsewhere (e.g. `abfss://container@account`), the part before `@` isn't a credential.
+    let authority = match authority.rsplit_once('@') {
+        Some((_, host)) if matches!(scheme, CloudScheme::Http | CloudScheme::Https) => host,
+        _ => authority,
+    };
+    polars_utils::format_pl_smallstr!("{prefix}{authority}{tail}")
 }

@@ -23,41 +23,19 @@ pub struct ExtraKeysCheck {
     pub top_level: bool,
     /// Per schema column: check struct fields.
     pub nested: Vec<bool>,
+    /// The file named in the error.
     pub source: Option<PlSmallStr>,
-    pub hint: ExtraKeysHint,
-}
-
-/// What the extra-key error suggests.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ExtraKeysHint {
-    #[default]
-    InferSchemaLength,
-    /// Inferred from another source.
-    FirstSource,
-    GivenSchema,
 }
 
 impl ExtraKeysCheck {
     pub(crate) fn err(&self, path: impl std::fmt::Display) -> PolarsError {
-        let source = match &self.source {
-            Some(source) => format!(" in file '{source}'"),
-            None => String::new(),
-        };
-        let hint = match self.hint {
-            ExtraKeysHint::InferSchemaLength => {
-                "consider increasing infer_schema_length, or manually specifying the full schema \
-                to ignore extra fields"
-            },
-            ExtraKeysHint::FirstSource => {
-                "the schema is inferred from the first file; consider manually specifying the \
-                full schema to ignore extra fields"
-            },
-            ExtraKeysHint::GivenSchema => {
-                "the field is not in the given schema; set extra_columns='ignore' to ignore extra \
-                fields"
-            },
-        };
-        polars_err!(ComputeError: "extra field in NDJSON data: {path}{source}, {hint}")
+        let source = (self.source.as_ref())
+            .map(|s| format!(" in file '{s}'"))
+            .unwrap_or_default();
+        polars_err!(
+            ComputeError: "extra field in NDJSON data: {path}{source}, consider increasing \
+            infer_schema_length, specifying the full schema, or setting extra_columns='ignore'"
+        )
     }
 }
 
@@ -95,7 +73,7 @@ impl<'a> CoreJsonReader<'a> {
         let reader_bytes = reader_bytes;
 
         // Only an inferred schema rejects other keys.
-        let schema_inferred = schema.is_none();
+        let check = schema.is_none();
         let mut schema = match schema {
             Some(schema) => schema,
             None => {
@@ -108,14 +86,10 @@ impl<'a> CoreJsonReader<'a> {
             let schema = Arc::make_mut(&mut schema);
             overwrite_schema(schema, overwriting_schema)?;
         }
-        let extra_keys = if schema_inferred {
-            ExtraKeysCheck {
-                top_level: true,
-                nested: vec![true; schema.len()],
-                ..Default::default()
-            }
-        } else {
-            ExtraKeysCheck::default()
+        let extra_keys = ExtraKeysCheck {
+            top_level: check,
+            nested: vec![check; schema.len()],
+            source: None,
         };
 
         Ok(CoreJsonReader {
@@ -361,21 +335,6 @@ pub fn parse_ndjson(
             })
             .collect()
     });
-
-    // Map keys are data, not struct fields.
-    let masked_extra_keys;
-    let extra_keys = if has_map {
-        masked_extra_keys = ExtraKeysCheck {
-            nested: (extra_keys.nested.iter())
-                .zip(schema.iter_values())
-                .map(|(&check, dt)| check && !dt.contains_map())
-                .collect(),
-            ..extra_keys.clone()
-        };
-        &masked_extra_keys
-    } else {
-        extra_keys
-    };
 
     let mut buffers = init_buffers(
         decode_schema.as_ref().unwrap_or(schema),
