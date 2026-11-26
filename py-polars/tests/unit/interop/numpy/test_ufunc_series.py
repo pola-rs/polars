@@ -193,3 +193,14 @@ def test_generalized_ufunc_different_output_size() -> None:
         divide_by_sum(series2, series),
         pl.Series("s2", [1.0 / 56, 3.0 / 56], dtype=pl.Float64),
     )
+
+
+def test_ufunc_array_dtype() -> None:
+    """Test that numpy ufuncs work correctly with pl.Array dtype (issue #20303)."""
+    # Create a Series with Array dtype
+    s = pl.select(pl.arange(10).reshape((-1, 2)).alias("a")).to_series()
+
+    result = np.exp(s)
+    expected = pl.Series("a", np.exp(s.to_numpy()))
+
+    assert_series_equal(result, expected)  # type: ignore[arg-type]
