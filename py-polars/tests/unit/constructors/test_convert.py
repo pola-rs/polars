@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -33,6 +34,27 @@ def test_from_dicts_schema_inference() -> None:
 def test_from_dicts_nested_nulls() -> None:
     result = pl.from_dicts([{"a": [None, None]}, {"a": [1, 2]}])
     assert result.to_dict(as_series=False) == {"a": [[None, None], [1, 2]]}
+
+
+@pytest.mark.parametrize(
+    "value",
+    [np.array(1), np.array(1.5), np.array(True), np.array("x"), np.array(None)],
+)
+def test_numpy_zero_dimensional_scalar_29821(value: np.ndarray[Any, Any]) -> None:
+    expected = value.item()
+    for constructor in (pl.from_dicts, pl.DataFrame):
+        assert constructor([{"a": value}]).to_dict(as_series=False) == {"a": [expected]}
+
+    assert pl.Series("a", [value]).to_list() == [expected]
+    assert pl.DataFrame({"a": value}).to_dict(as_series=False) == {"a": [expected]}
+
+
+def test_from_dicts_numpy_zero_dimensional_scalar_after_numpy_scalar_29821() -> None:
+    result = pl.from_dicts([{"a": np.int64(1)}, {"a": np.array(2)}])
+    assert result.to_dict(as_series=False) == {"a": [1, 2]}
+    assert pl.from_dicts([{"a": np.array([1, 2])}]).to_dict(as_series=False) == {
+        "a": [[1, 2]]
+    }
 
 
 def test_from_dicts_empty() -> None:
