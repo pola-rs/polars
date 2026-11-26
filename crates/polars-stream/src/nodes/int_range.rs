@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use num_traits::{AsPrimitive, WrappingAdd, WrappingMul};
+use num_traits::AsPrimitive;
 use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
+use polars_core::series::ops::int_range::new_int_range;
 use polars_core::with_match_physical_integer_polars_type;
+use polars_expr::dispatch::int_range_bounds;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
@@ -27,7 +28,8 @@ enum IntRangeState {
         end: InMemorySinkNode,
     },
     Emitting {
-        start: Scalar,
+        /// The `start` and `end` columns.
+        bounds: Box<[Column; 2]>,
         len: usize,
         morsel_size: usize,
         next_morsel: AtomicU64,
@@ -76,20 +78,16 @@ impl ComputeNode for IntRangeNode {
         if let IntRangeState::GatheringBounds { start, end } = &mut self.state
             && recv.iter().all(|p| *p == PortState::Done)
         {
-            let start = extract_bound(start, "start")?;
-            let end = extract_bound(end, "end")?;
+            let start = start.get_output()?.unwrap().columns()[0].clone();
+            let end = end.get_output()?.unwrap().columns()[0].clone();
             let len = with_match_physical_integer_polars_type!(&self.dtype, |$T| {
-                type N = <$T as PolarsNumericType>::Native;
-                int_range_len::<$T>(
-                    start.value().extract::<N>().unwrap(),
-                    end.value().extract::<N>().unwrap(),
-                    self.step,
-                )?
+                let (start, end) = int_range_bounds::<$T>(&start, &end)?;
+                int_range_len::<$T>(start, end, self.step)?
             });
             let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
             let morsel_count = ideal_morsel_count.next_multiple_of(state.num_pipelines);
             self.state = IntRangeState::Emitting {
-                start,
+                bounds: Box::new([start, end]),
                 len,
                 morsel_size: len.div_ceil(morsel_count).max(1),
                 next_morsel: AtomicU64::new(0),
@@ -144,15 +142,15 @@ impl ComputeNode for IntRangeNode {
                 }
             },
             IntRangeState::Emitting {
-                start,
+                bounds,
                 len,
                 morsel_size,
                 next_morsel,
             } => {
                 assert!(recv_ports.iter().all(|p| p.is_none()));
                 let senders = send_ports[0].take().unwrap().parallel();
-                let (start, len, morsel_size, next_morsel) =
-                    (&*start, *len, *morsel_size, &*next_morsel);
+                let [start, end] = &**bounds;
+                let (len, morsel_size, next_morsel) = (*len, *morsel_size, &*next_morsel);
                 let (name, dtype, step) = (&self.name, &self.dtype, self.step);
 
                 let source_token = SourceToken::new();
@@ -168,8 +166,20 @@ impl ComputeNode for IntRangeNode {
                             }
                             let height = morsel_size.min(len - offset);
                             let range = with_match_physical_integer_polars_type!(dtype, |$T| {
-                                let start = start.value().extract::<<$T as PolarsNumericType>::Native>().unwrap();
-                                int_range_slice::<$T>(start, step, offset, height, name.clone())
+                                type N = <$T as PolarsNumericType>::Native;
+                                let (start, end) = int_range_bounds::<$T>(start, end)?;
+                                // Wrapping arithmetic is exact for representable elements.
+                                let step_n: N = step.as_();
+                                let at = |i: usize| -> N {
+                                    start.wrapping_add(AsPrimitive::<N>::as_(i).wrapping_mul(step_n))
+                                };
+                                // Element `len` may not be representable, so the last morsel ends at `end`.
+                                let morsel_end = if offset + height == len {
+                                    end
+                                } else {
+                                    at(offset + height)
+                                };
+                                new_int_range::<$T>(at(offset), morsel_end, step, name.clone())?
                             });
                             let mut morsel = Morsel::new_unregistered(
                                 range.into_frame(),
@@ -196,19 +206,6 @@ impl ComputeNode for IntRangeNode {
     }
 }
 
-/// Return the single value of the bound `name`, failing on a null or a count other than one.
-fn extract_bound(sink: &mut InMemorySinkNode, name: &str) -> PolarsResult<Scalar> {
-    let df = sink.get_output()?.unwrap();
-    let col = &df.columns()[0];
-    polars_ensure!(
-        col.len() == 1,
-        ComputeError: "`{name}` must contain exactly one value, got {} values", col.len()
-    );
-    let value = col.get(0)?.into_static();
-    polars_ensure!(!value.is_null(), ComputeError: "invalid null input for `int_range`");
-    Ok(Scalar::new(col.dtype().clone(), value))
-}
-
 /// Return the number of elements of `int_range(start, end, step)`.
 fn int_range_len<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<usize>
 where
@@ -225,41 +222,6 @@ where
     let len = diff.div_ceil(step.unsigned_abs() as u128);
     usize::try_from(len)
         .map_err(|_| polars_err!(ComputeError: "`int_range` length {len} overflows usize"))
-}
-
-/// Return elements `offset..offset + len` of `int_range(start, _, step)`.
-///
-/// All returned elements must be representable in `T`.
-fn int_range_slice<T>(
-    start: T::Native,
-    step: i64,
-    offset: usize,
-    len: usize,
-    name: PlSmallStr,
-) -> Series
-where
-    T: PolarsIntegerType,
-    T::Native: WrappingAdd + WrappingMul,
-    i64: AsPrimitive<T::Native>,
-    usize: AsPrimitive<T::Native>,
-{
-    // Wrapping arithmetic is exact modulo 2^bits, so it is exact for representable results.
-    let step_t: T::Native = step.as_();
-    let first = start.wrapping_add(&offset.as_().wrapping_mul(&step_t));
-    let mut ca = if step == 1 {
-        ChunkedArray::<T>::from_iter_values(name, (0..len).map(|k| first.wrapping_add(&k.as_())))
-    } else {
-        ChunkedArray::<T>::from_iter_values(
-            name,
-            (0..len).map(|k| first.wrapping_add(&k.as_().wrapping_mul(&step_t))),
-        )
-    };
-    ca.set_sorted_flag(if step > 0 {
-        IsSorted::Ascending
-    } else {
-        IsSorted::Descending
-    });
-    ca.into_series()
 }
 
 #[cfg(test)]
@@ -285,13 +247,5 @@ mod test {
         );
         assert!(int_range_len::<Int64Type>(0, 1, 0).is_err());
         assert!(int_range_len::<Int128Type>(i128::MIN, i128::MAX, 1).is_err());
-    }
-
-    #[test]
-    fn test_int_range_slice() {
-        let s = int_range_slice::<UInt8Type>(255, -100, 1, 2, PlSmallStr::EMPTY);
-        assert_eq!(s.u8().unwrap().to_vec(), [Some(155), Some(55)]);
-        let s = int_range_slice::<Int8Type>(-128, 100, 2, 1, PlSmallStr::EMPTY);
-        assert_eq!(s.i8().unwrap().to_vec(), [Some(72)]);
     }
 }

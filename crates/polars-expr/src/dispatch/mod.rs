@@ -141,6 +141,8 @@ mod temporal;
 mod trigonometry;
 
 pub use groups_dispatch::drop_items;
+#[cfg(feature = "range")]
+pub use range::int_range_bounds;
 
 /// `input` and `expr_arena` let a function pick a variant based on its arguments, e.g. a
 /// constant argument that can be prepared once.

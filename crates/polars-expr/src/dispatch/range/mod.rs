@@ -11,6 +11,8 @@ mod linear_space;
 mod time_range;
 mod utils;
 
+pub use int_range::int_range_bounds;
+
 pub fn function_expr_to_udf(func: IRRangeFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRRangeFunction::*;
     match func {
