@@ -6,7 +6,12 @@ use polars_utils::python_convert_registry::get_python_convert_registry;
 use pyo3::intern;
 use pyo3::prelude::*;
 
-pub fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
+/// Convert a Python Polars DataFrame into a Rust DataFrame.
+///
+/// # Safety
+/// `df._df` must be a genuine Polars `PyDataFrame` whose `_export_columns` method
+/// initializes `width()` valid `SeriesExport` values at the provided address.
+pub unsafe fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
     let err = |_| polars_err!(ComputeError: "expected a polars.DataFrame; got {}", df);
     let pydf = df.getattr(intern!(py, "_df")).map_err(err)?;
 
@@ -31,8 +36,12 @@ pub fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame
     unsafe { polars_ffi::version_0::import_df(location, width) }
 }
 
-pub(crate) fn python_schema_to_rust(py: Python, schema: Bound<PyAny>) -> PolarsResult<SchemaRef> {
+pub(crate) unsafe fn python_schema_to_rust(
+    py: Python,
+    schema: Bound<PyAny>,
+) -> PolarsResult<SchemaRef> {
     let err = |_| polars_err!(ComputeError: "expected a polars.Schema; got {}", schema);
     let df = schema.call_method0("to_frame").map_err(err)?;
-    python_df_to_rust(py, df).map(|df| df.schema().clone())
+    // SAFETY: The schema's `to_frame` method returns a genuine Polars DataFrame.
+    unsafe { python_df_to_rust(py, df) }.map(|df| df.schema().clone())
 }

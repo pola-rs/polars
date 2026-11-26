@@ -36,7 +36,8 @@ impl PythonScanExec {
         df: Bound<'_, PyAny>,
         state: &mut ExecutionState,
     ) -> PolarsResult<DataFrame> {
-        let df = python_df_to_rust(py, df)?;
+        // SAFETY: Python scan callbacks are required to return a Polars DataFrame.
+        let df = unsafe { python_df_to_rust(py, df) }?;
         py.detach(|| {
             self.check_schema(&df)?;
 
@@ -124,7 +125,8 @@ impl Executor for PythonScanExec {
                         loop {
                             match generator.call_method0(intern!(py, "__next__")) {
                                 Ok(out) => {
-                                    let mut df = python_df_to_rust(py, out)?;
+                                    // SAFETY: The IO plugin contract requires each yielded value to be a Polars DataFrame.
+                                    let mut df = unsafe { python_df_to_rust(py, out) }?;
                                     if let (Some(pred), false) = (&self.predicate, can_parse_predicate)
                                     {
                                         py.detach(|| {
