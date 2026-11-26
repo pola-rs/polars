@@ -276,12 +276,14 @@ fn lower_exprs_with_ctx(
     exprs: &[Node],
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<(PhysStream, Vec<Node>)> {
-    // We have to catch this case separately, in case all the input independent expressions are elementwise.
+    // Elementwise input-independent expressions add no input streams, so we have to evaluate
+    // them up front. Other input-independent expressions may generate large outputs
+    // (e.g. `int_range`, `repeat`), so we lower those normally to let them stream.
     // TODO: we shouldn't always do this when recursing, e.g. pl.col.a.sum() + 1 will still hit this in the recursion.
-    if exprs
-        .iter()
-        .all(|e| ctx.expr_props.is_input_independent(*e, ctx.expr_arena))
-    {
+    if exprs.iter().all(|e| {
+        ctx.expr_props.is_input_independent(*e, ctx.expr_arena)
+            && ctx.expr_props.is_elementwise(*e, ctx.expr_arena)
+    }) {
         let expr_irs = exprs
             .iter()
             .map(|e| ExprIR::new(*e, OutputName::Alias(unique_column_name())))
@@ -2606,9 +2608,13 @@ fn build_select_stream_with_ctx(
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysStream> {
+    // Elementwise input-independent expressions add no input streams, so we can evaluate
+    // them up front. Other input-independent expressions may generate large outputs
+    // (e.g. `int_range`, `repeat`), so we lower those normally to let them stream.
     if exprs.iter().all(|e| {
         ctx.expr_props
             .is_input_independent(e.node(), ctx.expr_arena)
+            && ctx.expr_props.is_elementwise(e.node(), ctx.expr_arena)
     }) {
         return Ok(PhysStream::first(build_input_independent_node_with_ctx(
             exprs, ctx,
