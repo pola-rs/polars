@@ -11,6 +11,12 @@ use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run};
 #[global_allocator]
 static ALLOC: polars_ooc::Allocator = polars_ooc::Allocator;
 
+// The Python package's jemalloc settings (py-polars/src/polars/__init__.py). jemalloc reads this
+// C string (`const char *malloc_conf`) at its first allocation; `_RJEM_MALLOC_CONF` overrides it.
+#[cfg(all(target_family = "unix", not(target_os = "emscripten")))]
+#[unsafe(export_name = "_rjem_malloc_conf")]
+static MALLOC_CONF: &u8 = &b"dirty_decay_ms:500,muzzy_decay_ms:1000\0"[0];
+
 fn main() -> ExitCode {
     // Debug frames are large, as in the Python package.
     #[cfg(debug_assertions)]
