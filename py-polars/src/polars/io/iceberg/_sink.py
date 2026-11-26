@@ -32,7 +32,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Iterable
+    from collections.abc import Callable, Collection, Iterable, Iterator
 
     import pyarrow as pa
     import pyiceberg.catalog
@@ -320,7 +320,10 @@ class _SinkCatalog:
         requirements: tuple[TableRequirement, ...],
         updates: tuple[TableUpdate, ...],
     ) -> CommitTableResponse:
-        from pyiceberg.exceptions import CommitStateUnknownException
+        from pyiceberg.exceptions import (
+            CommitStateUnknownException,
+            ValidationException,
+        )
         from pyiceberg.table import CommitTableResponse
         from pyiceberg.table.update import AddSnapshotUpdate
 
@@ -346,6 +349,10 @@ class _SinkCatalog:
                     metadata_location=current.metadata_location,  # type: ignore[call-arg]
                 )
 
+            # a rejected request (it asserts the uuid) was for the dropped table
+            if metadata.table_uuid != table.metadata.table_uuid and _rejected(e):
+                raise ValidationException(_TABLE_RECREATED) from e
+
             if _already_committed(metadata, self._sink_uuid):
                 raise _AlreadyCommitted(current) from e
 
@@ -356,27 +363,49 @@ class _SinkCatalog:
 
 
 _SPEC_CHANGED = "the partition spec changed during the write"
+_SCHEMA_CHANGED = "the table schema changed during the write"
+_TABLE_RECREATED = "the table was dropped and created again during the write"
 
 
-def _raise_if_spec_changed(
-    table: pyiceberg.table.Table, spec_id: int | None, error: Exception
+def _raise_if_base_changed(
+    table: pyiceberg.table.Table,
+    spec_id: int | None,
+    error: Exception,
+    *,
+    check: Callable[[TableMetadata], None] | None = None,
 ) -> None:
-    """After a rejected commit, raise if `spec_id` is no longer the default spec."""
+    """
+    After a rejected commit, raise if `spec_id` is no longer the default spec.
+
+    Or if `check` raises for the table as it is now. The caller's `table` then gets
+    that state, so a rerun with it writes for the current table.
+    """
     from pyiceberg.exceptions import ValidationException
 
-    if spec_id is None:
+    if spec_id is None and check is None:
         return
     try:
         current = table.catalog.load_table(table.name())
     except Exception:
         return
-    if current.metadata.default_spec_id != spec_id:
-        raise ValidationException(_SPEC_CHANGED) from error
+    refusal = None
+    if spec_id is not None and current.metadata.default_spec_id != spec_id:
+        refusal = ValidationException(_SPEC_CHANGED)
+    elif check is not None:
+        try:
+            check(current.metadata)
+        except ValidationException as e:
+            refusal = e
+    if refusal is None:
+        return
+    if current.metadata.table_uuid == table.metadata.table_uuid:
+        _copy_table_state(current, table)
+    raise refusal from error
 
 
 def _sink_transaction(
     table: pyiceberg.table.Table,
-    sink_uuid: str,
+    sink_uuid: str | None,
     spec_id: int | None,
     *,
     schema_id: int | None = None,
@@ -390,39 +419,78 @@ def _sink_transaction(
     """
     from pyiceberg.exceptions import ValidationException
     from pyiceberg.table import Transaction
-    from pyiceberg.table.update import AssertDefaultSpecId
+    from pyiceberg.table.update import AssertCurrentSchemaId, AssertDefaultSpecId
 
     class _SinkTransaction(Transaction):  # type: ignore[misc]
         # pyiceberg calls this after refreshing the table for a retry, before it
         # writes new manifests. A twin that lands after this check moves the branch
         # ref, so the next commit fails and `_SinkCatalog` finds the twin.
         def _rebuild_snapshot_updates(self) -> None:
-            if _already_committed(self._table.metadata, sink_uuid):
+            if sink_uuid is not None and _already_committed(
+                self._table.metadata, sink_uuid
+            ):
                 raise _AlreadyCommitted(self._table)
             # pyiceberg would write the files' partition values under the new spec
             if spec_id is not None and self._table.metadata.default_spec_id != spec_id:
                 raise ValidationException(_SPEC_CHANGED)
+            # and add the files with the field ids they were written with
             if (
                 schema_id is not None
                 and self._table.metadata.current_schema_id != schema_id
             ):
-                msg = "the table schema changed during the write"
-                raise ValidationException(msg)
+                raise ValidationException(_SCHEMA_CHANGED)
             if check is not None:
                 check(self._table.metadata)
             super()._rebuild_snapshot_updates()
 
-    if spec_id is None:
-        return _SinkTransaction(table)
-    if table.metadata.default_spec_id != spec_id:
+    metadata = table.metadata
+    if spec_id is not None and metadata.default_spec_id != spec_id:
         raise ValidationException(_SPEC_CHANGED)
+    if schema_id is not None and metadata.current_schema_id != schema_id:
+        raise ValidationException(_SCHEMA_CHANGED)
     tx = _SinkTransaction(table)
-    tx._stage((), (AssertDefaultSpecId(default_spec_id=spec_id),))  # type: ignore[call-arg]
+    # a change without a new snapshot is not retried, but rejected by these
+    requirements: list[TableRequirement] = []
+    if spec_id is not None:
+        requirements.append(AssertDefaultSpecId(default_spec_id=spec_id))  # type: ignore[call-arg]
+    if schema_id is not None:
+        requirements.append(AssertCurrentSchemaId(current_schema_id=schema_id))  # type: ignore[call-arg]
+    tx._stage((), tuple(requirements))
     return tx
 
 
+@contextlib.contextmanager
+def _write_transaction(table: pyiceberg.table.Table) -> Iterator[Transaction]:
+    """
+    A transaction of `table` that commits only onto its schema and partition spec.
+
+    For data shaped and partitioned with them: PyIceberg would retry the commit
+    under a newer schema or spec. On a refusal, `table` gets the current state.
+    """
+    from pyiceberg.exceptions import CommitFailedException, ValidationException
+
+    spec_id = table.metadata.default_spec_id
+    schema_id = table.metadata.current_schema_id
+
+    def same_schema(metadata: TableMetadata) -> None:
+        if metadata.current_schema_id != schema_id:
+            raise ValidationException(_SCHEMA_CHANGED)
+
+    try:
+        with _sink_transaction(table, None, spec_id, schema_id=schema_id) as tx:
+            yield tx
+    # no retry refreshed the table (retries disabled or used up)
+    except CommitFailedException as error:
+        _raise_if_base_changed(table, spec_id, error, check=same_schema)
+        raise
+
+
 def _replace_transaction(
-    table: pyiceberg.table.Table, sink_uuid: str, replace: _ReplaceFiles
+    table: pyiceberg.table.Table,
+    sink_uuid: str,
+    replace: _ReplaceFiles,
+    *,
+    check: Callable[[TableMetadata], None] | None = None,
 ) -> Transaction:
     from pyiceberg.exceptions import ValidationException
     from pyiceberg.table import Transaction
@@ -444,6 +512,8 @@ def _replace_transaction(
             if _added_conflicting_deletes(self._table, base_snapshot_id, replace):
                 msg = "another writer deleted rows of the rewritten files"
                 raise ValidationException(msg)
+            if check is not None:
+                check(metadata)
             super()._rebuild_snapshot_updates()
 
     return _ReplaceTransaction(table)
@@ -1357,6 +1427,13 @@ class IcebergSinkState:
     sort_order_id: int | None
     # The partition spec of the partition keys.
     partition_spec_id: int | None
+    # The table and schema the files were written for: a commit onto others refuses.
+    table_uuid: str | None
+    schema_id: int | None
+    # Pinned under schema evolution, whose new field ids follow it.
+    last_column_id: int | None
+    # Commit only while the table has no snapshot (filling a table just created).
+    require_empty_table: bool
     commit_result_df: NoPickleOption[pl.DataFrame]
     # The directories of the executions of the state's one attach, one per resolve,
     # until a commit lands. Shared with the engine's copy, as `commit_result_df`.
@@ -1479,6 +1556,10 @@ class IcebergSinkState:
             source_schema=None,
             sort_order_id=None,
             partition_spec_id=None,
+            table_uuid=None,
+            schema_id=None,
+            last_column_id=None,
+            require_empty_table=False,
             commit_result_df=NoPickleOption(),
             write_dirs=None,
             replace_files=replace_files,
@@ -1547,7 +1628,8 @@ class IcebergSinkState:
         try:
             return catalog.load_table(self.table_name)
         except NoSuchTableError:
-            if not self.create_if_not_exists:
+            # the files were written for a table that is gone
+            if not self.create_if_not_exists or self.table_uuid is not None:
                 raise
 
         try:
@@ -1675,6 +1757,11 @@ class IcebergSinkState:
             table.spec(), schema, self.source_schema
         )
         self.partition_spec_id = table.spec().spec_id
+        self.table_uuid = str(table_metadata.table_uuid)
+        self.schema_id = table_metadata.current_schema_id
+        self.last_column_id = (
+            table_metadata.last_column_id if self.schema_mode is not None else None
+        )
 
         if location_provider_impl := table_properties.get(
             TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL
@@ -1895,6 +1982,9 @@ class IcebergSinkState:
             )
             return
 
+        # the table loaded for the commit can be another than the one written for
+        self._check_base(table.metadata)
+
         if self.mode == "overwrite" and self.replace_files is None:
             self._commit_overwrite(
                 table, sinked_files, snapshot_properties, verbose=verbose
@@ -1912,9 +2002,17 @@ class IcebergSinkState:
         )
         replace = self.replace_files
         transaction = (
-            _sink_transaction(wrapped, self.sink_uuid_str, self.partition_spec_id)
+            _sink_transaction(
+                wrapped,
+                self.sink_uuid_str,
+                self.partition_spec_id,
+                schema_id=self.schema_id,
+                check=self._check_base,
+            )
             if replace is None
-            else _replace_transaction(wrapped, self.sink_uuid_str, replace)
+            else _replace_transaction(
+                wrapped, self.sink_uuid_str, replace, check=self._check_base
+            )
         )
 
         try:
@@ -1948,12 +2046,16 @@ class IcebergSinkState:
                 eprint("IcebergSinkState[commit]: already committed, skipping")
             _copy_table_state(e.table, table)
             return
-        except (CommitStateUnknownException, ValidationException):
+        except CommitStateUnknownException:
+            raise
+        except ValidationException:
+            # refreshed by a retry: a rerun with the caller's table writes for it
+            _copy_table_state(wrapped, table)
             raise
         except Exception as e:
             if isinstance(e, CommitFailedException):
                 spec_id = self.partition_spec_id if replace is None else replace.spec_id
-                _raise_if_spec_changed(table, spec_id, e)
+                _raise_if_base_changed(table, spec_id, e, check=self._check_base)
             _copy_table_state(sink_catalog.landed_after(table, e), table)
             return
 
@@ -1977,6 +2079,7 @@ class IcebergSinkState:
     ) -> float:
         """Stage an append of the sinked files, returning when it began."""
         self._check_layout(tx.table_metadata)
+        self._assert_last_column_id(tx)
         self._update_schema(tx)
 
         data_files = _data_files_for_commit(tx, sinked_files, self.sort_order_id)
@@ -2107,9 +2210,12 @@ class IcebergSinkState:
         )
         try:
             try:
-                with _replace_transaction(wrapped, self.sink_uuid_str, replace) as tx:
+                with _replace_transaction(
+                    wrapped, self.sink_uuid_str, replace, check=self._check_base
+                ) as tx:
                     _assert_replace_base(tx, replace)
                     self._check_layout(tx.table_metadata)
+                    self._assert_last_column_id(tx)
                     self._update_schema(tx)
                     data_files = _data_files_for_commit(
                         tx, written, self.sort_order_id
@@ -2117,15 +2223,16 @@ class IcebergSinkState:
                     _stage_replace(tx, replace, data_files, snapshot_properties)
                     if verbose:
                         eprint("IcebergSinkState[commit]: begin transaction commit")
-            except (
-                _AlreadyCommitted,
-                CommitStateUnknownException,
-                ValidationException,
-            ):
+            except (_AlreadyCommitted, CommitStateUnknownException):
+                raise
+            except ValidationException:
+                _copy_table_state(wrapped, table)
                 raise
             except Exception as e:
                 if isinstance(e, CommitFailedException):
-                    _raise_if_spec_changed(table, replace.spec_id, e)
+                    _raise_if_base_changed(
+                        table, replace.spec_id, e, check=self._check_base
+                    )
                 _copy_table_state(sink_catalog.landed_after(table, e), table)
                 return
         except _AlreadyCommitted as e:
@@ -2179,6 +2286,33 @@ class IcebergSinkState:
             raise
         assert hand_back.files is not None
         return hand_back.files, hand_back.sort_order_id
+
+    def _check_base(self, metadata: TableMetadata) -> None:
+        """Raise if the table is not the one the files were written for."""
+        from pyiceberg.exceptions import ValidationException
+
+        if self.table_uuid is not None and str(metadata.table_uuid) != self.table_uuid:
+            raise ValidationException(_TABLE_RECREATED)
+        if (
+            self.schema_id is not None and metadata.current_schema_id != self.schema_id
+        ) or (
+            self.last_column_id is not None
+            and metadata.last_column_id != self.last_column_id
+        ):
+            raise ValidationException(_SCHEMA_CHANGED)
+        if self.require_empty_table and metadata.current_snapshot_id is not None:
+            msg = "another writer committed to the table while it was being filled"
+            raise ValidationException(msg)
+
+    def _assert_last_column_id(self, tx: Transaction) -> None:
+        """Stage the pinned last column id, before a schema update assigns new ids."""
+        from pyiceberg.table.update import AssertLastAssignedFieldId
+
+        if self.last_column_id is not None:
+            pinned = AssertLastAssignedFieldId(
+                last_assigned_field_id=self.last_column_id  # type: ignore[call-arg]
+            )
+            tx._stage((), (pinned,))
 
     def _check_layout(self, metadata: TableMetadata) -> None:
         """Raise if the sort order written for is gone."""

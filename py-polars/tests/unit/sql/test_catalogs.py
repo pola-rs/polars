@@ -1556,20 +1556,22 @@ def test_create_catalog_table_as_select_without_staged_create_fails(
 def test_create_catalog_table_as_select_without_staged_create_written_meanwhile(
     lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from pyiceberg.exceptions import ValidationException
+
     from polars.io.iceberg._sink import IcebergSinkState
 
     monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    commit = IcebergSinkState._commit
 
-    def write_then_fail(*args: Any, **kwargs: Any) -> None:
+    def write_then_commit(self: IcebergSinkState, *args: Any, **kwargs: Any) -> None:
         # another writer fills the new table first
         pl.DataFrame({"k": [3], "v": ["c"]}).write_iceberg(
             lake.load_table(("tpch", "t")), mode="append"
         )
-        msg = "commit failed"
-        raise RuntimeError(msg)
+        commit(self, *args, **kwargs)
 
-    monkeypatch.setattr(IcebergSinkState, "_commit", write_then_fail)
-    with pytest.raises(RuntimeError, match="commit failed") as exc:
+    monkeypatch.setattr(IcebergSinkState, "_commit", write_then_commit)
+    with pytest.raises(ValidationException, match="another writer") as exc:
         lake_ctx(lake).execute("CREATE TABLE t AS SELECT * FROM lineitem")
     assert exc.value.__notes__ == [
         "table 't' could not be filled: catalog table 'tpch.t' was left in the catalog"
