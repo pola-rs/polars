@@ -341,7 +341,7 @@ class DeltaDataset:
             table = self.table_.get()
             assert table is not None
             # Not via table(): pickling must not run the protocol check.
-            self.table_uri_ = table.table_uri
+            return table.table_uri
 
         return self.table_uri_
 
@@ -380,8 +380,14 @@ class DeltaDataset:
         return table
 
     def __getstate__(self) -> dict[str, Any]:
-        self.table_uri()
-        return self.__dict__
+        state = self.__dict__.copy()
+        if self.table_uri_ is None:
+            table = self.table_.get()
+            assert table is not None
+            state["table_uri_"] = table.table_uri
+            if self.version is None:
+                state["version"] = table.version()
+        return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__ = state
