@@ -1271,5 +1271,5 @@ def test_ndjson_empty_schema_row_counts_follow_policy_29330(
         {"extra_columns": "ignore", "infer_schema_length": 1},
     ]:
         lf = pl.scan_ndjson([p1, p2], include_file_paths="p", n_rows=3, **kwargs)  # type: ignore[arg-type]
-        out = lf.filter(pl.col("p") == str(p2)).collect(engine=engine)
+        out = lf.filter(pl.col("p").str.ends_with("2.ndjson")).collect(engine=engine)
         assert out.height == 1
