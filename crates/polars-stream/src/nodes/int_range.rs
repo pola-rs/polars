@@ -31,8 +31,8 @@ enum IntRangeState {
         /// The `start` and `end` columns.
         bounds: Box<[Column; 2]>,
         len: usize,
-        morsel_size: usize,
-        next_morsel: AtomicU64,
+        /// Offset of the next morsel to claim.
+        next_offset: AtomicU64,
     },
     Done,
 }
@@ -84,13 +84,10 @@ impl ComputeNode for IntRangeNode {
                 let (start, end) = int_range_bounds::<$T>(&start, &end)?;
                 int_range_len::<$T>(start, end, self.step)?
             });
-            let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
-            let morsel_count = ideal_morsel_count.next_multiple_of(state.num_pipelines);
             self.state = IntRangeState::Emitting {
                 bounds: Box::new([start, end]),
                 len,
-                morsel_size: len.div_ceil(morsel_count).max(1),
-                next_morsel: AtomicU64::new(0),
+                next_offset: AtomicU64::new(0),
             };
         }
 
@@ -101,14 +98,10 @@ impl ComputeNode for IntRangeNode {
                 send[0] = PortState::Blocked;
             },
             IntRangeState::Emitting {
-                len,
-                morsel_size,
-                next_morsel,
-                ..
+                len, next_offset, ..
             } => {
                 recv.fill(PortState::Done);
-                let emitted = *next_morsel.get_mut() as usize * *morsel_size;
-                send[0] = if emitted < *len {
+                send[0] = if (*next_offset.get_mut() as usize) < *len {
                     PortState::Ready
                 } else {
                     PortState::Done
@@ -144,13 +137,17 @@ impl ComputeNode for IntRangeNode {
             IntRangeState::Emitting {
                 bounds,
                 len,
-                morsel_size,
-                next_morsel,
+                next_offset,
             } => {
                 assert!(recv_ports.iter().all(|p| p.is_none()));
                 let senders = send_ports[0].take().unwrap().parallel();
                 let [start, end] = &**bounds;
-                let (len, morsel_size, next_morsel) = (*len, *morsel_size, &*next_morsel);
+                let (len, next_offset) = (*len, &*next_offset);
+
+                let remaining = len - next_offset.load(Ordering::Relaxed) as usize;
+                let ideal_morsel_count = (remaining / get_ideal_morsel_size()).max(1);
+                let morsel_count = ideal_morsel_count.next_multiple_of(state.num_pipelines);
+                let morsel_size = remaining.div_ceil(morsel_count).max(1);
                 let (name, dtype, step) = (&self.name, &self.dtype, self.step);
 
                 let source_token = SourceToken::new();
@@ -159,8 +156,8 @@ impl ComputeNode for IntRangeNode {
                     join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
                         let wait_group = WaitGroup::default();
                         loop {
-                            let seq = next_morsel.fetch_add(1, Ordering::Relaxed);
-                            let offset = seq as usize * morsel_size;
+                            let offset =
+                                next_offset.fetch_add(morsel_size as u64, Ordering::Relaxed) as usize;
                             if offset >= len {
                                 break;
                             }
@@ -183,7 +180,7 @@ impl ComputeNode for IntRangeNode {
                             });
                             let mut morsel = Morsel::new_unregistered(
                                 range.into_frame(),
-                                MorselSeq::new(seq),
+                                MorselSeq::new(offset as u64),
                                 source_token.clone(),
                             );
                             morsel.set_consume_token(wait_group.token());
