@@ -42,7 +42,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+  RUSTFLAGS: -C debuginfo=0 # Do not produce debug symbols to keep memory usage down
 
 jobs:
   clippy-nightly:
@@ -113,13 +113,13 @@ jobs:
       - name: Run miri
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows
-          POLARS_ALLOW_EXTENSION: '1'
-          POLARS_OVERRIDE_TOTAL_MEMORY_MB: '1000'  # So we don't ask for memory which miri doesn't support
+          POLARS_ALLOW_EXTENSION: "1"
+          POLARS_OVERRIDE_TOTAL_MEMORY_MB: "1000" # So we don't ask for memory which miri doesn't support
         run: >
           cargo miri test
           --features object
           -p polars-core
-#          -p polars-arrow
+  #          -p polars-arrow
 
   deny:
     if: github.event_name == 'pull_request'

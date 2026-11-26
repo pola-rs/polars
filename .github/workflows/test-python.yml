@@ -19,9 +19,9 @@ on:
       - "1.x"
     paths:
       - Cargo.lock
-      - crates/**
-      - docs/source/src/python/**
       - py-polars/**
+      - docs/source/src/python/**
+      - crates/**
       - .github/workflows/test-python.yml
   # Called by the release workflow, which tests against the released polars-iceberg and
   # polars-database from PyPI.
@@ -58,34 +58,30 @@ defaults:
 
 jobs:
   test-python:
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ !github.event.pull_request.draft && github.event_name != 'push' }}
     runs-on: ${{ matrix.os }}
     env: &test-python-env
       POLARS_IDEAL_MORSEL_SIZE: ${{ matrix.ideal_morsel_size }}
-      # Slow tests are prohibitively slow with a tiny morsel size.
-      EXTRA_PYTEST_MARKERS: ${{ matrix.ideal_morsel_size < 10 && ' and not slow' || '' }}
+      # Slow tests are prohibitively slow with a tiny morsel size; PRs run them on 3.14 only.
+      EXTRA_PYTEST_MARKERS: ${{ (matrix.ideal_morsel_size < 10 || (github.event_name == 'pull_request' && matrix.python-version != '3.14')) && ' and not slow' || '' }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.11', '3.12', '3.13', '3.14']
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
         variant: [null]
         ideal_morsel_size: [100000]
         include:
           - os: windows-latest
-            python-version: '3.14'
+            python-version: "3.14"
             ideal_morsel_size: 100000
             variant: null
-          - os: windows-latest
-            python-version: '3.14'
-            variant: engine_affinity_in_memory
-            ideal_morsel_size: 100000
           - os: ubuntu-latest
-            python-version: '3.14'
+            python-version: "3.14"
             variant: null
             ideal_morsel_size: 4
           - os: ubuntu-latest
-            python-version: '3.14'
+            python-version: "3.14"
             variant: engine_affinity_in_memory
             ideal_morsel_size: 100000
 
@@ -100,8 +96,7 @@ jobs:
 
       - name: Enable long paths on Windows
         if: matrix.os == 'windows-latest'
-        shell:
-          powershell
+        shell: powershell
         run: |
           Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value 1
 
@@ -144,6 +139,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
+          shared-key: test-python
           save-if: ${{ github.event_name == 'push' }}
 
       - name: Install Polars
@@ -253,7 +249,35 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.14']
+        python-version: ["3.14"]
+        variant: [null]
+        ideal_morsel_size: [100000]
+
+    steps: *test-python-steps
+
+  # Not on PRs, to spare Windows runners.
+  test-python-release:
+    if: ${{ !contains(fromJSON('["pull_request", "push"]'), github.event_name) }}
+    runs-on: ${{ matrix.os }}
+    env: *test-python-env
+    strategy:
+      matrix:
+        os: [windows-latest]
+        python-version: ["3.14"]
+        variant: [engine_affinity_in_memory]
+        ideal_morsel_size: [100000]
+
+    steps: *test-python-steps
+
+  # Only builds Polars, once per OS, to save the Rust cache that the jobs above restore.
+  test-python-cache:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ${{ matrix.os }}
+    env: *test-python-env
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.14"]
         variant: [null]
         ideal_morsel_size: [100000]
 
