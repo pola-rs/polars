@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import pickle
 import re
 import shutil
@@ -16,7 +17,12 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    DuplicateError,
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.io.iceberg._catalog_resolver import set_iceberg_catalog_resolver
 from polars.testing import assert_frame_equal
 
@@ -450,10 +456,6 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
 @pytest.mark.parametrize(
     ("statement", "error"),
     [
-        (
-            "CREATE OR REPLACE TABLE t (x INT)",
-            "`CREATE OR REPLACE TABLE` is not supported for catalog tables",
-        ),
         (
             "CREATE TABLE t (x INT) AS SELECT 1 AS x",
             r"`CREATE TABLE \.\.\. AS SELECT` does not take column definitions",
@@ -1458,6 +1460,450 @@ def test_create_catalog_table_as_select_fsspec_cleanup(
     with pytest.raises(RuntimeError, match="commit failed"):
         ctx.execute("CREATE TABLE t AS SELECT 1 AS x")
     assert not table_files(tmp_path, "ns", "t")
+
+
+@pytest.mark.write_disk
+def test_create_or_replace_catalog_table(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    before = lake.load_table(("tpch", "lineitem")).metadata
+    res = ctx.execute(
+        # k keeps its type, v becomes an integer, w is new
+        "CREATE OR REPLACE TABLE lineitem AS "
+        "SELECT k, k * 10 AS v, 'x' AS w FROM lineitem",
+        eager=True,
+    )
+    assert res.item() == "CREATE TABLE lake.tpch.lineitem"
+
+    table = lake.load_table(("tpch", "lineitem"))
+    assert table.metadata.table_uuid == before.table_uuid
+    assert_frame_equal(
+        ctx.execute("SELECT * FROM lineitem ORDER BY k", eager=True),
+        pl.DataFrame({"k": [1, 2], "v": [10, 20], "w": ["x", "x"]}),
+    )
+    # k keeps its field id, v and w get new ones
+    last = before.last_column_id
+    assert [(f.name, f.field_id) for f in table.schema().fields] == [
+        ("k", 1),
+        ("v", last + 1),
+        ("w", last + 2),
+    ]
+    # main starts over; the old snapshot keeps its rows and schema
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    assert snapshot.parent_snapshot_id is None
+    old = ctx.execute(
+        f"SELECT * FROM lineitem FOR VERSION AS OF {before.current_snapshot_id}",
+        eager=True,
+    )
+    assert_frame_equal(old, LINEITEM, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_create_or_replace_catalog_table_layout(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE ev WITH ('a' = '1', 'b' = '1') PARTITION BY (bucket(4, p)) "
+        "AS SELECT 1::BIGINT AS k, 'x' AS p"
+    )
+    ctx.execute("ALTER TABLE ev SET SORTED BY (k)")
+    # p becomes an integer
+    ctx.execute(
+        "CREATE OR REPLACE TABLE ev WITH ('b' = '2', 'c' = '2', 'format-version' = 2) "
+        "PARTITION BY (bucket(4, p)) "
+        "AS SELECT 2::BIGINT AS k, 7 AS p"
+    )
+
+    table = lake.load_table(("tpch", "ev"))
+    assert {key: table.properties[key] for key in "abc"} == {
+        "a": "1",
+        "b": "2",
+        "c": "2",
+    }
+    assert "format-version" not in table.properties
+    [field] = table.spec().fields
+    assert field.source_id == table.schema().find_field("p").field_id
+    assert table.sort_order().is_unsorted
+    assert ctx.execute("SELECT k FROM ev WHERE p = 7", eager=True).rows() == [(2,)]
+
+
+@pytest.mark.write_disk
+def test_create_or_replace_catalog_table_promotions(lake: CountingCatalog) -> None:
+    from pyiceberg.table import TableProperties
+    from pyiceberg.table.name_mapping import create_mapping_from_schema
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE pr (i INT, f FLOAT, d DECIMAL(5, 2), s DECIMAL(5, 2))")
+    table = lake.load_table(("tpch", "pr"))
+    # entries without names or field ids, as Iceberg allows
+    mapping = [
+        *create_mapping_from_schema(table.schema()).model_dump(by_alias=True),
+        {"field-id": 99, "names": []},
+        {"names": ["a", "a0"], "fields": [{"field-id": 20, "names": ["element"]}]},
+        {"names": ["b"], "fields": [{"field-id": 21, "names": ["element"]}]},
+    ]
+    with table.transaction() as tx:
+        tx.set_properties({TableProperties.DEFAULT_NAME_MAPPING: json.dumps(mapping)})
+    # the same entry again, with its names in another order
+    again = json.dumps(
+        [{"names": ["a0", "a"], "fields": [{"field-id": 20, "names": ["element"]}]}]
+    )
+
+    # wider types keep the field ids; another scale is a new column
+    ctx.execute(
+        "CREATE OR REPLACE TABLE pr (i BIGINT, f DOUBLE, d DECIMAL(9, 2), w VARCHAR) "
+        f"WITH ('schema.name-mapping.default' = '{again}')"
+    )
+
+    table = lake.load_table(("tpch", "pr"))
+    assert [(f.name, f.field_id) for f in table.schema().fields] == [
+        ("i", 1),
+        ("f", 2),
+        ("d", 3),
+        ("w", 5),
+    ]
+    # the mapping keeps the dropped column, and gets the new one
+    assert [(m.field_id, m.names) for m in table.name_mapping() or []] == [
+        (1, ["i"]),
+        (2, ["f"]),
+        (3, ["d"]),
+        (4, ["s"]),
+        (99, []),
+        (None, ["a", "a0"]),
+        (None, ["b"]),
+        (5, ["w"]),
+    ]
+
+
+@pytest.mark.write_disk
+def test_create_or_replace_catalog_table_from_itself(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (1, 'a')")
+    schemas = lake.load_table(("tpch", "lineitem")).metadata.schemas
+    lake.loads.clear()
+    commit = IcebergSinkState._commit
+    loads_before_commit = []
+
+    def counted(self: IcebergSinkState, *args: Any, **kwargs: Any) -> None:
+        loads_before_commit.extend(lake.loads)
+        commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(IcebergSinkState, "_commit", counted)
+    ctx.execute("CREATE OR REPLACE TABLE lineitem AS SELECT DISTINCT * FROM lineitem")
+
+    # the query reads the table loaded for the replace
+    assert loads_before_commit == [("tpch", "lineitem")]
+    # the same columns: no schema is added
+    assert lake.load_table(("tpch", "lineitem")).metadata.schemas == schemas
+    assert_frame_equal(
+        ctx.execute("SELECT * FROM lineitem", eager=True),
+        LINEITEM,
+        check_row_order=False,
+    )
+
+
+@pytest.mark.write_disk
+def test_create_or_replace_catalog_table_columns(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE OR REPLACE TABLE lineitem (k BIGINT, z DOUBLE)")
+
+    assert lake.load_table(("tpch", "lineitem")).current_snapshot() is None
+    res = ctx.execute("SELECT * FROM lineitem", eager=True)
+    assert_frame_equal(res, pl.DataFrame(schema={"k": pl.Int64, "z": pl.Float64}))
+
+    # the same columns, with a struct map key: no schema is added
+    columns = "(m MAP(STRUCT<a INT>, BIGINT), x BIGINT)"
+    ctx.execute(f"CREATE TABLE mk {columns}")
+    schemas = lake.load_table(("tpch", "mk")).metadata.schemas
+    ctx.execute(f"CREATE OR REPLACE TABLE mk {columns}")
+    assert lake.load_table(("tpch", "mk")).metadata.schemas == schemas
+
+    # the columns reordered, then back: the first schema is current again
+    ctx.execute("CREATE OR REPLACE TABLE mk (x BIGINT, m MAP(STRUCT<a INT>, BIGINT))")
+    ctx.execute(f"CREATE OR REPLACE TABLE mk {columns}")
+    metadata = lake.load_table(("tpch", "mk")).metadata
+    assert len(metadata.schemas) == len(schemas) + 1
+    assert metadata.current_schema_id == schemas[0].schema_id
+
+    # an absent table is created
+    ctx.execute("CREATE OR REPLACE TABLE fresh AS SELECT 1 AS x")
+    assert ctx.execute("SELECT * FROM fresh", eager=True).rows() == [(1,)]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("change", ["append", "add-column"])
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "CREATE OR REPLACE TABLE e AS SELECT 7::BIGINT AS k",
+        # changes nothing but the rows: the commit still checks the table
+        "CREATE OR REPLACE TABLE e (k BIGINT)",
+    ],
+)
+def test_create_or_replace_catalog_table_changed_meanwhile(
+    lake: CountingCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    statement: str,
+    change: str,
+) -> None:
+    from pyiceberg.exceptions import ValidationException
+    from pyiceberg.types import LongType
+
+    import polars.io.iceberg._replace as replace
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE e (k BIGINT)")
+    replace_changes = replace.replace_changes
+
+    changed = []
+
+    def change_meanwhile(*args: Any, **kwargs: Any) -> Any:
+        # another writer changes the table after the statement loaded it
+        other = lake.load_table(("tpch", "e"))
+        if change == "append":
+            pl.DataFrame({"k": [1]}).write_iceberg(other, mode="append")
+        else:
+            with other.update_schema() as update:
+                update.add_column("b", LongType())
+        changed.append(lake.load_table(("tpch", "e")).metadata_location)
+        return replace_changes(*args, **kwargs)
+
+    monkeypatch.setattr(replace, "replace_changes", change_meanwhile)
+    with pytest.raises(ValidationException, match="run the statement again"):
+        ctx.execute(statement)
+    monkeypatch.undo()
+
+    table = lake.load_table(("tpch", "e"))
+    assert table.metadata_location == changed[0]
+    # no files of the replace are left
+    planned = {
+        Path(t.file.file_path.removeprefix("file://"))
+        for t in table.scan().plan_files()
+    }
+    assert table_files(tmp_path, "tpch", "e") == planned
+
+
+@pytest.mark.write_disk
+def test_create_or_replace_catalog_table_zero_rows(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    files = table_files(tmp_path, "tpch", "lineitem")
+
+    lake_ctx(lake).execute(
+        "CREATE OR REPLACE TABLE lineitem AS SELECT * FROM lineitem WHERE k > 9"
+    )
+
+    table = lake.load_table(("tpch", "lineitem"))
+    assert table.current_snapshot() is not None
+    assert list(table.scan().plan_files()) == []
+    assert table_files(tmp_path, "tpch", "lineitem") == files
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "CREATE OR REPLACE TABLE lineitem AS SELECT k FROM lineitem",
+        "CREATE OR REPLACE TABLE lineitem (k BIGINT)",
+    ],
+)
+def test_create_or_replace_catalog_table_catalog_refuses(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, statement: str
+) -> None:
+    from pyiceberg.exceptions import CommitFailedException
+
+    location = lake.load_table(("tpch", "lineitem")).metadata_location
+
+    def refuse(*args: Any) -> None:
+        # as a catalog rule on the updates, not a changed table
+        msg = "the catalog refuses this schema update"
+        raise CommitFailedException(msg)
+
+    monkeypatch.setattr(lake, "commit_table", refuse)
+    with pytest.raises(CommitFailedException, match="refuses this schema") as exc:
+        lake_ctx(lake).execute(statement)
+    assert exc.value.__notes__[-1] == (
+        "table 'lineitem' was not replaced: catalog table 'tpch.lineitem'"
+    )
+    monkeypatch.undo()
+    assert lake.load_table(("tpch", "lineitem")).metadata_location == location
+
+
+@pytest.mark.write_disk
+def test_create_or_replace_catalog_table_query_fails(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    location = lake.load_table(("tpch", "lineitem")).metadata_location
+    files = table_files(tmp_path, "tpch", "lineitem")
+
+    with pytest.raises(InvalidOperationError) as exc:
+        lake_ctx(lake).execute(
+            "CREATE OR REPLACE TABLE lineitem AS SELECT k, v::INT AS v FROM lineitem"
+        )
+
+    assert exc.value.__notes__[-1] == (
+        "table 'lineitem' was not replaced: catalog table 'tpch.lineitem'"
+    )
+    assert lake.load_table(("tpch", "lineitem")).metadata_location == location
+    assert table_files(tmp_path, "tpch", "lineitem") == files
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("landed", [True, False])
+def test_create_or_replace_catalog_table_unknown_outcome(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, landed: bool
+) -> None:
+    from pyiceberg.exceptions import CommitStateUnknownException
+
+    commit_table = lake.commit_table
+
+    def lose_response(*args: Any) -> Any:
+        if landed:
+            commit_table(*args)
+        msg = "response lost"
+        raise CommitStateUnknownException(msg)
+
+    monkeypatch.setattr(lake, "commit_table", lose_response)
+    statement = "CREATE OR REPLACE TABLE lineitem AS SELECT k FROM lineitem"
+    if landed:
+        # found in the table: the replace succeeded
+        lake_ctx(lake).execute(statement)
+        monkeypatch.undo()
+        res = lake_ctx(lake).execute("SELECT * FROM lineitem", eager=True)
+        assert res.columns == ["k"]
+        return
+    with pytest.raises(CommitStateUnknownException) as exc:
+        lake_ctx(lake).execute(statement)
+    assert exc.value.__notes__[0].startswith(
+        "the replace may have landed; data files kept under '"
+    )
+
+
+@pytest.mark.write_disk
+def test_create_or_replace_catalog_table_columns_unknown_outcome(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import CommitStateUnknownException
+
+    commit_table = lake.commit_table
+
+    def commit_then_lose(*args: Any) -> Any:
+        commit_table(*args)
+        msg = "response lost"
+        raise CommitStateUnknownException(msg)
+
+    monkeypatch.setattr(lake, "commit_table", commit_then_lose)
+    with pytest.raises(CommitStateUnknownException) as exc:
+        lake_ctx(lake).execute("CREATE OR REPLACE TABLE lineitem (k BIGINT)")
+    assert exc.value.__notes__ == [
+        "table 'lineitem' may have been replaced: catalog table 'tpch.lineitem'"
+    ]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error", "match"),
+    [
+        (
+            "CREATE OR REPLACE TABLE lineitem LOCATION 'file:///elsewhere' "
+            "AS SELECT * FROM lineitem",
+            InvalidOperationError,
+            "cannot be replaced at another location",
+        ),
+        (
+            "CREATE OR REPLACE TABLE lineitem WITH ('format-version' = 1) "
+            "AS SELECT * FROM lineitem",
+            InvalidOperationError,
+            "format version of table 'lineitem' .* cannot change",
+        ),
+        (
+            # a new field id for v, whose name the mapping gives to the old one
+            "CREATE OR REPLACE TABLE lineitem AS SELECT k, 1 AS v FROM lineitem",
+            DuplicateError,
+            "column name 'v' of table 'lineitem' is mapped to two columns",
+        ),
+        (
+            # a mapping that gives v to k's field id
+            "CREATE OR REPLACE TABLE lineitem WITH ('schema.name-mapping.default' = "
+            '\'[{"field-id": 1, "names": ["v"]}]\') AS SELECT * FROM lineitem',
+            DuplicateError,
+            "column name 'v' of table 'lineitem' is mapped to two columns",
+        ),
+        (
+            # k's field id again, under another column
+            "CREATE OR REPLACE TABLE lineitem WITH ('schema.name-mapping.default' = "
+            '\'[{"field-id": 9, "names": ["s"], "fields": '
+            '[{"field-id": 1, "names": ["z"]}]}]\') AS SELECT * FROM lineitem',
+            DuplicateError,
+            "maps field id 1 in two places",
+        ),
+    ],
+)
+def test_create_or_replace_catalog_table_refused(
+    lake: CountingCatalog, statement: str, error: type[Exception], match: str
+) -> None:
+    from pyiceberg.table import TableProperties
+    from pyiceberg.table.name_mapping import create_mapping_from_schema
+
+    table = lake.load_table(("tpch", "lineitem"))
+    mapping = create_mapping_from_schema(table.schema()).model_dump_json()
+    with table.transaction() as tx:
+        tx.set_properties({TableProperties.DEFAULT_NAME_MAPPING: mapping})
+    location = lake.load_table(("tpch", "lineitem")).metadata_location
+
+    with pytest.raises(error, match=match):
+        lake_ctx(lake).execute(statement)
+
+    assert lake.load_table(("tpch", "lineitem")).metadata_location == location
+
+
+@pytest.mark.write_disk
+def test_create_or_replace_catalog_table_partition_name(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE ev PARTITION BY (p) AS SELECT 1::BIGINT AS k, 'x' AS p")
+    location = lake.load_table(("tpch", "ev")).metadata_location
+
+    # a new field id for p, whose name the old partition field keeps
+    with pytest.raises(
+        InvalidOperationError, match="name of a partition field of partition spec 0"
+    ):
+        ctx.execute(
+            "CREATE OR REPLACE TABLE ev PARTITION BY (p) AS SELECT 2::BIGINT AS k, 7 AS p"
+        )
+    assert lake.load_table(("tpch", "ev")).metadata_location == location
+
+    # under another name
+    ctx.execute(
+        "CREATE OR REPLACE TABLE ev PARTITION BY (q) AS SELECT 2::BIGINT AS k, 7 AS q"
+    )
+    assert ctx.execute("SELECT * FROM ev WHERE q = 7", eager=True).rows() == [(2, 7)]
+
+
+@pytest.mark.write_disk
+def test_create_or_replace_catalog_table_v1(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE v1t WITH ('format-version' = 1) PARTITION BY (p) "
+        "AS SELECT 1::BIGINT AS k, 'a' AS p"
+    )
+    # the same partitioning
+    ctx.execute(
+        "CREATE OR REPLACE TABLE v1t PARTITION BY (p) AS SELECT 2::BIGINT AS k, 'b' AS p"
+    )
+    assert ctx.execute("SELECT * FROM v1t", eager=True).rows() == [(2, "b")]
+
+    with pytest.raises(InvalidOperationError, match="it is an Iceberg v1 table"):
+        ctx.execute("CREATE OR REPLACE TABLE v1t AS SELECT 3::BIGINT AS k, 'c' AS p")
+
+    # a removed partition field stays in a v1 spec, as void
+    with lake.load_table(("tpch", "v1t")).update_spec() as update:
+        update.remove_field("p")
+    with pytest.raises(InvalidOperationError, match="it is an Iceberg v1 table"):
+        ctx.execute("CREATE OR REPLACE TABLE v1t AS SELECT 3::BIGINT AS k, 'c' AS p")
 
 
 def no_staged_create(*args: Any, **kwargs: Any) -> None:

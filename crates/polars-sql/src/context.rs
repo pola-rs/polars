@@ -750,6 +750,7 @@ impl SQLContext {
         self.validate_create_table(create_table, true)?;
         let CreateTable {
             name,
+            or_replace,
             if_not_exists,
             columns,
             query,
@@ -794,6 +795,7 @@ impl SQLContext {
         Ok(Some(CatalogStatement::CreateTable {
             name: tbl_name,
             table,
+            or_replace: *or_replace,
             if_not_exists: *if_not_exists,
             schema,
             query,
@@ -4747,8 +4749,7 @@ impl SQLContext {
         polars_ensure!(!dynamic, SQLInterface: "`CREATE DYNAMIC TABLE` is not supported");
         polars_ensure!(!external, SQLInterface: "`CREATE EXTERNAL TABLE` is not supported");
         polars_ensure!(!iceberg, SQLInterface: "`CREATE ICEBERG TABLE` is not supported");
-        polars_ensure!(!*or_replace || *temporary || !for_catalog, SQLInterface: "`CREATE OR REPLACE TABLE` is not supported for catalog tables");
-        polars_ensure!(!*or_replace || *temporary, SQLInterface: "`CREATE OR REPLACE TABLE` is not supported");
+        polars_ensure!(!*or_replace || *temporary || for_catalog, SQLInterface: "`CREATE OR REPLACE TABLE` is not supported");
         polars_ensure!(!(*or_replace && *if_not_exists), SQLInterface: "`OR REPLACE` and `IF NOT EXISTS` cannot be combined");
         polars_ensure!(!require_user, SQLInterface: "`REQUIRE USER` is not supported");
         polars_ensure!(!snapshot, SQLInterface: "`CREATE SNAPSHOT TABLE` is not supported");

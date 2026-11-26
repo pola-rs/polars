@@ -67,12 +67,15 @@ pub enum CatalogStatement {
         /// `PURGE`: also delete the data files.
         purge: bool,
     },
-    /// `CREATE TABLE [IF NOT EXISTS] <name> (<column>, ...)`, or `... <name> AS <query>`.
+    /// `CREATE [OR REPLACE] TABLE [IF NOT EXISTS] <name> (<column>, ...)`, or
+    /// `... <name> AS <query>`.
     CreateTable {
         /// The table name as the statement wrote it.
         name: String,
         /// The catalog table to create.
         table: CatalogTable,
+        /// `OR REPLACE`: an existing table is replaced.
+        or_replace: bool,
         /// `IF NOT EXISTS`.
         if_not_exists: bool,
         /// The columns; empty with a query.

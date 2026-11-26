@@ -6,7 +6,7 @@ import importlib.util
 import sys
 from dataclasses import dataclass
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NoReturn, TypeAlias
 from urllib.parse import urlparse
 
 from polars._utils.logging import eprint
@@ -140,6 +140,30 @@ class _HandBack:
 
     def __getstate__(self) -> tuple[()]:
         msg = "a sink that hands back its files cannot be serialized"
+        raise TypeError(msg)
+
+
+class _ReplaceTable:
+    """In place of `replace_files`: the commit replaces the table with the new one.
+
+    `table` is the table as loaded. `updates` and `requirements` replace its schema,
+    partitioning, sort order and properties in the commit that adds the written files
+    (`CREATE OR REPLACE TABLE`). The sink writes for the table with `updates` applied.
+    """
+
+    def __init__(
+        self,
+        table: pyiceberg.table.Table,
+        updates: tuple[TableUpdate, ...],
+        requirements: tuple[TableRequirement, ...],
+    ) -> None:
+        self.table = table
+        self.updates = updates
+        self.requirements = requirements
+
+    def __getstate__(self) -> tuple[()]:
+        # a reload would write for the table as it is, not as replaced
+        msg = "a sink that replaces a table cannot be serialized"
         raise TypeError(msg)
 
 
@@ -483,6 +507,77 @@ def _write_transaction(table: pyiceberg.table.Table) -> Iterator[Transaction]:
     except CommitFailedException as error:
         _raise_if_base_changed(table, spec_id, error, check=same_schema)
         raise
+
+
+_TABLE_CHANGED = (
+    "the table changed while it was being replaced; run the statement again"
+)
+
+
+def _replace_table_transaction(
+    table: pyiceberg.table.Table,
+    replace: _ReplaceTable,
+    last_error: Callable[[], Exception | None] = lambda: None,
+) -> Transaction:
+    """
+    A transaction of `table` with `replace` staged, which is not retried.
+
+    `last_error` gives the catalog's last refusal of the commit, raised again when
+    the table did not change: the catalog refused the replace itself.
+    """
+    from pyiceberg.exceptions import CommitFailedException, ValidationException
+    from pyiceberg.table import Transaction
+
+    base = replace.table.metadata
+
+    class _NoRetryTransaction(Transaction):  # type: ignore[misc]
+        # a retry would replace a table the statement did not read
+        def _rebuild_snapshot_updates(self) -> None:
+            error = last_error()
+            if isinstance(error, CommitFailedException) and not _replace_base_changed(
+                base, self._table.metadata
+            ):
+                raise error
+            raise ValidationException(_TABLE_CHANGED)
+
+    tx = _NoRetryTransaction(table)
+    tx._stage(replace.updates, replace.requirements)
+    return tx
+
+
+def _replace_base_changed(old: TableMetadata, new: TableMetadata) -> bool:
+    """Whether `new` fails the requirements of a replace of the table as `old`."""
+
+    def state(metadata: TableMetadata) -> tuple[Any, ...]:
+        main = metadata.refs.get("main")
+        return (
+            metadata.table_uuid,
+            None if main is None else main.snapshot_id,
+            metadata.current_schema_id,
+            metadata.default_spec_id,
+            metadata.default_sort_order_id,
+            metadata.last_column_id,
+            metadata.last_partition_id,
+        )
+
+    return state(old) != state(new)
+
+
+def raise_replace_refused(table: pyiceberg.table.Table, error: Exception) -> NoReturn:
+    """
+    Raise for a refused replace of `table` (as loaded for it).
+
+    "Changed meanwhile" if the table changed since, else the catalog's own `error`.
+    """
+    from pyiceberg.exceptions import ValidationException
+
+    try:
+        current = table.catalog.load_table(table.name())
+    except Exception:
+        raise error from None
+    if _replace_base_changed(table.metadata, current.metadata):
+        raise ValidationException(_TABLE_CHANGED) from error
+    raise error
 
 
 def _replace_transaction(
@@ -1439,7 +1534,7 @@ class IcebergSinkState:
     # until a commit lands. Shared with the engine's copy, as `commit_result_df`.
     write_dirs: _WriteDirs | None
     # Data files the commit replaces, instead of appending or overwriting.
-    replace_files: _ReplaceFiles | _HandBack | None = None
+    replace_files: _ReplaceFiles | _HandBack | _ReplaceTable | None = None
 
     @staticmethod
     def new(
@@ -1458,7 +1553,7 @@ class IcebergSinkState:
         compression_level: int | None = None,
         row_group_size: int | None = None,
         maintain_order: bool = True,
-        replace_files: _ReplaceFiles | _HandBack | None = None,
+        replace_files: _ReplaceFiles | _HandBack | _ReplaceTable | None = None,
     ) -> IcebergSinkState:
         if schema_mode == "overwrite" and mode != "overwrite":
             msg = "schema_mode='overwrite' requires mode='overwrite'"
@@ -1581,6 +1676,35 @@ class IcebergSinkState:
         )
         state.table_ = _StagedTableOption(transaction._table)
         return state
+
+    @staticmethod
+    def new_replace(
+        replace: _ReplaceTable,
+        *,
+        storage_options: StorageOptionsDict | None = None,
+    ) -> IcebergSinkState:
+        """A sink that writes for the table `replace` makes, and commits `replace`.
+
+        The data is the new table's: one commit replaces the table and adds it.
+        """
+        from pyiceberg.table import Table
+
+        table = replace.table
+        replaced = _replace_table_transaction(table, replace).table_metadata
+        view = Table(
+            table.name(),
+            replaced,
+            table.metadata_location,
+            table.io,
+            table.catalog,
+            table.config,
+        )
+        return IcebergSinkState.new(
+            view,
+            mode="append",
+            storage_options=storage_options,
+            replace_files=replace,
+        )
 
     def table(self) -> pyiceberg.table.Table:
         if self.table_.get() is None:
@@ -1982,6 +2106,12 @@ class IcebergSinkState:
             )
             return
 
+        if isinstance(self.replace_files, _ReplaceTable):
+            self._commit_replace(
+                self.replace_files, sinked_files, snapshot_properties, verbose=verbose
+            )
+            return
+
         # the table loaded for the commit can be another than the one written for
         self._check_base(table.metadata)
 
@@ -2322,6 +2452,57 @@ class IcebergSinkState:
         ):
             msg = f"Iceberg sort order {self.sort_order_id} is no longer available"
             raise ValueError(msg)
+
+    def _commit_replace(
+        self,
+        replace: _ReplaceTable,
+        sinked_files: list[_IcebergSinkedFile],
+        snapshot_properties: dict[str, str],
+        *,
+        verbose: bool,
+    ) -> None:
+        """Replace the table, with the sinked files as its data, in one commit."""
+        from pyiceberg.exceptions import (
+            CommitFailedException,
+            CommitStateUnknownException,
+            ValidationException,
+        )
+        from pyiceberg.table import Table
+
+        table = replace.table
+        empty = [path for path, rows, *_ in sinked_files if rows == 0]
+        if empty:
+            _remove_files(self.storage_file_io(), empty)
+        written = [f for f in sinked_files if f[1] > 0]
+        sink_catalog = _SinkCatalog(table.catalog, self.sink_uuid_str, verbose=verbose)
+        wrapped = Table(
+            table.name(),
+            table.metadata,
+            table.metadata_location,
+            # renewed by `commit` if expiring
+            self.table().io,
+            sink_catalog,  # type: ignore[arg-type]
+            table.config,
+        )
+        if verbose:
+            eprint("IcebergSinkState[commit]: begin replace table")
+        try:
+            with _replace_table_transaction(
+                wrapped, replace, lambda: sink_catalog._raised
+            ) as tx:
+                data_files = _data_files_for_commit(tx, written, self.sort_order_id)
+                _add_files(tx, data_files, snapshot_properties)
+        except _AlreadyCommitted as e:
+            _copy_table_state(e.table, table)
+            return
+        except (CommitStateUnknownException, ValidationException):
+            raise
+        except CommitFailedException as e:
+            raise_replace_refused(table, e)
+        except Exception as e:
+            _copy_table_state(sink_catalog.landed_after(table, e), table)
+            return
+        _copy_table_state(wrapped, table)
 
     def _commit_create(
         self,

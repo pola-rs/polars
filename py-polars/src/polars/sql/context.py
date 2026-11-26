@@ -604,9 +604,12 @@ class SQLContext(Generic[FrameType]):
         return res.collect() if eager or self._eager_execution else res
 
     def _execute_with_catalogs(
-        self, query: str, params: list[Any] | dict[str, Any] | None = None
+        self,
+        query: str,
+        params: list[Any] | dict[str, Any] | None = None,
+        target: tuple[list[str], pyiceberg.table.Table] | None = None,
     ) -> PyLazyFrame:
-        """Execute `query` with its catalog tables scanned."""
+        """Execute `query` with its catalog tables scanned (`target` as loaded)."""
         if (stmt := self._ctxt.catalog_statement(query)) is not None:
             if params is not None:
                 msg = "query parameters are not supported in a statement that changes a catalog table"
@@ -614,7 +617,7 @@ class SQLContext(Generic[FrameType]):
             return self._execute_catalog_statement(stmt, query)._ldf
 
         return self._ctxt.execute_with_catalog_tables(
-            query, self._catalog_scans(query), params
+            query, self._catalog_scans(query, target), params
         )
 
     def _catalog_scans(
@@ -624,7 +627,7 @@ class SQLContext(Generic[FrameType]):
         Scans of the catalog tables `query` reads, by the key each goes back under.
 
         Reads of one table share its loaded metadata, so a statement sees one state of
-        it within a process. `target` is the table a `MERGE` loaded.
+        it within a process. `target` is the table a `MERGE` or a replace loaded.
         """
         from polars.io.iceberg._time_travel import resolve_version
         from polars.io.iceberg.functions import scan_iceberg
@@ -635,7 +638,7 @@ class SQLContext(Generic[FrameType]):
             catalog_name, version = read.catalog, read.version
             identifier: list[str] = read.identifier
             if target is not None and [catalog_name, *identifier] == target[0]:
-                # every reference to a MERGE target reads the table loaded for it
+                # every reference to the target reads the table loaded for it
                 table = target[1]
                 snapshot_id = (
                     None if version is None else resolve_version(table, version)
@@ -713,10 +716,15 @@ class SQLContext(Generic[FrameType]):
         if stmt["kind"] == "drop_table":
             response = _drop_catalog_table(catalog, stmt)
         elif stmt["kind"] == "create_table":
+            full_name = [stmt["catalog"], *stmt["identifier"]]
             response = _create_catalog_table(
                 catalog,
                 stmt,
-                lambda query: wrap_ldf(self._execute_with_catalogs(query)),
+                lambda query, table=None: wrap_ldf(
+                    self._execute_with_catalogs(
+                        query, target=None if table is None else (full_name, table)
+                    )
+                ),
                 storage_options,
             )
         elif stmt["kind"] == "create_schema":
@@ -2588,13 +2596,19 @@ def _check_not_sort_source(
 def _create_catalog_table(
     catalog: pyiceberg.catalog.Catalog,
     ddl: dict[str, Any],
-    query_frame: Callable[[str], LazyFrame],
+    query_frame: Callable[..., LazyFrame],
     storage_options: StorageOptionsDict | None,
 ) -> str:
-    """Create the catalog table of a `CREATE TABLE`, returning the response."""
+    """
+    Create the catalog table of a `CREATE TABLE`, returning the response.
+
+    `query_frame(query, table)` plans `query`, reading `table` (the table to replace)
+    as loaded.
+    """
     from pyiceberg.exceptions import (
         CommitStateUnknownException,
         NoSuchNamespaceError,
+        NoSuchTableError,
         TableAlreadyExistsError,
     )
 
@@ -2605,6 +2619,14 @@ def _create_catalog_table(
     identifier: tuple[str, ...] = tuple(ddl["identifier"])
     name, table_name = ddl["name"], _display_name(identifier)
     response = f"CREATE TABLE {_display_name([ddl['catalog'], *identifier])}"
+    if ddl["or_replace"]:
+        try:
+            table = catalog.load_table(identifier)
+        except NoSuchTableError:
+            pass
+        else:
+            _replace_catalog_table(table, ddl, query_frame, storage_options)
+            return response
     # a query is planned, but not run, when the table exists
     lf = None if ddl["query"] is None else query_frame(ddl["query"])
     schema, casts = _create_table_schema(
@@ -2618,6 +2640,8 @@ def _create_catalog_table(
     if catalog.table_exists(identifier):
         if ddl["if_not_exists"]:
             return response
+        if ddl["or_replace"]:
+            raise TableAlreadyExistsError(_created_meanwhile_message(name, table_name))
         msg = (
             f"table '{name}' already exists: catalog table '{table_name}' "
             "could not be created"
@@ -2644,6 +2668,9 @@ def _create_catalog_table(
         if _created_meanwhile(catalog, identifier, error):
             if ddl["if_not_exists"]:
                 return response
+            if ddl["or_replace"]:
+                msg = _created_meanwhile_message(name, table_name)
+                raise TableAlreadyExistsError(msg) from error
             msg = (
                 f"table '{name}' already exists: catalog table '{table_name}' "
                 f"could not be created ({error})"
@@ -2672,6 +2699,97 @@ def _create_catalog_table(
         # outside the create's error handling: the table exists, it is ours
         _fill_created_table(catalog, identifier, created, lf, storage_options, name)
     return response
+
+
+def _created_meanwhile_message(name: str, table_name: str) -> str:
+    return (
+        f"table '{name}' was created by another writer meanwhile: catalog table "
+        f"'{table_name}'; run the statement again to replace it"
+    )
+
+
+def _replace_catalog_table(
+    table: pyiceberg.table.Table,
+    ddl: dict[str, Any],
+    query_frame: Callable[..., LazyFrame],
+    storage_options: StorageOptionsDict | None,
+) -> None:
+    """
+    Replace `table` by the table of a `CREATE OR REPLACE TABLE`, in one commit.
+
+    The table keeps its uuid, history and other branches; `main` gets the new table's
+    snapshot. A failed query or commit leaves the table unchanged, and deletes the
+    written files.
+    """
+    from pyiceberg.exceptions import (
+        CommitFailedException,
+        CommitStateUnknownException,
+    )
+
+    from polars.io.iceberg._replace import replace_changes
+    from polars.io.iceberg._sink import (
+        IcebergSinkState,
+        _create_table_schema,
+        _rejected,
+        _replace_table_transaction,
+        _ReplaceTable,
+        raise_replace_refused,
+    )
+    from polars.io.iceberg._utils import _cast_columns
+    from polars.schema import Schema
+
+    name = ddl["name"]
+    unchanged = (
+        f"table '{name}' was not replaced: catalog table "
+        f"'{_display_name(ddl['identifier'])}'"
+    )
+    # the query reads the table as loaded: a commit meanwhile fails the replace
+    lf = None if ddl["query"] is None else query_frame(ddl["query"], table)
+    schema, casts = _create_table_schema(
+        Schema(ddl["schema"]) if lf is None else lf.collect_schema(),
+        required=ddl["required"],
+        context="CREATE TABLE",
+        with_data=lf is not None,
+    )
+    updates, requirements = replace_changes(
+        table.metadata,
+        schema,
+        ddl["partition_by"],
+        ddl["properties"],
+        ddl["location"],
+        name,
+    )
+    replace = _ReplaceTable(table, updates, requirements)
+    if lf is None:
+        try:
+            try:
+                _replace_table_transaction(table, replace).commit_transaction()
+            except CommitFailedException as error:
+                raise_replace_refused(table, error)
+        except Exception as error:
+            if not _rejected(error):
+                msg = f"table '{name}' may have been replaced: catalog table "
+                error.add_note(f"{msg}'{_display_name(ddl['identifier'])}'")
+                raise
+            error.add_note(unchanged)
+            raise
+        return
+    if casts:
+        lf = _cast_columns(lf, casts)
+    state = IcebergSinkState.new_replace(replace, storage_options=storage_options)
+    try:
+        state.attach_sink(lf).collect()
+    except CommitStateUnknownException as error:
+        location, _ = state.written_files_dir()
+        error.add_note(
+            f"the replace may have landed; data files kept under '{location}'"
+        )
+        raise
+    except Exception as error:
+        if (remaining := state.remove_written_files()) is not None:
+            error.add_note(f"data files may remain under '{remaining}'")
+        error.add_note(unchanged)
+        raise
 
 
 def _create_partition_spec(
