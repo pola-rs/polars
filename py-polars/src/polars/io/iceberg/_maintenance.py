@@ -834,8 +834,6 @@ def rewrite_data_files(
                 state.storage_file_io(),
                 [file[0] for files, _ in written for file in files],
             )
-            if remaining := state.remove_written_files():
-                error.add_note(f"data files may remain under '{remaining}'")
             raise
     return counts
 
@@ -866,7 +864,13 @@ def _write_group(
         table, storage_options=storage_options, replace_files=hand_back
     )
     state.sink_uuid_str = sink_uuid
-    state.attach_sink(_scan_iceberg_files(table, group, storage_options)).collect()
+    try:
+        state.attach_sink(_scan_iceberg_files(table, group, storage_options)).collect()
+    except Exception as error:
+        # its files are in its own directory, which the caller does not know
+        if (remaining := state.remove_written_files()) is not None:
+            error.add_note(f"data files may remain under '{remaining}'")
+        raise
     assert hand_back.files is not None
     # a group whose rows were all deleted leaves no file
     if empty := [path for path, rows, *_ in hand_back.files if rows == 0]:

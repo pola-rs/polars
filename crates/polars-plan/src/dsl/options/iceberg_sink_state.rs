@@ -52,6 +52,9 @@ pub struct IcebergSinkState {
     pub commit_result_df: Option<PythonObject>, // NoPickleOption[pl.DataFrame]
 
     #[cfg(feature = "python")]
+    pub write_dirs: Option<PythonObject>, // _WriteDirs: the directories cleanup may remove
+
+    #[cfg(feature = "python")]
     pub replace_files: Option<PythonObject>, // _ReplaceFiles: the data files a commit replaces
 }
 

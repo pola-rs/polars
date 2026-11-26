@@ -86,6 +86,7 @@ from polars.io.iceberg._sink import (
     _SINK_UUID_PROPERTY,
     IcebergSinkState,
     PlIcebergPathProviderConfig,
+    _HandBack,
 )
 from polars.io.iceberg._utils import (
     _convert_predicate,
@@ -3938,6 +3939,165 @@ def test_sink_iceberg_commit_retries_after_concurrent_foreign_write(
 
     assert calls.call_count == 2
     assert _rows(tbl) == [7, 42]
+
+
+def _expire_first_snapshot(tbl: pyiceberg.table.Table) -> None:
+    # a later snapshot still reads its files
+    tbl.refresh()
+    first = tbl.metadata.snapshots[0].snapshot_id
+    tbl.maintenance.expire_snapshots().by_id(first).commit()
+
+
+# the conftest check resolves the sink once more after a collect
+@pytest.mark.may_fail_lazy_schema
+@pytest.mark.parametrize("failure", ["commit", "before-resolve", "none"])
+@pytest.mark.write_disk
+def test_sink_iceberg_failed_run_keeps_files_of_landed_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state = IcebergSinkState.new(tbl, mode="append", schema_mode="merge")
+    state.attach_sink(pl.LazyFrame({"a": [1]})).collect()
+    pl.LazyFrame({"a": [2]}).sink_iceberg(tbl, mode="append")
+    _expire_first_snapshot(tbl)
+    files = set(tmp_path.rglob("*.parquet"))
+
+    # the sink runs again (another state of it) and fails, or the landed one cleans up
+    def fail(*args: Any, **kwargs: Any) -> None:
+        msg = "commit failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(IcebergSinkState, "_commit", fail)
+    run = IcebergSinkState.new(tbl, mode="append", schema_mode="merge")
+    run.sink_uuid_str = state.sink_uuid_str
+    if failure == "commit":
+        with pytest.raises(RuntimeError, match="commit failed"):
+            run.attach_sink(pl.LazyFrame({"a": [1]})).collect()
+    elif failure == "before-resolve":
+        with pytest.raises(pl.exceptions.ColumnNotFoundError):
+            run.attach_sink(pl.LazyFrame({"a": [1]}).select(pl.col("missing")))
+    else:
+        run = state
+    monkeypatch.undo()
+    run.remove_written_files()
+
+    assert _rows(tbl) == [1, 2]
+    # the failed run's own files are gone
+    assert set(tmp_path.rglob("*.parquet")) == files
+
+
+# the conftest check resolves the sink once more after a collect
+@pytest.mark.may_fail_lazy_schema
+@pytest.mark.parametrize("committer", ["unknown-outcome", "serialized-copy"])
+@pytest.mark.write_disk
+def test_sink_iceberg_cleanup_gives_up_files_that_may_have_landed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, committer: str
+) -> None:
+    from pyiceberg.exceptions import CommitStateUnknownException
+
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    if committer == "unknown-outcome":
+        # the commit lands, and its outcome is not known
+        commit = IcebergSinkState._commit
+
+        def land_unknown(self: IcebergSinkState, *args: Any, **kwargs: Any) -> None:
+            commit(self, *args, **kwargs)
+            msg = "response lost"
+            raise CommitStateUnknownException(msg)
+
+        monkeypatch.setattr(IcebergSinkState, "_commit", land_unknown)
+        with pytest.raises(CommitStateUnknownException):
+            state.commit(sinked_files)
+        monkeypatch.undo()
+    else:
+        # committed by a copy, as on another worker
+        _twin(state).commit(sinked_files)
+    pl.LazyFrame({"a": [2]}).sink_iceberg(tbl, mode="append")
+    _expire_first_snapshot(tbl)
+    files = set(tmp_path.rglob("*.parquet"))
+
+    state.remove_written_files()
+
+    assert set(tmp_path.rglob("*.parquet")) == files
+    assert _rows(tbl) == [2, 42]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_state_attached_once(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state = IcebergSinkState.new(tbl, mode="append")
+    state.attach_sink(pl.LazyFrame({"a": [1]}))
+    with pytest.raises(RuntimeError, match="attached only once"):
+        state.attach_sink(pl.LazyFrame({"a": [2]}))
+
+
+@pytest.mark.parametrize("writer", ["overwrite", "compaction"])
+@pytest.mark.write_disk
+def test_sink_iceberg_failed_nested_write_removes_its_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, writer: str
+) -> None:
+    from polars.io.iceberg._maintenance import rewrite_data_files
+
+    tbl, _ = _one_file_table(tmp_path)
+    pl.LazyFrame({"k": [4], "v": ["d"]}).sink_iceberg(tbl, mode="append")
+    files = set(tmp_path.rglob("*.parquet"))
+    commit = IcebergSinkState._commit
+
+    def fail_nested(self: IcebergSinkState, *args: Any, **kwargs: Any) -> None:
+        # the nested writer's files are written, then its write fails
+        nested = isinstance(self.replace_files, _HandBack)
+        if nested:
+            msg = "nested write failed"
+            raise RuntimeError(msg)
+        commit(self, *args, **kwargs)
+
+    def write() -> None:
+        if writer == "overwrite":
+            pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(
+                tbl, mode="overwrite", overwrite_filter=pl.col("k") == 1
+            )
+        else:
+            tbl.refresh()
+            rewrite_data_files(
+                tbl,
+                options={"rewrite-all": "true"},
+                row_filter=None,
+                storage_options=None,
+            )
+
+    monkeypatch.setattr(IcebergSinkState, "_commit", fail_nested)
+    with pytest.raises(RuntimeError, match="nested write failed"):
+        write()
+
+    # only the overwrite's own file is left; none of a compaction
+    left = set(tmp_path.rglob("*.parquet")) - files
+    assert len(left) == (1 if writer == "overwrite" else 0)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_cleanup_without_run_directory_deletes_nothing(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state = IcebergSinkState.new(tbl, mode="append")
+    state.attach_sink(pl.LazyFrame({"a": [1]})).collect()
+    pl.LazyFrame({"a": [2]}).sink_iceberg(tbl, mode="append")
+    _expire_first_snapshot(tbl)
+
+    # a copy (as on another worker) does not know which run's files are its own
+    copy: IcebergSinkState = pickle.loads(pickle.dumps(state))
+    assert copy.remove_written_files() is not None
+
+    assert _rows(tbl) == [1, 2]
 
 
 @pytest.mark.write_disk

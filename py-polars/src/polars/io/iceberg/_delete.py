@@ -420,7 +420,12 @@ def _write_rows(
             )
         raise
     except Exception as error:
-        if state is not None and (remaining := state.remove_written_files()):
+        # without rows, nothing was written
+        if (
+            state is not None
+            and lf is not None
+            and (remaining := state.remove_written_files())
+        ):
             error.add_note(f"data files may remain under '{remaining}'")
         raise
 
