@@ -34,7 +34,8 @@ COPY ... TO STDOUT (FORMAT <name>) writes its rows to standard output in the
 format it names, not in that of --format. With a binary format, such as
 parquet, it must be the last statement and the only one that returns rows.
 
-Standard output holds only the rows of queries, in every format. Statements
+Standard output holds only the results of queries, in every format, and a
+preview's note on what it left out. Statements
 that change the session or write a file, such as CREATE TABLE and COPY ... TO a
 file, print nothing when they succeed.
 

@@ -394,7 +394,7 @@ mod tests {
         mut result: impl FnMut(&str) -> PolarsResult<DataFrame>,
     ) -> (u8, String, String) {
         let script = Script::new(sql.to_string());
-        captured(Format::Table, |printer| {
+        captured(Format::default(), |printer| {
             run_statements(&script, printer, |sql| {
                 Ok(Planned::Result(result(sql)?.lazy()))
             })
@@ -427,12 +427,16 @@ mod tests {
         let (_, out, _) = run_captured(sql);
         assert!(out.contains("20000"), "{out}");
 
-        // A later row's error goes unseen in a preview, not in the whole result.
+        // The count stops at its limit.
+        let (_, out, _) = run_captured("SELECT n FROM generate_series(1, 20000) AS t (n)");
+        assert!(
+            out.starts_with("shape: (>10_000, 1) [stopped early for preview]\n"),
+            "{out}"
+        );
+
+        // The whole result has a later row's error.
         let sql = "SELECT CAST(CASE WHEN n > 15000 THEN 'x' ELSE '1' END AS INT) AS v \
                    FROM generate_series(1, 20000) AS t (n)";
-        let (code, out, _) = run_captured(sql);
-        assert_eq!(code, exit_code::OK);
-        assert!(out.starts_with("shape: (>10_000, 1)\n"), "{out}");
         assert_eq!(run_formatted(sql, Format::Csv).0, exit_code::FAILURE);
         // Only the last statement stops early: an earlier one's error stops the script.
         assert_eq!(
@@ -510,7 +514,7 @@ mod tests {
 
     #[test]
     fn a_description_is_printed_in_full() {
-        // More rows and longer values than a table shows.
+        // More rows and longer values than a preview shows.
         let names: Vec<String> = (1..=12).map(|n| format!("column_{n}")).collect();
         let dtype = "STRUCT<street VARCHAR, city VARCHAR, zip VARCHAR>";
         let schema = df!("column_name" => &names, "column_type" => vec![dtype; 12]).unwrap();

@@ -20,12 +20,13 @@ use crate::script::StatementKind;
 pub enum Format {
     /// A table of the first 10 rows and 8 columns, with the number of rows. The last statement
     /// of a script runs only as far as the preview needs, counting up to 10,000 rows, so it can
-    /// hide an error in a later row; earlier statements run in full. The result of DESCRIBE or
-    /// EXPLAIN is printed in full, as plain text
+    /// hide an error in a later row, and a preview says when it stopped early; earlier statements
+    /// run in full. The result of DESCRIBE or EXPLAIN is printed in full, as plain text
     #[default]
     Preview,
-    /// A table of every row and column, with numbers in full and other values of up to 10,000
-    /// characters; the whole result is held in memory
+    /// A table of every row and column, with values of up to 10,000 characters; the whole result
+    /// is held in memory, so a large one is slow. The result of DESCRIBE or EXPLAIN is printed in
+    /// full, as plain text
     Table,
     /// Every row, with a header line
     Csv,
@@ -297,7 +298,11 @@ impl<O: Write, E: Write> Printer<O, E> {
                         let counted_to = self.preview_limit().map(|_| PREVIEW_COUNT_LIMIT);
                         write_preview(&mut self.out, &shown, rows, counted_to)?
                     },
-                    Some(ResultWriter::Table { shown, .. }) => writeln!(self.out, "{shown}")?,
+                    Some(ResultWriter::Table { mut shown, .. }) => {
+                        // Polars finds a row of a table by walking its chunks.
+                        shown.rechunk_mut_par();
+                        writeln!(self.out, "{shown}")?
+                    },
                     Some(ResultWriter::ArrowStream(mut writer)) => writer.finish()?,
                     None => {},
                 }
@@ -473,8 +478,8 @@ fn excerpt(line: &str, at: usize, width: usize) -> (String, usize, usize) {
 }
 
 /// Writes `shown`, the first rows of a result of `rows` rows, under a shape line with the
-/// result's size; a count that stopped at `counted_to` is a lower bound. When rows or columns
-/// are cut, a line under the table says so.
+/// result's size; a count that stopped at `counted_to` is a lower bound, and both lines say the
+/// query stopped early. When rows or columns are cut, a line under the table says so.
 fn write_preview(
     out: &mut impl Write,
     shown: &DataFrame,
@@ -488,19 +493,21 @@ fn write_preview(
         return writeln!(out, "{shown}");
     }
 
-    let note = match cut_rows {
+    let stopped = counted_to.filter(|&limit| rows > limit);
+    match cut_rows {
         // Polars' shape line gives the size.
-        false => {
-            writeln!(out, "{shown}")?;
-            format!("Preview showing {columns} columns")
-        },
+        false => writeln!(out, "{shown}")?,
         // Polars' shape line would give only what is shown.
         true => {
-            let size = match counted_to {
-                Some(limit) if rows > limit => format!(">{}", grouped(limit)),
-                _ => grouped(rows),
-            };
-            writeln!(out, "shape: ({size}, {})", grouped(shown.width()))?;
+            let width = grouped(shown.width());
+            match stopped {
+                Some(limit) => writeln!(
+                    out,
+                    "shape: (>{}, {width}) [stopped early for preview]",
+                    grouped(limit)
+                )?,
+                None => writeln!(out, "shape: ({}, {width})", grouped(rows))?,
+            }
             let table = shown.to_string();
             let mut lines: Vec<&str> = table
                 .lines()
@@ -513,19 +520,29 @@ fn write_preview(
             for line in lines {
                 writeln!(out, "{line}")?;
             }
-            match cut_columns {
-                true => format!(
-                    "Preview showing the first {} rows and {columns} columns",
-                    shown.height()
-                ),
-                false => format!("Preview showing the first {} rows", shown.height()),
-            }
         },
-    };
-    writeln!(
-        out,
-        "{note}. See --help for formats that show the whole result."
-    )
+    }
+
+    let prose = |n: usize| grouped(n).replace('_', ",");
+    let mut parts = Vec::new();
+    if cut_rows {
+        let total = match stopped {
+            Some(limit) => format!("over {}", prose(limit)),
+            None => prose(rows),
+        };
+        parts.push(format!("{} of {total} rows", shown.height()));
+    }
+    if cut_columns {
+        parts.push(format!("{columns} of {} columns", prose(shown.width())));
+    }
+    let mut note = format!("Preview showing {}", parts.join(" and "));
+    if let Some(limit) = stopped {
+        note += &format!(
+            ", stopped after {} rows to save time, so not final",
+            prose(limit)
+        );
+    }
+    writeln!(out, "{note}. For full results, see --help for formats.")
 }
 
 /// `n` with its digits in groups of three, as Polars writes a shape.
@@ -598,9 +615,6 @@ pub unsafe fn set_table_display(format: Format) {
     for (name, value) in settings {
         // SAFETY: the caller guarantees that nothing else uses the environment.
         unsafe { std::env::set_var(name, value) };
-    }
-    if format == Format::Table {
-        polars_core::fmt::set_float_fmt(polars_core::fmt::FloatFmt::Full);
     }
 }
 

@@ -3156,7 +3156,6 @@ dependencies = [
  "libc",
  "polars",
  "polars-arrow",
- "polars-core",
  "polars-ooc",
  "recursive",
  "signal-hook",

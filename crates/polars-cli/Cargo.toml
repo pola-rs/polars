@@ -19,7 +19,6 @@ test = false
 
 [dependencies]
 polars-arrow = { workspace = true, features = ["io_ipc"] }
-polars-core = { workspace = true }
 polars-ooc = { workspace = true, features = ["fast_alloc"] }
 
 clap = { workspace = true, features = ["env"] }
