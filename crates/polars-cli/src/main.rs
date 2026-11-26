@@ -11,11 +11,32 @@ use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run};
 #[global_allocator]
 static ALLOC: polars_ooc::Allocator = polars_ooc::Allocator;
 
-// The Python package's jemalloc settings (py-polars/src/polars/__init__.py). jemalloc reads this
-// C string (`const char *malloc_conf`) at its first allocation; `_RJEM_MALLOC_CONF` overrides it.
+// The Python package's jemalloc settings (py-polars/src/polars/__init__.py). jemalloc reads this C
+// string (`const char *malloc_conf`) when it starts, before `main`; `_RJEM_MALLOC_CONF` overrides
+// any of its options.
 #[cfg(all(target_family = "unix", not(target_os = "emscripten")))]
 #[unsafe(export_name = "_rjem_malloc_conf")]
-static MALLOC_CONF: &u8 = &b"dirty_decay_ms:500,muzzy_decay_ms:1000\0"[0];
+static mut MALLOC_CONF: *const std::ffi::c_char =
+    c"dirty_decay_ms:500,muzzy_decay_ms:1000".as_ptr();
+
+// `POLARS_THP=1` adds transparent huge pages, which jemalloc supports only on Linux. An
+// `.init_array` entry with a priority runs before jemalloc's own, which has none.
+#[cfg(target_os = "linux")]
+#[used]
+#[unsafe(link_section = ".init_array.00100")]
+static WITH_THP: extern "C" fn() = with_thp;
+
+#[cfg(target_os = "linux")]
+extern "C" fn with_thp() {
+    // SAFETY: only jemalloc reads MALLOC_CONF, and it does so later in start-up.
+    unsafe {
+        let thp = libc::getenv(c"POLARS_THP".as_ptr());
+        if !thp.is_null() && std::ffi::CStr::from_ptr(thp) == c"1" {
+            MALLOC_CONF =
+                c"dirty_decay_ms:500,muzzy_decay_ms:1000,thp:always,metadata_thp:always".as_ptr();
+        }
+    }
+}
 
 fn main() -> ExitCode {
     // Debug frames are large, as in the Python package.
