@@ -543,26 +543,28 @@ fn lower_exprs_with_ctx(
 
                 assert_eq!(inner_exprs.len(), 1);
 
-                let input_schema = input.output_schema(ctx.phys_sm);
-
                 let key_name = unique_column_name();
                 let tmp_count_name = unique_column_name();
 
-                let input_expr = &inner_exprs[0];
-                let output_dtype = input_expr.dtype(input_schema, ctx.expr_arena)?.clone();
-                let group_by_output_schema = Arc::new(Schema::from_iter([
-                    (key_name.clone(), output_dtype),
-                    (tmp_count_name.clone(), IDX_DTYPE),
-                ]));
+                let stream = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(key_name.clone())],
+                    ctx,
+                )?;
 
-                let keys = [input_expr.with_alias(key_name)];
+                let mut group_by_output_schema = stream.output_schema(ctx.phys_sm).as_ref().clone();
+                group_by_output_schema.insert(tmp_count_name.clone(), IDX_DTYPE);
+                let group_by_output_schema = Arc::new(group_by_output_schema);
+
+                let keys =
+                    [AExprBuilder::col(key_name.clone(), ctx.expr_arena).expr_ir(key_name)];
                 let aggs = [ExprIR::new(
                     ctx.expr_arena.add(AExpr::Len),
                     OutputName::Alias(tmp_count_name.clone()),
                 )];
 
                 let stream = build_group_by_stream(
-                    input,
+                    stream,
                     &keys,
                     &aggs,
                     group_by_output_schema,
@@ -622,14 +624,21 @@ fn lower_exprs_with_ctx(
                     Field::new(tmp_count_name.clone(), IDX_DTYPE),
                 ]));
 
-                let keys = [input_expr.with_alias(tmp_value_name.clone())];
+                let stream = build_select_stream_with_ctx(
+                    input,
+                    &[input_expr.with_alias(tmp_value_name.clone())],
+                    ctx,
+                )?;
+
+                let keys = [AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena)
+                    .expr_ir(tmp_value_name.clone())];
                 let aggs = [ExprIR::new(
                     ctx.expr_arena.add(AExpr::Len),
                     OutputName::Alias(tmp_count_name.clone()),
                 )];
 
                 let stream = build_group_by_stream(
-                    input,
+                    stream,
                     &keys,
                     &aggs,
                     group_by_output_schema,
@@ -2511,8 +2520,15 @@ fn lower_exprs_with_ctx(
         }
     }
 
-    if !fallback_subset.is_empty() {
-        let fallback_node = build_fallback_node_with_ctx(input, &fallback_subset, ctx)?;
+    let (independent_fallback, dependent_fallback): (Vec<_>, Vec<_>) = fallback_subset
+        .into_iter()
+        .partition(|e| ctx.expr_props.is_input_independent(e.node(), ctx.expr_arena));
+    if !independent_fallback.is_empty() {
+        let node = build_input_independent_node_with_ctx(&independent_fallback, ctx)?;
+        input_streams.insert(PhysStream::first(node));
+    }
+    if !dependent_fallback.is_empty() {
+        let fallback_node = build_fallback_node_with_ctx(input, &dependent_fallback, ctx)?;
         input_streams.insert(PhysStream::first(fallback_node));
     }
 

@@ -116,3 +116,12 @@ def test_value_counts_duplicate_name() -> None:
 
 def test_count() -> None:
     assert pl.Series([None, 1, None, 2, 3]).count() == 3
+
+
+def test_value_counts_literal_without_input_columns() -> None:
+    q = pl.LazyFrame().select(pl.lit(pl.Series("a", [1, 1, 2])).value_counts(sort=True))
+    expected = pl.DataFrame(
+        {"a": [1, 2], "count": [2, 1]},
+        schema_overrides={"count": pl.get_index_type()},
+    )
+    assert_frame_equal(q.collect().unnest("a"), expected)

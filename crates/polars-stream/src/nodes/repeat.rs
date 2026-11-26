@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::schema::Schema;
+use polars_error::polars_err;
 
 use super::compute_node_prelude::*;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
@@ -58,7 +59,9 @@ impl ComputeNode for RepeatNode {
             if let Self::GatheringParams { value, repeats } = self {
                 let repeats = repeats.get_output()?.unwrap();
                 let repeats_item = repeats.columns()[0].get(0)?;
-                let repeats_left = repeats_item.extract::<usize>().unwrap();
+                let repeats_left = repeats_item.extract::<usize>().ok_or_else(|| {
+                    polars_err!(ComputeError: "could not parse value '{}' as a size.", repeats_item)
+                })?;
 
                 let value = value.get_output()?.unwrap();
                 let seq = MorselSeq::default();

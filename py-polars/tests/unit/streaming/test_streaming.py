@@ -555,3 +555,14 @@ def test_streaming_with_row_index_then_projection(
     assert_frame_equal(
         build(lf).collect(engine="streaming"), build(lf).collect(engine="in-memory")
     )
+
+
+def test_streaming_input_independent_fallback_skips_input() -> None:
+    lf = pl.LazyFrame({"a": range(10)})
+    s = pl.Series("s", range(5))
+    for q in [lf.select(pl.lit(s).median()), lf.with_columns(m=pl.lit(s).median())]:
+        plan = q.show_graph(raw_output=True, plan_stage="physical", engine="streaming")
+        assert "in-memory-map" not in plan
+    assert_frame_equal(
+        lf.select(pl.lit(s).median()).collect(), pl.DataFrame({"s": [2.0]})
+    )

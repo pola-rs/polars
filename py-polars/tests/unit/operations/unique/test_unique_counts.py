@@ -79,3 +79,11 @@ def test_unique_counts_parametric(s: pl.Series) -> None:
     )
 
     assert_series_equal(result, expected, check_names=False)
+
+
+def test_unique_counts_literal_with_longer_input() -> None:
+    q = pl.LazyFrame({"x": range(10)}).select(
+        pl.lit(pl.Series("a", [1, 1, 2])).unique_counts()
+    )
+    expected = pl.Series("a", [2, 1], dtype=pl.get_index_type())
+    assert_series_equal(q.collect().to_series(), expected)
