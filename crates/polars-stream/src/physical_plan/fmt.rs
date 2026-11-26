@@ -875,15 +875,14 @@ fn visualize_plan_rec(
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
-            args,
             options,
         } => {
-            let (left_on, right_on) = options.key_vecs();
+            let (left_on, right_on) = options.join_type.key_vecs();
             let label = fmt_join_label(
                 "in-memory-join",
                 &fmt_exprs_to_label(&left_on, expr_arena, FormatExprStyle::NoAliases),
                 &fmt_exprs_to_label(&right_on, expr_arena, FormatExprStyle::NoAliases),
-                args,
+                &options.to_join_args(),
             );
             (label, &[*input_left, *input_right][..])
         },

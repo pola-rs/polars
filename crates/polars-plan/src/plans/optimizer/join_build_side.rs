@@ -37,7 +37,7 @@ pub(super) fn set_join_build_sides(
         else {
             continue;
         };
-        if options.args.how.is_semi_anti() {
+        if options.join_type.how().is_semi_anti() {
             if options.args.build_side.is_none() {
                 set_estimated_rows(node, ir_arena, expr_arena, &mut stats);
             }
@@ -45,7 +45,7 @@ pub(super) fn set_join_build_sides(
         }
         if options.args.build_side.is_some()
             || options.args.maintain_order != MaintainOrderJoin::None
-            || !(options.args.how.is_equi() || options.args.how.is_cross())
+            || !(options.join_type.how().is_equi() || options.join_type.how().is_cross())
         {
             continue;
         }
@@ -54,7 +54,7 @@ pub(super) fn set_join_build_sides(
         // cross joins don't so, plan time estimates
         // are all we have. TODO!: change this if that
         // assumption changes.
-        let may_estimate = options.args.how.is_cross();
+        let may_estimate = options.join_type.how().is_cross();
         match build_side(left, right, may_estimate, ir_arena, expr_arena, &mut stats) {
             Some(side) => {
                 let IR::Join { options, .. } = ir_arena.get_mut(node) else {

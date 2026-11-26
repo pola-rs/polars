@@ -24,7 +24,7 @@ use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
     constant_evaluate, into_column,
 };
-use crate::prelude::{JoinType, MaintainOrderJoin};
+use crate::prelude::{JoinHow, MaintainOrderJoin};
 
 /// Container for sortedness state at each stage in an IR plan.
 #[derive(Debug)]
@@ -496,11 +496,11 @@ fn is_sorted_rec(
             let keeps_right_order = matches!(args.maintain_order, MO::Right | MO::RightLeft);
             // The output rows follow the rows of one side, each one kept zero or more times
             // in a row, so the sorted columns of that side stay sorted.
-            match &args.how {
-                JoinType::Inner | JoinType::Left if keeps_left_order => rec!(*input_left),
+            match options.join_type.how() {
+                JoinHow::Inner | JoinHow::Left if keeps_left_order => rec!(*input_left),
                 #[cfg(feature = "semi_anti_join")]
-                JoinType::Semi | JoinType::Anti if keeps_left_order => rec!(*input_left),
-                JoinType::Inner | JoinType::Right if keeps_right_order => {
+                JoinHow::Semi | JoinHow::Anti if keeps_left_order => rec!(*input_left),
+                JoinHow::Inner | JoinHow::Right if keeps_right_order => {
                     let (input_left, input_right) = (*input_left, *input_right);
                     let right_sorted = rec!(input_right)?;
                     let left_schema = ir_arena.get(input_left).schema(ir_arena);

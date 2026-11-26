@@ -190,7 +190,11 @@ pub(super) fn expand_datasets_early(
     for (node, ir) in ir_arena.iter(root) {
         match ir {
             IR::Join { options, .. } => {
-                for e in options.options.left_on().chain(options.options.right_on()) {
+                for e in options
+                    .join_type
+                    .left_on()
+                    .chain(options.join_type.right_on())
+                {
                     key_and_filter_names
                         .extend(aexpr_to_leaf_names_iter(e.node(), expr_arena).cloned());
                 }

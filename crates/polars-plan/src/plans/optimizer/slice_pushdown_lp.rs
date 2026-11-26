@@ -456,8 +456,8 @@ impl SlicePushDown {
                     mut options,
                 },
                 Some(state),
-            ) if !matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. })
-                && !options.options.has_fused_predicate() =>
+            ) if !matches!(options.join_type, JoinTypeIR::CrossAndFilter { .. })
+                && !options.join_type.has_fused_predicate() =>
             {
                 if let Some(existing_slice) = &mut Arc::make_mut(&mut options).args.slice {
                     return if let Some(combined) = existing_slice.reslice(state) {
@@ -485,12 +485,12 @@ impl SlicePushDown {
 
                 let order = options.args.maintain_order;
                 let non_negative_offset = state.is_positive();
-                let can_limit_left = match options.args.how {
-                    JoinType::Left => !matches!(
+                let can_limit_left = match options.join_type.how() {
+                    JoinHow::Left => !matches!(
                         order,
                         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
                     ),
-                    JoinType::Full => {
+                    JoinHow::Full => {
                         non_negative_offset
                             && matches!(
                                 order,
@@ -499,12 +499,12 @@ impl SlicePushDown {
                     },
                     _ => false,
                 };
-                let can_limit_right = match options.args.how {
-                    JoinType::Right => !matches!(
+                let can_limit_right = match options.join_type.how() {
+                    JoinHow::Right => !matches!(
                         order,
                         MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
                     ),
-                    JoinType::Full => {
+                    JoinHow::Full => {
                         non_negative_offset
                             && matches!(
                                 order,

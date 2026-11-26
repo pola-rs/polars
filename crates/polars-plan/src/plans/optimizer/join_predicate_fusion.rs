@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::prelude::Schema;
-use polars_defs::join::JoinArgs;
 use polars_utils::aliases::{PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
@@ -13,9 +12,9 @@ use super::join_utils::ExprOrigin;
 use super::predicate_pushdown::utils::{combine_by_and, contains_dynamic_pred};
 use crate::dsl::Operator;
 use crate::plans::iterator::ArenaExprIter;
-use crate::plans::options::JoinTypeOptionsIR;
+use crate::plans::options::{EquiJoinType, JoinTypeIR};
 use crate::plans::{
-    AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, JoinType, MintermIter, OutputName,
+    AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, MintermIter, OutputName,
     is_row_separable_rec,
 };
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
@@ -44,11 +43,15 @@ pub(super) fn fuse_predicates(
 /// A fused predicate is only sound on an inner equi join, and a slice must stay above the filter
 /// that feeds it.
 fn is_fusable_join(options: &JoinOptionsIR) -> bool {
-    matches!(options.args.how, JoinType::Inner)
-        && options.args.slice.is_none()
+    options.args.slice.is_none()
         && matches!(
-            &options.options,
-            JoinTypeOptionsIR::Equi { on, fused_predicate: None } if !on.is_empty()
+            &options.join_type,
+            JoinTypeIR::Equi {
+                how: EquiJoinType::Inner,
+                on,
+                fused_predicate: None,
+                ..
+            } if !on.is_empty()
         )
 }
 
@@ -103,12 +106,12 @@ fn try_fuse(
     let right_names = right_output_to_input(&left_schema, &right_schema, &options, expr_arena)?;
 
     let mut left_key_names: PlIndexSet<PlSmallStr> = options
-        .options
+        .join_type
         .left_on()
         .map(|key| key.output_name().clone())
         .collect();
     let mut right_key_names: PlIndexSet<PlSmallStr> = options
-        .options
+        .join_type
         .right_on()
         .map(|key| key.output_name().clone())
         .collect();
@@ -139,12 +142,12 @@ fn try_fuse(
             expr_arena,
             &left_schema,
             &right_schema,
-            &options.args,
+            &options,
             &right_names,
         )? {
             promoted.push(name_key_pair(
                 pair,
-                &options.args,
+                &options,
                 &left_schema,
                 &right_schema,
                 &mut left_key_names,
@@ -169,11 +172,11 @@ fn try_fuse(
 
     let options_mut = Arc::make_mut(&mut options);
     for (left, right) in promoted {
-        options_mut.options.push_key_pair(left, right);
+        options_mut.join_type.push_key_pair(left, right);
     }
     if let Some(fused) = fused {
         options_mut
-            .options
+            .join_type
             .set_fused_predicate(ExprIR::from_node(fused, expr_arena));
     }
     let join = IR::Join {
@@ -223,11 +226,11 @@ fn as_key_pair(
     expr_arena: &mut Arena<AExpr>,
     left_schema: &Schema,
     right_schema: &Schema,
-    args: &JoinArgs,
+    options: &JoinOptionsIR,
     right_names: &PlIndexMap<PlSmallStr, PlSmallStr>,
 ) -> PolarsResult<Option<(ExprIR, ExprIR)>> {
     // Validation counts the rows per key, which a promoted equality would change.
-    if args.validation.needs_checks() {
+    if options.join_type.validation().needs_checks() {
         return Ok(None);
     }
 
@@ -243,11 +246,11 @@ fn as_key_pair(
         Operator::EqValidity => true,
         _ => return Ok(None),
     };
-    if matches_nulls != args.nulls_equal {
+    if matches_nulls != options.join_type.nulls_equal() {
         return Ok(None);
     }
 
-    let suffix = args.suffix();
+    let suffix = options.args.suffix();
     let left_origin =
         ExprOrigin::get_expr_origin(left, expr_arena, left_schema, right_schema, suffix, None)?;
     let right_origin =
@@ -289,7 +292,7 @@ fn as_key_pair(
 /// The taken sets grow as pairs are named, so two promotions cannot land on one name.
 fn name_key_pair(
     (mut left_key, mut right_key): (ExprIR, ExprIR),
-    args: &JoinArgs,
+    options: &JoinOptionsIR,
     left_schema: &Schema,
     right_schema: &Schema,
     left_key_names: &mut PlIndexSet<PlSmallStr>,
@@ -303,7 +306,7 @@ fn name_key_pair(
 
     // Coalescing drops the right payload column that shares a name with a right key.
     let right_name = right_key.output_name().clone();
-    if args.should_coalesce() || !right_key_names.insert(right_name.clone()) {
+    if options.should_coalesce() || !right_key_names.insert(right_name.clone()) {
         let name = unique_key_name(&right_name, right_key_names, right_schema);
         right_key = ExprIR::new(right_key.node(), OutputName::Alias(name.clone()));
         right_key_names.insert(name);
@@ -330,8 +333,8 @@ fn right_output_to_input(
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<PlIndexMap<PlSmallStr, PlSmallStr>> {
     let mut coalesced: PlIndexSet<PlSmallStr> = PlIndexSet::default();
-    if options.args.should_coalesce() {
-        for key in options.options.right_on() {
+    if options.should_coalesce() {
+        for key in options.join_type.right_on() {
             coalesced.insert(key.field(right_schema, expr_arena)?.name);
         }
     }

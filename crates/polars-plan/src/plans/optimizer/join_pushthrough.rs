@@ -30,14 +30,12 @@ use crate::plans::schema::det_join_schema;
 #[cfg(feature = "semi_anti_join")]
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::{SharedKeyColumns, StatsCache, node_stats_with_cache};
-use crate::plans::{
-    AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, JoinTypeOptionsIR, MintermIter,
-};
+use crate::plans::{AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, JoinTypeIR, MintermIter};
 #[cfg(feature = "semi_anti_join")]
 use crate::plans::{
     IRBooleanFunction, IRFunctionExpr, LiteralValue, OutputName, ProjectionOptions,
 };
-use crate::prelude::JoinType;
+use crate::prelude::{EquiJoinType, JoinHow};
 use crate::utils::check_input_node;
 
 /// Rewrite throughout the plan, returning the new root.
@@ -108,12 +106,12 @@ fn rewrite(
 
 /// A left/semi/anti join an inner join may move below.
 fn preserving_outer(options: &JoinOptionsIR) -> bool {
-    let how = &options.args.how;
-    (matches!(how, JoinType::Left) || how.is_semi_anti())
+    let how = options.join_type.how();
+    (matches!(how, JoinHow::Left) || how.is_semi_anti())
         // An inner join below reorders the preserved side, and `1:m` would check
         // `A ⋈ C` for uniqueness instead of `A`.
-        && unconstrained(&options.args)
-        && matches!(&options.options, JoinTypeOptionsIR::Equi { fused_predicate: None, .. })
+        && unconstrained(options)
+        && matches!(&options.join_type, JoinTypeIR::Equi { fused_predicate: None, .. })
 }
 
 /// Elementwise and infallible: the rows an expression sees change, so one that
@@ -295,7 +293,7 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
     let (a, b) = (*a, *b);
     // The outer join's own keys are evaluated on fewer rows too.
     if !outer_options
-        .options
+        .join_type
         .left_on()
         .all(|key| safe_key(key, expr_arena))
     {
@@ -309,7 +307,7 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
     // The preserved side's columns come first and are never suffixed, so a column
     // name found in `A` is `A`'s column. A key is then evaluated on `A`'s rows alone.
     let keys_from_a = inner_options
-        .options
+        .join_type
         .left_on()
         .all(|key| safe_key_column(key, expr_arena).is_some_and(|name| a_schema.contains(name)));
     if !keys_from_a {
@@ -318,11 +316,11 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
     // `C` is suffixed against `A ∪ B` before and against `A` after. A key that
     // coalescing folds away is never suffixed.
     let coalesced = |options: &JoinOptionsIR| -> Vec<PlSmallStr> {
-        if !options.args.should_coalesce() {
+        if !options.should_coalesce() {
             return Vec::new();
         }
         options
-            .options
+            .join_type
             .right_on()
             .map(|key| key.output_name().clone())
             .collect()
@@ -526,9 +524,15 @@ fn pushdown_semi_anti_with(
 /// the semi join comes from `A`, as the left join keeps each `A` row with its values.
 #[cfg(feature = "semi_anti_join")]
 fn plain_left_equi_join(options: &JoinOptionsIR) -> bool {
-    matches!(options.args.how, JoinType::Left)
-        && unconstrained(&options.args)
-        && matches!(&options.options, JoinTypeOptionsIR::Equi { on, .. } if !on.is_empty())
+    unconstrained(options)
+        && matches!(
+            &options.join_type,
+            JoinTypeIR::Equi {
+                how: EquiJoinType::Left,
+                on,
+                ..
+            } if !on.is_empty()
+        )
 }
 
 /// The parts of a `Semi(T(Inner(A, B)), S)` (or `Left` in place of `Inner`) that passed
@@ -566,14 +570,15 @@ fn pushdown_candidate(
     else {
         return None;
     };
-    let JoinTypeOptionsIR::Equi {
+    let JoinTypeIR::Equi {
         on,
         fused_predicate: None,
-    } = &options.options
+        ..
+    } = &options.join_type
     else {
         return None;
     };
-    if !options.args.how.is_semi_anti() || !unconstrained(&options.args) || on.is_empty() {
+    if !options.join_type.how().is_semi_anti() || !unconstrained(options) || on.is_empty() {
         return None;
     }
     let keys = on
@@ -623,7 +628,7 @@ fn pushdown_candidate(
     let (side, other, side_is_left, side_keys) = if keys.iter().all(|name| a_schema.contains(name))
     {
         (a, b, true, keys)
-    } else if matches!(inner_options.args.how, JoinType::Left) {
+    } else if matches!(inner_options.join_type.how(), JoinHow::Left) {
         return None;
     } else {
         let b_output_names = join_right_output_names(&a_schema, &b_schema, &inner_options).ok()?;
@@ -641,12 +646,12 @@ fn pushdown_candidate(
     // ones that can raise.
     let side_keys_safe = if side_is_left {
         inner_options
-            .options
+            .join_type
             .left_on()
             .all(|key| safe_key(key, expr_arena))
     } else {
         inner_options
-            .options
+            .join_type
             .right_on()
             .all(|key| safe_key(key, expr_arena))
     };
@@ -655,7 +660,7 @@ fn pushdown_candidate(
     }
 
     let mut side_options = (*options).clone();
-    if let JoinTypeOptionsIR::Equi { on, .. } = &mut side_options.options {
+    if let JoinTypeIR::Equi { on, .. } = &mut side_options.join_type {
         for ((left_key, _), name) in on.iter_mut().zip(side_keys) {
             if left_key.output_name() != &name {
                 let column = expr_arena.add(AExpr::Column(name.clone()));
@@ -734,7 +739,7 @@ fn pushdown_pays(
         return false;
     };
     let mut after = after.filtered;
-    if matches!(candidate.side_options.args.how, JoinType::Semi) {
+    if matches!(candidate.side_options.join_type.how(), JoinHow::Semi) {
         let side = node_stats_with_cache(candidate.side, ir_arena, expr_arena, stats);
         let semi_input = match candidate.chain.first() {
             Some(&top) => node_stats_with_cache(top, ir_arena, expr_arena, stats),
@@ -773,21 +778,19 @@ fn filter_to_anti(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<A
         return node;
     };
     let args = &options.args;
-    let JoinTypeOptionsIR::Equi {
+    let JoinTypeIR::Equi {
+        how: EquiJoinType::Left,
         on,
         fused_predicate: None,
-    } = &options.options
+        nulls_equal,
+        ..
+    } = &options.join_type
     else {
         return node;
     };
     // With coalescing the right key is gone; with `nulls_equal` a matched row can
     // carry a null key.
-    if !matches!(args.how, JoinType::Left)
-        || !unconstrained(args)
-        || args.nulls_equal
-        || args.should_coalesce()
-        || on.is_empty()
-    {
+    if !unconstrained(options) || *nulls_equal || options.should_coalesce() || on.is_empty() {
         return node;
     }
     let (a, b) = (*input_left, *input_right);
@@ -828,7 +831,10 @@ fn filter_to_anti(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<A
     }
 
     let mut anti_options = (**options).clone();
-    anti_options.args.how = JoinType::Anti;
+    let JoinTypeIR::Equi { how, .. } = &mut anti_options.join_type else {
+        unreachable!()
+    };
+    *how = EquiJoinType::Anti;
     let schema = schema.clone();
     let anti = ir_arena.add(IR::Join {
         input_left: a,

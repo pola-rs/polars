@@ -7,7 +7,6 @@ use polars_core::prelude::IdxSize;
 use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, IcebergSchema};
 #[cfg(feature = "asof_join")]
 use polars_defs::join::AsofStrategy;
-use polars_defs::join::JoinType;
 use polars_io::HiveOptions;
 use polars_io::cloud::CloudOptions;
 use polars_io::external_reader::ExternalReaderBuilder;
@@ -15,7 +14,7 @@ use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldVa
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
 use polars_plan::prelude::{
-    FileScanIR, FileWriteFormat, FunctionIR, JoinTypeOptionsIR, PythonPredicate, SinkTypeIR,
+    FileScanIR, FileWriteFormat, FunctionIR, JoinTypeIR, PythonPredicate, SinkTypeIR,
     UnifiedScanArgs,
 };
 use polars_utils::pl_str::PlSmallStr;
@@ -785,19 +784,21 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             Join {
                 input_left: input_left.0,
                 input_right: input_right.0,
-                left_on: options.options.left_on().map(|e| e.into()).collect(),
-                right_on: options.options.right_on().map(|e| e.into()).collect(),
-                predicate: match &options.options {
-                    JoinTypeOptionsIR::CrossAndFilter { predicate } => Some(predicate.into()),
-                    _ => options.options.fused_predicate().map(|e| e.into()),
+                left_on: options.join_type.left_on().map(|e| e.into()).collect(),
+                right_on: options.join_type.right_on().map(|e| e.into()).collect(),
+                predicate: match &options.join_type {
+                    JoinTypeIR::CrossAndFilter { predicate, .. } => Some(predicate.into()),
+                    _ => options.join_type.fused_predicate().map(|e| e.into()),
                 },
                 options: {
-                    let how = &options.args.how;
-                    let name = Into::<&str>::into(how).into_pyobject(py)?;
+                    let name = Into::<&str>::into(options.join_type.how()).into_pyobject(py)?;
                     (
-                        match how {
+                        match &options.join_type {
                             #[cfg(feature = "asof_join")]
-                            JoinType::AsOf(asof_options) => {
+                            JoinTypeIR::AsOf {
+                                options: asof_options,
+                                ..
+                            } => {
                                 let strategy = match asof_options.strategy {
                                     AsofStrategy::Backward => "backward",
                                     AsofStrategy::Forward => "forward",
@@ -824,48 +825,30 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                                 )
                                     .into_py_any(py)?
                             },
+                            // An outer join names its type here, an inner one "IEJoin".
                             #[cfg(feature = "iejoin")]
-                            JoinType::IEJoin => {
-                                let JoinTypeOptionsIR::IEJoin { ie_options, .. } = &options.options
-                                else {
-                                    unreachable!()
-                                };
-                                (
-                                    name,
-                                    crate::Wrap(ie_options.operator1).into_py_any(py)?,
-                                    ie_options.operator2.as_ref().map_or_else(
-                                        || Ok(py.None()),
-                                        |op| crate::Wrap(*op).into_py_any(py),
-                                    )?,
-                                )
-                                    .into_py_any(py)?
+                            JoinTypeIR::IEJoin { ie_options, .. } => (
+                                name,
+                                crate::Wrap(ie_options.operator1).into_py_any(py)?,
+                                ie_options.operator2.as_ref().map_or_else(
+                                    || Ok(py.None()),
+                                    |op| crate::Wrap(*op).into_py_any(py),
+                                )?,
+                            )
+                                .into_py_any(py)?,
+                            // Shown in IR::explain as NESTED LOOP JOIN.
+                            JoinTypeIR::CrossAndFilter { .. } => {
+                                (name, "cross_and_filter").into_py_any(py)?
                             },
-                            _ => match &options.options {
-                                // An outer join whose ON condition was rewritten to inequalities.
-                                #[cfg(feature = "iejoin")]
-                                JoinTypeOptionsIR::IEJoin { ie_options, .. } => (
-                                    name,
-                                    crate::Wrap(ie_options.operator1).into_py_any(py)?,
-                                    ie_options.operator2.as_ref().map_or_else(
-                                        || Ok(py.None()),
-                                        |op| crate::Wrap(*op).into_py_any(py),
-                                    )?,
-                                )
-                                    .into_py_any(py)?,
-                                // Shown in IR::explain as NESTED LOOP JOIN.
-                                JoinTypeOptionsIR::CrossAndFilter { .. } => {
-                                    (name, "cross_and_filter").into_py_any(py)?
-                                },
-                                _ if options.options.has_fused_predicate() => {
-                                    (name, "fused_predicate").into_py_any(py)?
-                                },
-                                _ => name.into_any().unbind(),
+                            _ if options.join_type.has_fused_predicate() => {
+                                (name, "fused_predicate").into_py_any(py)?
                             },
+                            _ => name.into_any().unbind(),
                         },
-                        options.args.nulls_equal,
+                        options.join_type.nulls_equal(),
                         legacy_slice(options.args.slice),
                         options.args.suffix().as_str(),
-                        options.args.coalesce.coalesce(how),
+                        options.should_coalesce(),
                         Into::<&str>::into(options.args.maintain_order),
                     )
                         .into_py_any(py)?

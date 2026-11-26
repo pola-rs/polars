@@ -25,10 +25,9 @@ use super::{
 };
 use crate::plans::aexpr::filter_constraint::{ColumnBounds, and_chain_bounds};
 use crate::plans::{
-    AExpr, ExprIR, FunctionIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR,
-    into_column,
+    AExpr, ExprIR, FunctionIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeIR, into_column,
 };
-use crate::prelude::{JoinType, Operator};
+use crate::prelude::{JoinHow, Operator};
 use crate::utils::aexpr_to_leaf_names_iter;
 
 /// Estimates already made, and the columns of in-memory frames worth counting.
@@ -99,7 +98,7 @@ fn key_column_names(
     for i in 0..ir_arena.len() {
         match ir_arena.get(Node(i)) {
             IR::Join { options, .. } => {
-                if let JoinTypeOptionsIR::Equi { on, .. } = &options.options {
+                if let JoinTypeIR::Equi { on, .. } = &options.join_type {
                     for (left, right) in on.iter() {
                         add_keys(std::slice::from_ref(left), &mut names);
                         add_keys(std::slice::from_ref(right), &mut names);
@@ -347,23 +346,25 @@ pub(crate) fn node_stats_with_cache(
             options,
             ..
         } => {
-            // As-of, inequality and range matches are not modelled.
-            let JoinTypeOptionsIR::Equi {
-                on,
-                fused_predicate,
-            } = &options.options
-            else {
-                return None;
+            // As-of, inequality, range and filtered cross matches are not modelled.
+            let (on, fused_predicate): (&[_], _) = match &options.join_type {
+                JoinTypeIR::Equi {
+                    on,
+                    fused_predicate,
+                    ..
+                } => (on, fused_predicate.as_ref()),
+                JoinTypeIR::Cross => (&[], None),
+                _ => return None,
             };
             let left = node_stats_with_cache(*input_left, ir_arena, expr_arena, cache)?;
             let right = node_stats_with_cache(*input_right, ir_arena, expr_arena, cache)?;
 
-            let how = &options.args.how;
+            let how = options.join_type.how();
             // The right side of a semi- or anti-join is a set of values from the left
             // key's own domain.
             let own_domain = |left_key: Option<&PlSmallStr>| match how {
                 #[cfg(feature = "semi_anti_join")]
-                JoinType::Semi | JoinType::Anti => left_key.and_then(|name| left.int_domain(name)),
+                JoinHow::Semi | JoinHow::Anti => left_key.and_then(|name| left.int_domain(name)),
                 _ => None,
             };
             let key_domains = composite_key_domain(
@@ -564,19 +565,19 @@ impl NodeStats {
 
 /// Rows a join of the given type emits, given the sizes of its sides and the rows an
 /// inner join of them would emit. `None` for a join type that is not modelled.
-fn join_rows(how: &JoinType, left: f64, right: f64, inner: f64) -> Option<f64> {
+fn join_rows(how: JoinHow, left: f64, right: f64, inner: f64) -> Option<f64> {
     let rows = match how {
-        JoinType::Inner => inner,
+        JoinHow::Inner => inner,
         // An outer side keeps every row it has, matched or not.
-        JoinType::Left => inner.max(left),
-        JoinType::Right => inner.max(right),
-        JoinType::Full => inner.max(left + right),
+        JoinHow::Left => inner.max(left),
+        JoinHow::Right => inner.max(right),
+        JoinHow::Full => inner.max(left + right),
         // A semi-join emits the left rows that matched, an anti-join the rest.
         #[cfg(feature = "semi_anti_join")]
-        JoinType::Semi => inner.min(left),
+        JoinHow::Semi => inner.min(left),
         #[cfg(feature = "semi_anti_join")]
-        JoinType::Anti => left - inner.min(left),
-        JoinType::Cross => left * right,
+        JoinHow::Anti => left - inner.min(left),
+        JoinHow::Cross => left * right,
         // As-of, inequality and range matches are not modelled.
         _ => return None,
     };
@@ -585,10 +586,10 @@ fn join_rows(how: &JoinType, left: f64, right: f64, inner: f64) -> Option<f64> {
 
 /// A bound on the rows a join emits, for the types that have one. An equi-join can
 /// repeat a row of either side once per match on the other, so most of them do not.
-fn join_max_rows(how: &JoinType, left: &NodeStats, right: &NodeStats) -> Option<f64> {
+fn join_max_rows(how: JoinHow, left: &NodeStats, right: &NodeStats) -> Option<f64> {
     match how {
         // Every pair, and no more.
-        JoinType::Cross => Some(left.max_rows? * right.max_rows?),
+        JoinHow::Cross => Some(left.max_rows? * right.max_rows?),
         _ => None,
     }
 }
@@ -1437,31 +1438,25 @@ mod tests {
 
         // A match that keeps few rows: the outer sides still keep all of theirs.
         let selective = 5.0;
+        assert_eq!(join_rows(JoinHow::Inner, left, right, selective), Some(5.0));
+        assert_eq!(join_rows(JoinHow::Left, left, right, selective), Some(left));
         assert_eq!(
-            join_rows(&JoinType::Inner, left, right, selective),
-            Some(5.0)
-        );
-        assert_eq!(
-            join_rows(&JoinType::Left, left, right, selective),
-            Some(left)
-        );
-        assert_eq!(
-            join_rows(&JoinType::Right, left, right, selective),
+            join_rows(JoinHow::Right, left, right, selective),
             Some(right)
         );
         assert_eq!(
-            join_rows(&JoinType::Full, left, right, selective),
+            join_rows(JoinHow::Full, left, right, selective),
             Some(left + right)
         );
 
         // A match that fans out: an outer join is at least as large as the inner one.
         let fanning = 5000.0;
         assert_eq!(
-            join_rows(&JoinType::Left, left, right, fanning),
+            join_rows(JoinHow::Left, left, right, fanning),
             Some(fanning)
         );
         assert_eq!(
-            join_rows(&JoinType::Cross, left, right, fanning),
+            join_rows(JoinHow::Cross, left, right, fanning),
             Some(20_000.0)
         );
     }
@@ -1473,8 +1468,8 @@ mod tests {
     fn semi_and_anti_partition_the_left_side() {
         let left = 1000.0;
         for inner in [0.0, 5.0, 400.0, 1000.0, 5000.0] {
-            let semi = join_rows(&JoinType::Semi, left, 20.0, inner).unwrap();
-            let anti = join_rows(&JoinType::Anti, left, 20.0, inner).unwrap();
+            let semi = join_rows(JoinHow::Semi, left, 20.0, inner).unwrap();
+            let anti = join_rows(JoinHow::Anti, left, 20.0, inner).unwrap();
             assert!(semi <= left && anti <= left, "{inner}: {semi} / {anti}");
             // Both floor at one row, so they only sum to the left side above that.
             assert!(semi + anti <= left + MIN_CARDINALITY, "{inner}");
@@ -1485,7 +1480,7 @@ mod tests {
     #[cfg(feature = "iejoin")]
     #[test]
     fn unmodelled_join_types_have_no_estimate() {
-        assert_eq!(join_rows(&JoinType::IEJoin, 1000.0, 20.0, 5.0), None);
+        assert_eq!(join_rows(JoinHow::IEJoin, 1000.0, 20.0, 5.0), None);
     }
 
     /// The two ends of the group-count estimate are known exactly; only what lies

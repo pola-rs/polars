@@ -1,9 +1,8 @@
-use polars_defs::join::JoinType;
 use polars_utils::arena::{Arena, Node};
 use recursive::recursive;
 
 use crate::plans::schema::join_right_output_names;
-use crate::plans::{AExpr, IR, JoinTypeOptionsIR, into_column};
+use crate::plans::{AExpr, IR, JoinHow, JoinTypeIR, into_column};
 
 /// An inclusive range that holds every non-null value of column `name` of `node`, on
 /// its physical values.
@@ -87,14 +86,14 @@ pub fn column_value_range(
             options,
             ..
         } => {
-            let how = &options.args.how;
+            let how = options.join_type.how();
             if how.is_semi_anti() {
                 return recurse(*input_left, name);
             }
             if !how.is_equi() {
                 return None;
             }
-            let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
+            let JoinTypeIR::Equi { on, .. } = &options.join_type else {
                 return None;
             };
             let schema_left = ir_arena.get(*input_left).schema(ir_arena);
@@ -107,8 +106,8 @@ pub fn column_value_range(
                     .find(|(_, out)| out.as_deref() == Some(name))?;
                 recurse(*input_right, right_name)
             };
-            let coalesced = options.args.should_coalesce();
-            if coalesced && matches!(how, JoinType::Right) {
+            let coalesced = options.should_coalesce();
+            if coalesced && matches!(how, JoinHow::Right) {
                 // The left key columns are dropped, so a right column wins.
                 if right_names.iter().flatten().any(|out| out == name) {
                     return from_right();
@@ -124,7 +123,7 @@ pub fn column_value_range(
             let left = recurse(*input_left, name)?;
             match on.iter().find(|(l, _)| l.output_name() == name) {
                 // A full join's coalesced key holds the right keys of its unmatched rows.
-                Some((l, r)) if coalesced && matches!(how, JoinType::Full) => {
+                Some((l, r)) if coalesced && matches!(how, JoinHow::Full) => {
                     into_column(l.node(), expr_arena)?;
                     let right = recurse(*input_right, into_column(r.node(), expr_arena)?)?;
                     Some((left.0.min(right.0), left.1.max(right.1)))

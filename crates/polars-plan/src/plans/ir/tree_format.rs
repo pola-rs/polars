@@ -330,15 +330,15 @@ impl<'a> TreeFmtNode<'a> {
                     options,
                     ..
                 } => ND(
-                    wh(h, &format!("{} JOIN", options.args.how)),
+                    wh(h, &format!("{} JOIN", options.join_type.how())),
                     options
-                        .options
+                        .join_type
                         .left_on()
                         .map(|expr| self.expr_node(Some("left on:".to_string()), expr))
                         .chain([self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)])
                         .chain(
                             options
-                                .options
+                                .join_type
                                 .right_on()
                                 .map(|expr| self.expr_node(Some("right on:".to_string()), expr)),
                         )

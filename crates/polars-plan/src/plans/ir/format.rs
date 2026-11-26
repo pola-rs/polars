@@ -292,7 +292,7 @@ impl<'a> IRDisplay<'a> {
                 options,
                 ..
             } => {
-                let (left_keys, right_keys) = options.options.key_vecs();
+                let (left_keys, right_keys) = options.join_type.key_vecs();
                 let left_on = self.display_expr_slice(&left_keys);
                 let right_on = self.display_expr_slice(&right_keys);
                 let build_side = match &options.args.build_side {
@@ -301,10 +301,10 @@ impl<'a> IRDisplay<'a> {
                 };
 
                 // Fused cross + filter (show as nested loop join)
-                if let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options {
+                if let JoinTypeIR::CrossAndFilter { predicate, .. } = &options.join_type {
                     let predicate = self.display_expr(predicate);
-                    let how = &options.args.how;
-                    let name = if matches!(how, JoinType::Cross | JoinType::Inner) {
+                    let how = options.join_type.how();
+                    let name = if matches!(how, JoinHow::Cross | JoinHow::Inner) {
                         "NESTED LOOP".to_string()
                     } else {
                         format!("{how} NESTED LOOP")
@@ -318,8 +318,8 @@ impl<'a> IRDisplay<'a> {
                         ._format(f, sub_indent, seen_caches)?;
                     write!(f, "\n{:indent$}END {name} JOIN", "")
                 } else {
-                    let how = &options.args.how;
-                    let fused_predicate = match options.options.fused_predicate() {
+                    let how = options.join_type.how();
+                    let fused_predicate = match options.join_type.fused_predicate() {
                         Some(fused_predicate) => {
                             format!(
                                 "\n{:indent$}FUSED PREDICATE: {}",
@@ -1141,7 +1141,7 @@ pub fn write_ir_non_recursive(
             schema: _,
             options,
         } => {
-            let (left_keys, right_keys) = options.options.key_vecs();
+            let (left_keys, right_keys) = options.join_type.key_vecs();
             let left_on = ExprIRSliceDisplay {
                 exprs: &left_keys,
                 expr_arena,
@@ -1152,15 +1152,15 @@ pub fn write_ir_non_recursive(
             };
 
             // Fused cross + filter (show as nested loop join)
-            if let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options {
+            if let JoinTypeIR::CrossAndFilter { predicate, .. } = &options.join_type {
                 let predicate = predicate.display(expr_arena);
                 write!(f, "{:indent$}NESTED_LOOP JOIN ON {predicate}", "")?;
             } else {
-                let how = &options.args.how;
+                let how = options.join_type.how();
                 write!(f, "{:indent$}{how} JOIN", "")?;
                 write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
                 write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
-                if let Some(fused_predicate) = options.options.fused_predicate() {
+                if let Some(fused_predicate) = options.join_type.fused_predicate() {
                     let fused_predicate = fused_predicate.display(expr_arena);
                     write!(f, "\n{:indent$}FUSED PREDICATE: {fused_predicate}", "")?;
                 }

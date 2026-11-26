@@ -3,10 +3,13 @@ use std::hash::Hash;
 use bitflags::bitflags;
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
+#[cfg(feature = "asof_join")]
+use polars_defs::join::AsOfOptions;
 #[cfg(feature = "iejoin")]
 use polars_defs::join::IEJoinOptions;
 use polars_defs::join::{
-    CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions, MaintainOrderJoin,
+    CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinBuildSide, JoinCoalesce, JoinType,
+    JoinTypeOptions, JoinValidation, MaintainOrderJoin,
 };
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
@@ -17,7 +20,7 @@ use polars_utils::slice_enum::Slice;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-use crate::dsl::{GroupbyOptions, JoinOptions};
+use crate::dsl::GroupbyOptions;
 #[cfg(feature = "cse")]
 use crate::plans::ExpressionHasher;
 use crate::plans::ir::inputs::{ExprSchema, Exprs, ExprsMut};
@@ -393,8 +396,9 @@ impl From<GroupbyOptions> for GroupbyOptionsIR {
 pub struct JoinOptionsIR {
     pub allow_parallel: bool,
     pub force_parallel: bool,
-    pub args: JoinArgs,
-    pub options: JoinTypeOptionsIR,
+    /// The join type together with its match condition, which includes the join keys.
+    pub join_type: JoinTypeIR,
+    pub args: JoinArgsIR,
     /// Ranges of build-side keys the join publishes to scans below its probe side once
     /// the build is done. Only set together with a forced `args.build_side`.
     pub runtime_filters: Vec<RuntimeFilter>,
@@ -402,6 +406,25 @@ pub struct JoinOptionsIR {
     /// `args.build_side`.
     #[cfg_attr(feature = "ir_serde", serde(default))]
     pub estimated_rows: Option<[u64; 2]>,
+}
+
+/// The settings of a join that apply to every join type.
+///
+/// The settings that only some join types have are in their [`JoinTypeIR`] variant.
+#[derive(Clone, Debug, PartialEq, Hash, Default)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct JoinArgsIR {
+    pub suffix: Option<PlSmallStr>,
+    pub slice: Option<Slice>,
+    pub maintain_order: MaintainOrderJoin,
+    pub build_side: Option<JoinBuildSide>,
+}
+
+impl JoinArgsIR {
+    pub fn suffix(&self) -> &PlSmallStr {
+        const DEFAULT: &PlSmallStr = &PlSmallStr::from_static("_right");
+        self.suffix.as_ref().unwrap_or(DEFAULT)
+    }
 }
 
 /// Largest ratio of distinct build keys to distinct probe keys for which a
@@ -424,59 +447,73 @@ pub struct RuntimeFilter {
 impl JoinOptionsIR {
     /// The match condition is exactly `left_on == right_on`.
     pub fn is_pure_equi(&self) -> bool {
-        !self.options.is_non_equi()
+        self.join_type.is_pure_equi()
     }
 
-    /// The match condition has a non-equality component, held in `options`.
+    /// The match condition has a non-equality component.
     pub fn is_non_equi(&self) -> bool {
-        self.options.is_non_equi()
+        self.join_type.is_non_equi()
     }
 
-    /// Errors if no engine can execute this `args.how` with this match condition.
+    /// Whether the left and right key columns are merged into one output column.
+    pub fn should_coalesce(&self) -> bool {
+        self.join_type.should_coalesce()
+    }
+
+    /// The arguments in the form that the executors take.
+    pub fn to_join_args(&self) -> JoinArgs {
+        let JoinArgsIR {
+            suffix,
+            slice,
+            maintain_order,
+            build_side,
+        } = self.args.clone();
+        JoinArgs {
+            how: self.join_type.to_join_type(),
+            validation: self.join_type.validation(),
+            suffix,
+            slice,
+            nulls_equal: self.join_type.nulls_equal(),
+            coalesce: self.join_type.coalesce(),
+            maintain_order,
+            build_side,
+        }
+    }
+
+    /// Errors if no engine can execute this join.
     ///
     /// Whether a non-equi condition ends up executable depends on how far the optimizer
     /// managed to lower it, so this can only be answered once the plan is optimized.
     pub fn ensure_executable(&self) -> PolarsResult<()> {
-        use JoinTypeOptionsIR::*;
-
-        let how = &self.args.how;
-        let supported = match &self.options {
-            Equi {
-                fused_predicate: None,
-                ..
-            } => true,
-            Equi {
+        let supported = match &self.join_type {
+            JoinTypeIR::Equi {
+                how,
                 on,
                 fused_predicate: Some(_),
+                ..
             } => {
+                // An outer join must evaluate the predicate per candidate pair, since a
+                // filter afterwards would drop its unmatched rows. Only the unordered hash
+                // join does that.
                 !on.is_empty()
                     && self.args.slice.is_none()
-                    && (how.is_inner()
-                        || (matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
-                            && self.args.maintain_order == MaintainOrderJoin::None))
+                    && match how {
+                        EquiJoinType::Inner => true,
+                        EquiJoinType::Left | EquiJoinType::Right | EquiJoinType::Full => {
+                            self.args.maintain_order == MaintainOrderJoin::None
+                        },
+                        #[cfg(feature = "semi_anti_join")]
+                        EquiJoinType::Semi | EquiJoinType::Anti => false,
+                    }
             },
-            #[cfg(feature = "asof_join")]
-            AsOf { .. } => how.is_asof(),
-            #[cfg(feature = "iejoin")]
-            IEJoin { .. } | Range { .. } => {
-                how.is_ie()
-                    || how.is_range()
-                    || how.is_inner()
-                    || how.is_cross()
-                    || matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
-            },
-            CrossAndFilter { .. } => {
-                how.is_inner()
-                    || how.is_cross()
-                    || matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
-            },
+            _ => true,
         };
 
         polars_ensure!(
             supported,
             InvalidOperation:
             "'{}' join is not supported with non-equi join conditions",
-            how,
+            self.join_type.how(),
         );
         Ok(())
     }
@@ -485,16 +522,16 @@ impl JoinOptionsIR {
         let Self {
             allow_parallel,
             force_parallel,
+            join_type,
             args,
-            options,
             runtime_filters,
             estimated_rows,
         } = self;
 
         *allow_parallel == other.allow_parallel
             && *force_parallel == other.force_parallel
+            && join_type.shallow_eq(&other.join_type, expr_cmp)
             && *args == other.args
-            && options.shallow_eq(&other.options, expr_cmp)
             && *runtime_filters == other.runtime_filters
             && *estimated_rows == other.estimated_rows
     }
@@ -508,52 +545,274 @@ impl JoinOptionsIR {
         let Self {
             allow_parallel,
             force_parallel,
+            join_type,
             args,
-            options,
             runtime_filters,
             estimated_rows,
         } = self;
 
         allow_parallel.hash(state);
         force_parallel.hash(state);
+        join_type.shallow_hash(state, expr_hash);
         args.hash(state);
-        options.shallow_hash(state, expr_hash);
         runtime_filters.hash(state);
         estimated_rows.hash(state);
     }
 }
 
-#[derive(Clone, PartialEq, Eq, IntoStaticStr, Debug)]
+/// Which rows an equi join emits.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub enum EquiJoinType {
+    Inner,
+    Left,
+    Right,
+    Full,
+    #[cfg(feature = "semi_anti_join")]
+    Semi,
+    #[cfg(feature = "semi_anti_join")]
+    Anti,
+}
+
+/// Which rows a join with a non-equality match condition emits.
+///
+/// Semi and anti joins only exist with an equality condition.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub enum NonEquiJoinType {
+    Inner,
+    Left,
+    Right,
+    Full,
+}
+
+impl From<NonEquiJoinType> for EquiJoinType {
+    fn from(how: NonEquiJoinType) -> Self {
+        match how {
+            NonEquiJoinType::Inner => Self::Inner,
+            NonEquiJoinType::Left => Self::Left,
+            NonEquiJoinType::Right => Self::Right,
+            NonEquiJoinType::Full => Self::Full,
+        }
+    }
+}
+
+impl From<EquiJoinType> for JoinHow {
+    fn from(how: EquiJoinType) -> Self {
+        match how {
+            EquiJoinType::Inner => Self::Inner,
+            EquiJoinType::Left => Self::Left,
+            EquiJoinType::Right => Self::Right,
+            EquiJoinType::Full => Self::Full,
+            #[cfg(feature = "semi_anti_join")]
+            EquiJoinType::Semi => Self::Semi,
+            #[cfg(feature = "semi_anti_join")]
+            EquiJoinType::Anti => Self::Anti,
+        }
+    }
+}
+
+impl From<NonEquiJoinType> for JoinHow {
+    fn from(how: NonEquiJoinType) -> Self {
+        EquiJoinType::from(how).into()
+    }
+}
+
+/// The join type of a [`JoinTypeIR`] as a plain value, named as [`JoinType`] names it.
+///
+/// An outer join is named by the rows it emits. An inner join with a non-equality
+/// condition is named by its algorithm instead: `Cross`, `IEJoin` or `Range`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
+pub enum JoinHow {
+    Inner,
+    Left,
+    Right,
+    Full,
+    #[cfg(feature = "semi_anti_join")]
+    Semi,
+    #[cfg(feature = "semi_anti_join")]
+    Anti,
+    #[cfg(feature = "asof_join")]
+    AsOf,
+    #[cfg(feature = "iejoin")]
+    IEJoin,
+    #[cfg(feature = "iejoin")]
+    Range,
+    Cross,
+}
+
+impl JoinHow {
+    pub fn is_equi(self) -> bool {
+        matches!(self, Self::Inner | Self::Left | Self::Right | Self::Full)
+    }
+
+    pub fn is_semi_anti(self) -> bool {
+        self.is_semi() || self.is_anti()
+    }
+
+    pub fn is_semi(self) -> bool {
+        #[cfg(feature = "semi_anti_join")]
+        {
+            matches!(self, Self::Semi)
+        }
+        #[cfg(not(feature = "semi_anti_join"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_anti(self) -> bool {
+        #[cfg(feature = "semi_anti_join")]
+        {
+            matches!(self, Self::Anti)
+        }
+        #[cfg(not(feature = "semi_anti_join"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_asof(self) -> bool {
+        #[cfg(feature = "asof_join")]
+        {
+            matches!(self, Self::AsOf)
+        }
+        #[cfg(not(feature = "asof_join"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_inner(self) -> bool {
+        matches!(self, Self::Inner)
+    }
+
+    pub fn is_cross(self) -> bool {
+        matches!(self, Self::Cross)
+    }
+
+    pub fn is_ie(self) -> bool {
+        #[cfg(feature = "iejoin")]
+        {
+            matches!(self, Self::IEJoin)
+        }
+        #[cfg(not(feature = "iejoin"))]
+        {
+            false
+        }
+    }
+
+    pub fn is_range(self) -> bool {
+        #[cfg(feature = "iejoin")]
+        {
+            matches!(self, Self::Range)
+        }
+        #[cfg(not(feature = "iejoin"))]
+        {
+            false
+        }
+    }
+
+    /// Unmatched rows of the left input appear in the output.
+    pub fn emits_unmatched_left(self) -> bool {
+        matches!(self, Self::Left | Self::Full) || self.is_anti()
+    }
+
+    /// Unmatched rows of the right input appear in the output.
+    pub fn emits_unmatched_right(self) -> bool {
+        matches!(self, Self::Right | Self::Full)
+    }
+
+    /// Whether a join of this type merges its left and right key columns, given the
+    /// `coalesce` setting. Mirrors [`JoinCoalesce::coalesce`].
+    fn should_coalesce(self, coalesce: JoinCoalesce) -> bool {
+        use JoinCoalesce::*;
+        match self {
+            Self::Left | Self::Inner | Self::Right => {
+                matches!(coalesce, JoinSpecific | CoalesceColumns)
+            },
+            Self::Full => matches!(coalesce, CoalesceColumns),
+            #[cfg(feature = "asof_join")]
+            Self::AsOf => matches!(coalesce, JoinSpecific | CoalesceColumns),
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin | Self::Range => false,
+            Self::Cross => false,
+            #[cfg(feature = "semi_anti_join")]
+            Self::Semi | Self::Anti => false,
+        }
+    }
+}
+
+impl std::fmt::Display for JoinHow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let val = match self {
+            Self::Inner => "INNER",
+            Self::Left => "LEFT",
+            Self::Right => "RIGHT",
+            Self::Full => "FULL",
+            #[cfg(feature = "semi_anti_join")]
+            Self::Semi => "SEMI",
+            #[cfg(feature = "semi_anti_join")]
+            Self::Anti => "ANTI",
+            #[cfg(feature = "asof_join")]
+            Self::AsOf => "ASOF",
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin => "IEJOIN",
+            #[cfg(feature = "iejoin")]
+            Self::Range => "RANGE",
+            Self::Cross => "CROSS",
+        };
+        f.write_str(val)
+    }
+}
+
+/// The type of a join together with its match condition.
+///
+/// Each variant holds only the join types that its condition supports.
+#[derive(Clone, PartialEq, IntoStaticStr, Debug)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
-pub enum JoinTypeOptionsIR {
+pub enum JoinTypeIR {
     /// The match condition is `left == right` for every key pair, and, if there is a
     /// `fused_predicate`, that predicate as well.
     ///
-    /// An empty `on` is a plain cross join.
+    /// `on` is never empty: a join without keys is a [`Self::Cross`].
     /// Join keys may be scalar. Execution broadcasts keys to their input's height.
     Equi {
+        how: EquiJoinType,
         on: Vec<(ExprIR, ExprIR)>,
         /// Boolean match condition in the join's output namespace, evaluated per
         /// candidate pair. A pair survives only on `true`; `false` and null reject it.
         ///
-        /// Only ever set on an inner join with a non-empty `on` and no attached slice.
+        /// Never set on a semi or anti join, or on a join with an attached slice.
         fused_predicate: Option<ExprIR>,
+        /// Null keys match each other.
+        nulls_equal: bool,
+        /// Which side's keys must be unique. Always many-to-many on a semi or anti join.
+        validation: JoinValidation,
+        coalesce: JoinCoalesce,
     },
-    /// Backwards/forwards/nearest match on a single key pair. The strategy, tolerance
-    /// and `by` group keys live in [`JoinType::AsOf`].
+    /// Each left row is matched to at most one right row: the backward, forward or nearest
+    /// match of the key pair `on`, within the `by` groups that `options` gives.
+    ///
+    /// The options are boxed because they are much larger than the other variants.
     #[cfg(feature = "asof_join")]
-    AsOf { on: Vec<(ExprIR, ExprIR)> },
+    AsOf {
+        options: Box<AsOfOptions>,
+        on: (ExprIR, ExprIR),
+        coalesce: JoinCoalesce,
+    },
     /// Inequality join over one or two arbitrary predicates.
     ///
     /// `operator1` relates the first key pair, `operator2` the second.
     #[cfg(feature = "iejoin")]
     IEJoin {
+        how: NonEquiJoinType,
         ie_options: IEJoinOptions,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
     },
-    /// `point ∈ [lower, upper]`. Only reached by the streaming engine.
+    /// Inner join on `point ∈ [lower, upper]`. Only reached by the streaming engine.
     ///
     /// The side with one key holds the point, the other holds the bounds:
     /// - double bounded: bound side has 2 keys, `operator1` is the lower bound op and
@@ -565,31 +824,21 @@ pub enum JoinTypeOptionsIR {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
     },
-    // Fused cross join and filter. Executed by the in-memory engine; the streaming
-    // engine has no native node for this and falls back to it via `InMemoryJoin`.
+    /// Every left row paired with every right row.
+    Cross,
+    /// A cross join that keeps the pairs for which `predicate` holds. Executed by the
+    /// in-memory engine. The streaming engine has no native node for this and falls back
+    /// to it via `InMemoryJoin`.
     CrossAndFilter {
-        predicate: ExprIR, // Must be elementwise.
+        how: NonEquiJoinType,
+        /// Must be elementwise.
+        predicate: ExprIR,
     },
 }
 
-impl Default for JoinTypeOptionsIR {
-    fn default() -> Self {
-        Self::Equi {
-            on: Vec::new(),
-            fused_predicate: None,
-        }
-    }
-}
-
-impl Hash for JoinTypeOptionsIR {
+impl Hash for JoinTypeIR {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::mem::discriminant(self).hash(state);
-
-        #[cfg(feature = "iejoin")]
-        if let Self::IEJoin { ie_options, .. } | Self::Range { ie_options, .. } = self {
-            ie_options.hash(state);
-        }
-
+        self.hash_non_exprs(state);
         self.exprs().count().hash(state);
         for expr in self.exprs() {
             expr.node().hash(state);
@@ -597,33 +846,231 @@ impl Hash for JoinTypeOptionsIR {
     }
 }
 
-impl JoinTypeOptionsIR {
-    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
-        if std::mem::discriminant(self) != std::mem::discriminant(other) {
-            return false;
-        }
-
-        #[cfg(feature = "iejoin")]
-        if let (
-            Self::IEJoin { ie_options, .. } | Self::Range { ie_options, .. },
+impl JoinTypeIR {
+    /// See [`JoinHow`].
+    pub fn how(&self) -> JoinHow {
+        match self {
+            Self::Equi { how, .. } => (*how).into(),
+            #[cfg(feature = "asof_join")]
+            Self::AsOf { .. } => JoinHow::AsOf,
+            #[cfg(feature = "iejoin")]
             Self::IEJoin {
-                ie_options: other_ie,
+                how: NonEquiJoinType::Inner,
                 ..
-            }
-            | Self::Range {
-                ie_options: other_ie,
+            } => JoinHow::IEJoin,
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin { how, .. } => (*how).into(),
+            #[cfg(feature = "iejoin")]
+            Self::Range { .. } => JoinHow::Range,
+            Self::Cross
+            | Self::CrossAndFilter {
+                how: NonEquiJoinType::Inner,
                 ..
+            } => JoinHow::Cross,
+            Self::CrossAndFilter { how, .. } => (*how).into(),
+        }
+    }
+
+    /// The join type that the executors take, as [`Self::how`] names it.
+    pub fn to_join_type(&self) -> JoinType {
+        #[cfg(feature = "asof_join")]
+        if let Self::AsOf { options, .. } = self {
+            return JoinType::AsOf(options.clone());
+        }
+        match self.how() {
+            JoinHow::Inner => JoinType::Inner,
+            JoinHow::Left => JoinType::Left,
+            JoinHow::Right => JoinType::Right,
+            JoinHow::Full => JoinType::Full,
+            #[cfg(feature = "semi_anti_join")]
+            JoinHow::Semi => JoinType::Semi,
+            #[cfg(feature = "semi_anti_join")]
+            JoinHow::Anti => JoinType::Anti,
+            #[cfg(feature = "asof_join")]
+            JoinHow::AsOf => unreachable!(),
+            #[cfg(feature = "iejoin")]
+            JoinHow::IEJoin => JoinType::IEJoin,
+            #[cfg(feature = "iejoin")]
+            JoinHow::Range => JoinType::Range,
+            JoinHow::Cross => JoinType::Cross,
+        }
+    }
+
+    /// Builds the join that `args` describe on the key pairs `on`, and splits off the
+    /// settings that apply to every join type.
+    ///
+    /// Settings that do not apply to the join type are dropped: e.g. `validation` on a
+    /// cross join.
+    ///
+    /// Errors on [`JoinType::IEJoin`] and [`JoinType::Range`], which only the optimizer
+    /// creates.
+    ///
+    /// # Panics
+    /// If the number of key pairs does not suit `how`: a cross join takes none, an as-of
+    /// join exactly one and any other join at least one.
+    pub fn from_args(
+        args: JoinArgs,
+        on: Vec<(ExprIR, ExprIR)>,
+    ) -> PolarsResult<(Self, JoinArgsIR)> {
+        let JoinArgs {
+            how,
+            validation,
+            suffix,
+            slice,
+            nulls_equal,
+            coalesce,
+            maintain_order,
+            build_side,
+        } = args;
+        let args = JoinArgsIR {
+            suffix,
+            slice,
+            maintain_order,
+            build_side,
+        };
+        let how = match how {
+            JoinType::Inner => EquiJoinType::Inner,
+            JoinType::Left => EquiJoinType::Left,
+            JoinType::Right => EquiJoinType::Right,
+            JoinType::Full => EquiJoinType::Full,
+            #[cfg(feature = "semi_anti_join")]
+            JoinType::Semi => EquiJoinType::Semi,
+            #[cfg(feature = "semi_anti_join")]
+            JoinType::Anti => EquiJoinType::Anti,
+            #[cfg(feature = "asof_join")]
+            JoinType::AsOf(options) => {
+                let [on] = <[_; 1]>::try_from(on)
+                    .unwrap_or_else(|_| panic!("an as-of join takes exactly one key pair"));
+                return Ok((
+                    Self::AsOf {
+                        options,
+                        on,
+                        coalesce,
+                    },
+                    args,
+                ));
             },
-        ) = (self, other)
-            && ie_options != other_ie
+            #[cfg(feature = "iejoin")]
+            JoinType::IEJoin | JoinType::Range => {
+                polars_bail!(InvalidOperation: "'{how}' join cannot be requested directly")
+            },
+            JoinType::Cross => {
+                assert!(on.is_empty(), "a cross join takes no keys");
+                return Ok((Self::Cross, args));
+            },
+        };
+        assert!(!on.is_empty(), "an equi join takes at least one key pair");
+        let join_type = Self::Equi {
+            how,
+            on,
+            fused_predicate: None,
+            nulls_equal,
+            validation,
+            coalesce,
+        };
+        Ok((join_type, args))
+    }
+
+    /// Null keys match each other. Always false for a join without equality keys.
+    pub fn nulls_equal(&self) -> bool {
+        match self {
+            Self::Equi { nulls_equal, .. } => *nulls_equal,
+            _ => false,
+        }
+    }
+
+    /// Which side's keys must be unique. Many-to-many for every join but an equi join.
+    pub fn validation(&self) -> JoinValidation {
+        match self {
+            Self::Equi { validation, .. } => *validation,
+            _ => JoinValidation::ManyToMany,
+        }
+    }
+
+    /// The `coalesce` setting. Joins that never coalesce report
+    /// [`JoinCoalesce::KeepColumns`].
+    pub fn coalesce(&self) -> JoinCoalesce {
+        match self {
+            Self::Equi { coalesce, .. } => *coalesce,
+            #[cfg(feature = "asof_join")]
+            Self::AsOf { coalesce, .. } => *coalesce,
+            _ => JoinCoalesce::KeepColumns,
+        }
+    }
+
+    /// Whether the left and right key columns are merged into one output column.
+    pub fn should_coalesce(&self) -> bool {
+        self.how().should_coalesce(self.coalesce())
+    }
+
+    /// Sets the `coalesce` setting.
+    ///
+    /// # Panics
+    /// On joins other than equi and as-of joins, which never coalesce.
+    pub fn set_coalesce(&mut self, new: JoinCoalesce) {
+        match self {
+            Self::Equi { coalesce, .. } => *coalesce = new,
+            #[cfg(feature = "asof_join")]
+            Self::AsOf { coalesce, .. } => *coalesce = new,
+            _ => panic!("a '{}' join never coalesces", self.how()),
+        }
+    }
+
+    #[cfg(feature = "asof_join")]
+    pub fn asof_options(&self) -> Option<&AsOfOptions> {
+        match self {
+            Self::AsOf { options, .. } => Some(options),
+            _ => None,
+        }
+    }
+
+    /// Feeds everything except the expressions into `state`.
+    fn hash_non_exprs<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        self.how().hash(state);
+        self.nulls_equal().hash(state);
+        self.validation().hash(state);
+        self.coalesce().hash(state);
+        match self {
+            #[cfg(feature = "asof_join")]
+            Self::AsOf { options, .. } => options.hash(state),
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin { ie_options, .. } | Self::Range { ie_options, .. } => {
+                ie_options.hash(state)
+            },
+            _ => {},
+        }
+    }
+
+    /// Compares everything except the expressions.
+    fn non_exprs_eq(&self, other: &Self) -> bool {
+        if std::mem::discriminant(self) != std::mem::discriminant(other)
+            || self.how() != other.how()
+            || self.nulls_equal() != other.nulls_equal()
+            || self.validation() != other.validation()
+            || self.coalesce() != other.coalesce()
         {
             return false;
         }
+        match (self, other) {
+            #[cfg(feature = "asof_join")]
+            (Self::AsOf { options: l, .. }, Self::AsOf { options: r, .. }) => l == r,
+            #[cfg(feature = "iejoin")]
+            (
+                Self::IEJoin { ie_options: l, .. } | Self::Range { ie_options: l, .. },
+                Self::IEJoin { ie_options: r, .. } | Self::Range { ie_options: r, .. },
+            ) => l == r,
+            _ => true,
+        }
+    }
 
+    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
         // Equal discriminants, so both sides hold the same shape and `exprs()` walks them
         // in the same order.
-        self.exprs()
-            .eq_by_(other.exprs(), |l, r| expr_cmp.equals(l, r))
+        self.non_exprs_eq(other)
+            && self
+                .exprs()
+                .eq_by_(other.exprs(), |l, r| expr_cmp.equals(l, r))
     }
 
     #[cfg(feature = "cse")]
@@ -632,13 +1079,7 @@ impl JoinTypeOptionsIR {
         state: &mut H,
         expr_hash: &impl ExpressionHasher,
     ) {
-        std::mem::discriminant(self).hash(state);
-
-        #[cfg(feature = "iejoin")]
-        if let Self::IEJoin { ie_options, .. } | Self::Range { ie_options, .. } = self {
-            ie_options.hash(state);
-        }
-
+        self.hash_non_exprs(state);
         self.exprs().count().hash(state);
         for expr in self.exprs() {
             expr_hash.hash_expr(expr, state);
@@ -649,18 +1090,17 @@ impl JoinTypeOptionsIR {
         self,
         plan: C,
     ) -> PolarsResult<Option<JoinTypeOptions>> {
-        use JoinTypeOptionsIR::*;
         match self {
-            CrossAndFilter { predicate } => {
+            Self::CrossAndFilter { predicate, .. } => {
                 let predicate = plan(&predicate)?;
 
                 Ok(Some(JoinTypeOptions::Cross(CrossJoinOptions { predicate })))
             },
             #[cfg(feature = "iejoin")]
-            IEJoin { ie_options, .. } | Range { ie_options, .. } => {
+            Self::IEJoin { ie_options, .. } | Self::Range { ie_options, .. } => {
                 Ok(Some(JoinTypeOptions::IEJoin(ie_options)))
             },
-            Equi {
+            Self::Equi {
                 fused_predicate: Some(fused_predicate),
                 ..
             } => {
@@ -670,13 +1110,14 @@ impl JoinTypeOptionsIR {
                     predicate,
                 })))
             },
-            Equi { .. } => Ok(None),
+            Self::Equi { .. } | Self::Cross => Ok(None),
             #[cfg(feature = "asof_join")]
-            AsOf { .. } => Ok(None),
+            Self::AsOf { .. } => Ok(None),
         }
     }
 
     /// The keys as `(left, right)` pairs, or `None` if the condition does not equate them.
+    /// A [`Self::Cross`] has no pairs, which is an empty slice.
     ///
     /// The only place `Equi`/`AsOf` are matched apart; every accessor below goes through it.
     /// They cannot share an or-pattern arm because rustc rejects `#[cfg]` on one alternative.
@@ -684,17 +1125,19 @@ impl JoinTypeOptionsIR {
         match self {
             Self::Equi { on, .. } => Some(on),
             #[cfg(feature = "asof_join")]
-            Self::AsOf { on } => Some(on),
+            Self::AsOf { on, .. } => Some(std::slice::from_ref(on)),
+            Self::Cross => Some(&[]),
             _ => None,
         }
     }
 
     /// See [`Self::key_pairs`].
-    fn key_pairs_mut(&mut self) -> Option<&mut Vec<(ExprIR, ExprIR)>> {
+    fn key_pairs_mut(&mut self) -> Option<&mut [(ExprIR, ExprIR)]> {
         match self {
             Self::Equi { on, .. } => Some(on),
             #[cfg(feature = "asof_join")]
-            Self::AsOf { on } => Some(on),
+            Self::AsOf { on, .. } => Some(std::slice::from_mut(on)),
+            Self::Cross => Some(&mut []),
             _ => None,
         }
     }
@@ -762,6 +1205,7 @@ impl JoinTypeOptionsIR {
         if let Self::Equi {
             on,
             fused_predicate,
+            ..
         } = self
         {
             return Exprs::pair_sides_then(on, fused_predicate.as_ref());
@@ -777,7 +1221,7 @@ impl JoinTypeOptionsIR {
             | Self::Range {
                 left_on, right_on, ..
             } => Exprs::double_slice(left_on, right_on),
-            Self::CrossAndFilter { predicate } => Exprs::single(predicate),
+            Self::CrossAndFilter { predicate, .. } => Exprs::single(predicate),
             _ => Exprs::Empty,
         }
     }
@@ -788,6 +1232,7 @@ impl JoinTypeOptionsIR {
         if let Self::Equi {
             on,
             fused_predicate,
+            ..
         } = self
         {
             return ExprsMut::pair_sides_then(on, fused_predicate.as_mut());
@@ -803,7 +1248,7 @@ impl JoinTypeOptionsIR {
             | Self::Range {
                 left_on, right_on, ..
             } => ExprsMut::double_slice(left_on, right_on),
-            Self::CrossAndFilter { predicate } => ExprsMut::single(predicate),
+            Self::CrossAndFilter { predicate, .. } => ExprsMut::single(predicate),
             _ => ExprsMut::Empty,
         }
     }
@@ -823,14 +1268,17 @@ impl JoinTypeOptionsIR {
     /// Replace the keys, keeping the current variant.
     ///
     /// # Panics
-    /// On [`Self::CrossAndFilter`], which holds no keys, or on a length mismatch where the
-    /// variant stores keys in pairs.
+    /// On [`Self::CrossAndFilter`] and on a [`Self::Cross`] given keys, as neither holds any.
+    /// Also on a length mismatch where the variant stores keys in pairs.
     pub fn set_keys(&mut self, left: Vec<ExprIR>, right: Vec<ExprIR>) {
-        if let Some(on) = self.key_pairs_mut() {
-            *on = left.into_iter().zip_eq(right).collect();
-            return;
-        }
         match self {
+            Self::Equi { on, .. } => *on = left.into_iter().zip_eq(right).collect(),
+            #[cfg(feature = "asof_join")]
+            Self::AsOf { on, .. } => {
+                let pairs: Vec<_> = left.into_iter().zip_eq(right).collect();
+                [*on] = <[_; 1]>::try_from(pairs)
+                    .unwrap_or_else(|_| panic!("an as-of join takes exactly one key pair"));
+            },
             #[cfg(feature = "iejoin")]
             Self::IEJoin {
                 left_on, right_on, ..
@@ -841,14 +1289,33 @@ impl JoinTypeOptionsIR {
                 *left_on = left;
                 *right_on = right;
             },
-            _ => panic!("cross join filter holds no keys"),
+            Self::Cross => assert!(
+                left.is_empty() && right.is_empty(),
+                "cross join holds no keys"
+            ),
+            Self::CrossAndFilter { .. } => panic!("cross join holds no keys"),
+        }
+    }
+
+    /// Replaces which rows the join emits, keeping its match condition.
+    ///
+    /// # Panics
+    /// On as-of, range and plain cross joins, whose condition fixes the rows they emit.
+    pub fn set_how(&mut self, new: NonEquiJoinType) {
+        match self {
+            Self::Equi { how, .. } => *how = new.into(),
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin { how, .. } => *how = new,
+            Self::CrossAndFilter { how, .. } => *how = new,
+            _ => panic!("cannot change the type of a '{}' join", self.how()),
         }
     }
 
     /// The match condition is exactly `left == right` for every key pair.
     ///
-    /// True for [`Self::AsOf`] too: its strategy and tolerance live in [`JoinType::AsOf`],
-    /// not in the match condition. False once a fused predicate is attached.
+    /// True for [`Self::Cross`], which has no keys, and for [`Self::AsOf`]: its strategy
+    /// and tolerance are not part of the match condition. False once a fused predicate is
+    /// attached.
     pub fn is_pure_equi(&self) -> bool {
         !self.is_non_equi()
     }
@@ -863,6 +1330,14 @@ impl JoinTypeOptionsIR {
 
     pub fn has_fused_predicate(&self) -> bool {
         self.fused_predicate().is_some()
+    }
+
+    /// The predicate of a [`Self::CrossAndFilter`].
+    pub fn cross_predicate(&self) -> Option<&ExprIR> {
+        match self {
+            Self::CrossAndFilter { predicate, .. } => Some(predicate),
+            _ => None,
+        }
     }
 
     /// The fused match condition, if any. See [`Self::Equi`].
@@ -894,28 +1369,5 @@ impl JoinTypeOptionsIR {
             "fused_predicate would be overwritten"
         );
         *fused_predicate = Some(new);
-    }
-}
-
-impl From<JoinOptions> for JoinOptionsIR {
-    fn from(opts: JoinOptions) -> Self {
-        Self {
-            allow_parallel: opts.allow_parallel,
-            force_parallel: opts.force_parallel,
-            args: opts.args,
-            options: Default::default(),
-            runtime_filters: Vec::new(),
-            estimated_rows: None,
-        }
-    }
-}
-
-impl From<JoinOptionsIR> for JoinOptions {
-    fn from(opts: JoinOptionsIR) -> Self {
-        Self {
-            allow_parallel: opts.allow_parallel,
-            force_parallel: opts.force_parallel,
-            args: opts.args,
-        }
     }
 }

@@ -9,15 +9,15 @@ use polars_utils::pl_str::PlSmallStr;
 use super::{AExpr, aexpr_to_leaf_names_iter};
 use crate::plans::schema::join_right_output_names;
 use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
-use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR, OutputName};
-use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
+use crate::plans::{EquiJoinType, ExprIR, JoinOptionsIR, JoinTypeIR, OutputName};
+use crate::prelude::MaintainOrderJoin;
 
 pub(super) fn join_right_output_to_input(
     schema_left: &Schema,
     schema_right: &Schema,
     options: &JoinOptionsIR,
 ) -> PolarsResult<PlIndexMap<PlSmallStr, PlSmallStr>> {
-    if options.args.how.is_semi_anti() {
+    if options.join_type.how().is_semi_anti() {
         return Ok(PlIndexMap::default());
     }
     let output_names = join_right_output_names(schema_left, schema_right, options)?;
@@ -30,10 +30,11 @@ pub(super) fn join_right_output_to_input(
 
 /// Nothing about the join pins it to its inputs as written: no slice, no order to
 /// keep, no side named for validation, no forced build side.
-pub(super) fn unconstrained(args: &JoinArgs) -> bool {
+pub(super) fn unconstrained(options: &JoinOptionsIR) -> bool {
+    let args = &options.args;
     args.slice.is_none()
         && matches!(args.maintain_order, MaintainOrderJoin::None)
-        && matches!(args.validation, JoinValidation::ManyToMany)
+        && matches!(options.join_type.validation(), JoinValidation::ManyToMany)
         && matches!(
             args.build_side,
             None | Some(JoinBuildSide::PreferLeft | JoinBuildSide::PreferRight)
@@ -42,9 +43,16 @@ pub(super) fn unconstrained(args: &JoinArgs) -> bool {
 
 /// An inner join on keys alone, free to be placed elsewhere in a chain of joins.
 pub(super) fn plain_inner_equi_join(options: &JoinOptionsIR) -> bool {
-    matches!(options.args.how, JoinType::Inner)
-        && unconstrained(&options.args)
-        && matches!(&options.options, JoinTypeOptionsIR::Equi { on, fused_predicate: None } if !on.is_empty())
+    unconstrained(options)
+        && matches!(
+            &options.join_type,
+            JoinTypeIR::Equi {
+                how: EquiJoinType::Inner,
+                on,
+                fused_predicate: None,
+                ..
+            } if !on.is_empty()
+        )
 }
 
 /// Join origin of an expression

@@ -18,7 +18,7 @@ use polars_plan::dsl::{
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::ExprIR;
 #[cfg(feature = "iejoin")]
-use polars_plan::plans::options::JoinTypeOptionsIR;
+use polars_plan::plans::options::JoinTypeIR;
 #[cfg(feature = "python")]
 use polars_plan::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
@@ -732,9 +732,10 @@ pub fn phys_props(
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
-            args,
             options,
         } => {
+            let args = &options.to_join_args();
+            let options = &options.join_type;
             let (left_on, right_on) = options.key_vecs();
             let generic_join = || PhysicalPropsDescription::InMemoryJoin {
                 how: format!("{}", args.how),
@@ -788,7 +789,7 @@ pub fn phys_props(
                 },
                 #[cfg(feature = "iejoin")]
                 JoinType::IEJoin => match options {
-                    JoinTypeOptionsIR::IEJoin {
+                    JoinTypeIR::IEJoin {
                         ie_options:
                             polars_defs::join::IEJoinOptions {
                                 operator1,

@@ -39,14 +39,18 @@ impl OptimizationRule for RemoveRepeatedKeys {
             },
             #[cfg(feature = "asof_join")]
             IR::Join { options, .. } => {
-                if let JoinType::AsOf(asof) = &options.args.how
+                if let Some(asof) = options.join_type.asof_options()
                     && let (Some(left_by), Some(right_by)) = (&asof.left_by, &asof.right_by)
                     && let Some(keep) = first_occurrences(left_by.iter().zip(right_by).map(Some))
                 {
-                    let mut asof = asof.clone();
-                    asof.left_by = Some(gather(left_by, &keep));
-                    asof.right_by = Some(gather(right_by, &keep));
-                    Arc::make_mut(options).args.how = JoinType::AsOf(asof);
+                    let (left_by, right_by) = (gather(left_by, &keep), gather(right_by, &keep));
+                    let JoinTypeIR::AsOf { options: asof, .. } =
+                        &mut Arc::make_mut(options).join_type
+                    else {
+                        unreachable!()
+                    };
+                    asof.left_by = Some(left_by);
+                    asof.right_by = Some(right_by);
                     true
                 } else {
                     false

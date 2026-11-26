@@ -10,7 +10,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, IdxSize, PlIndexMap, ScratchIndexMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
-use polars_defs::join::{JoinCoalesce, JoinType};
+use polars_defs::join::JoinCoalesce;
 use polars_io::RowIndex;
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::{PlHashMap, PlHashSet};
@@ -33,7 +33,7 @@ use crate::plans::optimizer::projection_pushdown::field_pruning::{
     ColumnSelection, ColumnSelectionExt, SelectionWalker, pruning_select, refresh_schemas,
 };
 use crate::plans::optimizer::recursive_caches::caches_shared_across_rounds;
-use crate::plans::options::JoinTypeOptionsIR;
+use crate::plans::options::{EquiJoinType, JoinTypeIR};
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::{
     AExpr, ArenaExprIter, ArenaLpIter, ExprIR, FunctionIR, IR, IRAggExpr, IRBuilder,
@@ -1017,12 +1017,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         .unwrap();
 
                 let has_cross_filter =
-                    matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. });
+                    matches!(options.join_type, JoinTypeIR::CrossAndFilter { .. });
 
                 // A join predicate reads output columns the final projection may not ask for.
                 let mut predicate_names = ColumnSelection::default();
-                if let Some(predicate) = match &options.options {
-                    JoinTypeOptionsIR::CrossAndFilter { predicate } => Some(predicate),
+                if let Some(predicate) = match &options.join_type {
+                    JoinTypeIR::CrossAndFilter { predicate, .. } => Some(predicate),
                     options => options.fused_predicate(),
                 } {
                     SelectionWalker::collect(
@@ -1063,7 +1063,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
 
                 // Add projections required by the join itself
-                for expr_ir in options.options.left_on() {
+                for expr_ir in options.join_type.left_on() {
                     SelectionWalker::collect(
                         self.expr_arena,
                         self.prune_struct_fields,
@@ -1072,7 +1072,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     );
                 }
 
-                for expr_ir in options.options.right_on() {
+                for expr_ir in options.join_type.right_on() {
                     SelectionWalker::collect(
                         self.expr_arena,
                         self.prune_struct_fields,
@@ -1082,7 +1082,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
 
                 #[cfg(feature = "asof_join")]
-                if let JoinType::AsOf(asof_options) = &options.args.how {
+                if let Some(asof_options) = options.join_type.asof_options() {
                     if let Some(left_by) = asof_options.left_by.as_deref() {
                         for name in left_by {
                             project_left.insert_whole(name.clone());
@@ -1097,14 +1097,19 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
 
                 // Turn on coalesce if non-coalesced keys are not included in projection. Reduces materialization.
-                if !options.args.should_coalesce()
-                    && matches!(options.args.how, JoinType::Inner | JoinType::Left)
-                    && matches!(options.options, JoinTypeOptionsIR::Equi { .. })
+                if !options.should_coalesce()
+                    && matches!(
+                        options.join_type,
+                        JoinTypeIR::Equi {
+                            how: EquiJoinType::Inner | EquiJoinType::Left,
+                            ..
+                        }
+                    )
                     && options
-                        .options
+                        .join_type
                         .left_on()
                         .all(|e| matches!(self.expr_arena.get(e.node()), AExpr::Column(_)))
-                    && options.options.right_on().all(|e| {
+                    && options.join_type.right_on().all(|e| {
                         let AExpr::Column(name) = self.expr_arena.get(e.node()) else {
                             return false;
                         };
@@ -1121,7 +1126,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         !projected
                     })
                 {
-                    Arc::make_mut(options).args.coalesce = JoinCoalesce::CoalesceColumns;
+                    Arc::make_mut(options)
+                        .join_type
+                        .set_coalesce(JoinCoalesce::CoalesceColumns);
                 }
 
                 project_left.normalize(&input_schema_left);
@@ -1193,12 +1200,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     }
 
                     if !renames.is_empty() {
-                        let predicate = match &mut Arc::make_mut(options).options {
-                            JoinTypeOptionsIR::Equi {
+                        let predicate = match &mut Arc::make_mut(options).join_type {
+                            JoinTypeIR::Equi {
                                 fused_predicate: Some(predicate),
                                 ..
                             }
-                            | JoinTypeOptionsIR::CrossAndFilter { predicate } => predicate,
+                            | JoinTypeIR::CrossAndFilter { predicate, .. } => predicate,
                             _ => unreachable!(),
                         };
 
@@ -1225,8 +1232,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                     if !orig_to_new_name_map.is_empty() {
                         if has_cross_filter {
-                            let JoinTypeOptionsIR::CrossAndFilter { predicate } =
-                                &mut Arc::make_mut(options).options
+                            let JoinTypeIR::CrossAndFilter { predicate, .. } =
+                                &mut Arc::make_mut(options).join_type
                             else {
                                 unreachable!()
                             };

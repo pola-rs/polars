@@ -767,7 +767,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 Either::Left(input_left),
                 Either::Left(input_right),
                 condition,
-                JoinOptionsIR::from(Arc::unwrap_or_clone(options)),
+                Arc::unwrap_or_clone(options),
                 ctxt,
             )
             .context(failed_here!(join))

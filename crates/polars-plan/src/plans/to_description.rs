@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 
 use polars_core::prelude::SortMultipleOptions;
-use polars_defs::join::JoinType;
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
 #[cfg(feature = "python")]
@@ -16,7 +15,7 @@ use polars_utils::index::idxsize_to_u64;
 
 use crate::dsl::dsl_resolver::DslResolverTrait;
 use crate::dsl::{HConcatOptions, SinkTypeIR, UnifiedScanArgs, UnionOptions};
-use crate::plans::options::JoinTypeOptionsIR;
+use crate::plans::options::{JoinTypeIR, NonEquiJoinType};
 use crate::plans::{AExpr, ExprIR, IR};
 #[cfg(feature = "python")]
 use crate::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
@@ -207,38 +206,43 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
         IR::Join { options, .. } => {
             let o = options.as_ref();
             let args = &o.args;
-            let (left_on, right_on) = o.options.key_vecs();
+            let (left_on, right_on) = o.join_type.key_vecs();
 
             let generic_join = || IrPropsDescription::Join {
-                how: args.how.to_string(),
+                how: o.join_type.how().to_string(),
                 left_on: fmt_exprs(&left_on, expr_arena),
                 right_on: fmt_exprs(&right_on, expr_arena),
                 fused_predicate: o
-                    .options
+                    .join_type
                     .fused_predicate()
                     .map(|fused_predicate| fmt_predicate(fused_predicate, expr_arena)),
-                nulls_equal: args.nulls_equal,
-                coalesce: fmt_from_static_str(args.coalesce),
+                nulls_equal: o.join_type.nulls_equal(),
+                coalesce: fmt_from_static_str(o.join_type.coalesce()),
                 maintain_order: fmt_from_static_str(args.maintain_order),
-                validation: fmt_from_static_str(args.validation),
+                validation: fmt_from_static_str(o.join_type.validation()),
                 suffix: args.suffix.as_ref().map(ToString::to_string),
                 slice: args.slice.map(|s| s.to_signed_offset_len()),
             };
 
-            match &args.how {
-                JoinType::Cross => IrPropsDescription::CrossJoin {
+            match &o.join_type {
+                JoinTypeIR::Cross
+                | JoinTypeIR::CrossAndFilter {
+                    how: NonEquiJoinType::Inner,
+                    ..
+                } => IrPropsDescription::CrossJoin {
                     maintain_order: fmt_from_static_str(args.maintain_order),
                     slice: args.slice.map(|s| s.to_signed_offset_len()),
-                    predicate: match &o.options {
-                        JoinTypeOptionsIR::CrossAndFilter { predicate } => {
-                            Some(fmt_predicate(predicate, expr_arena))
-                        },
-                        _ => None,
-                    },
+                    predicate: o
+                        .join_type
+                        .cross_predicate()
+                        .map(|p| fmt_predicate(p, expr_arena)),
                     suffix: args.suffix.as_ref().map(ToString::to_string),
                 },
                 #[cfg(feature = "asof_join")]
-                JoinType::AsOf(asof_options) => {
+                JoinTypeIR::AsOf {
+                    options: asof_options,
+                    ..
+                } => {
                     use polars_defs::join::AsOfOptions;
 
                     let AsOfOptions {
@@ -269,35 +273,33 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                         }),
                         suffix: args.suffix.as_ref().map(ToString::to_string),
                         slice: args.slice.map(|s| s.to_signed_offset_len()),
-                        coalesce: fmt_from_static_str(args.coalesce),
+                        coalesce: fmt_from_static_str(o.join_type.coalesce()),
                         allow_eq: *allow_eq,
                         check_sortedness: *check_sortedness,
                     }
                 },
                 #[cfg(feature = "iejoin")]
-                JoinType::IEJoin => match &o.options {
-                    JoinTypeOptionsIR::IEJoin {
-                        ie_options:
-                            polars_defs::join::IEJoinOptions {
-                                operator1,
-                                operator2,
-                            },
-                        ..
-                    } => IrPropsDescription::IEJoin {
-                        left_on: fmt_exprs(&left_on, expr_arena),
-                        right_on: fmt_exprs(&right_on, expr_arena),
-                        inequality_operators: if let Some(operator2) = operator2 {
-                            vec![
-                                fmt_from_static_str(operator1),
-                                fmt_from_static_str(operator2),
-                            ]
-                        } else {
-                            vec![fmt_from_static_str(operator1)]
+                JoinTypeIR::IEJoin {
+                    how: NonEquiJoinType::Inner,
+                    ie_options:
+                        polars_defs::join::IEJoinOptions {
+                            operator1,
+                            operator2,
                         },
-                        suffix: args.suffix.as_ref().map(ToString::to_string),
-                        slice: args.slice.map(|s| s.to_signed_offset_len()),
+                    ..
+                } => IrPropsDescription::IEJoin {
+                    left_on: fmt_exprs(&left_on, expr_arena),
+                    right_on: fmt_exprs(&right_on, expr_arena),
+                    inequality_operators: if let Some(operator2) = operator2 {
+                        vec![
+                            fmt_from_static_str(operator1),
+                            fmt_from_static_str(operator2),
+                        ]
+                    } else {
+                        vec![fmt_from_static_str(operator1)]
                     },
-                    _ => generic_join(),
+                    suffix: args.suffix.as_ref().map(ToString::to_string),
+                    slice: args.slice.map(|s| s.to_signed_offset_len()),
                 },
                 _ => generic_join(),
             }

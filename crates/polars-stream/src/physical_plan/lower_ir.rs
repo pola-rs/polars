@@ -1341,7 +1341,7 @@ fn lower_ir_inner(
             let (mut input_left, mut input_right) = (*input_left, *input_right);
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
             let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
-            let (left_on, right_on) = options.options.key_vecs();
+            let (left_on, right_on) = options.join_type.key_vecs();
             // Both sides are packed with one layout, so a range must hold the keys of both.
             let key_ranges: Vec<_> = key_value_ranges(input_left, &left_on, ir_arena, expr_arena)
                 .into_iter()
@@ -1361,13 +1361,14 @@ fn lower_ir_inner(
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
             let mut tmp_left_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
-            let args = options.args.clone();
+            let args = options.to_join_args();
+            let ir_args = options.args.clone();
             let runtime_filters = options.runtime_filters.clone();
             let estimated_rows = options.estimated_rows;
-            let options = options.options.clone();
+            let join_type = options.join_type.clone();
             // Only the hash equi join evaluates a fused predicate natively; other strategies get
             // a `Filter` on top, and the in-memory fallback applies it from `options`.
-            let mut fused_predicate = options.fused_predicate().cloned();
+            let mut fused_predicate = join_type.fused_predicate().cloned();
             #[cfg(feature = "asof_join")]
             let asof_options = || match args.how {
                 JoinType::AsOf(ref asof_options) => asof_options,
@@ -1525,7 +1526,7 @@ fn lower_ir_inner(
             // A non-equality match condition is native to the range-join node, and to the
             // equi join as a fused predicate; anything else falls back to the in-memory engine.
             let match_condition_supported =
-                options.is_pure_equi() || options.has_fused_predicate() || args.how.is_range();
+                join_type.is_pure_equi() || join_type.has_fused_predicate() || args.how.is_range();
 
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
@@ -1640,10 +1641,10 @@ fn lower_ir_inner(
                     },
                     #[cfg(feature = "iejoin")]
                     _ if args.how.is_range() => {
-                        let JoinTypeOptionsIR::Range {
+                        let JoinTypeIR::Range {
                             ie_options: range_options,
                             ..
-                        } = options
+                        } = join_type
                         else {
                             unreachable!()
                         };
@@ -1772,8 +1773,14 @@ fn lower_ir_inner(
                 PhysNodeKind::InMemoryJoin {
                     input_left: phys_left,
                     input_right: phys_right,
-                    args,
-                    options,
+                    options: Arc::new(JoinOptionsIR {
+                        allow_parallel: true,
+                        force_parallel: false,
+                        join_type,
+                        args: ir_args,
+                        runtime_filters: Vec::new(),
+                        estimated_rows: None,
+                    }),
                 }
             }
         },

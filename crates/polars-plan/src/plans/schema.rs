@@ -101,13 +101,13 @@ pub(crate) fn det_join_schema(
     schema_right: &SchemaRef,
     options: &JoinOptionsIR,
 ) -> PolarsResult<SchemaRef> {
-    let condition = &options.options;
+    let condition = &options.join_type;
 
-    match &options.args.how {
+    match options.join_type.how() {
         // semi and anti joins are just filtering operations
         // the schema will never change.
         #[cfg(feature = "semi_anti_join")]
-        JoinType::Semi | JoinType::Anti => Ok(schema_left.clone()),
+        JoinHow::Semi | JoinHow::Anti => Ok(schema_left.clone()),
         // Right-join with coalesce enabled will coalesce LHS columns into RHS columns (i.e. LHS columns
         // are removed). This is the opposite of what a left join does so it has its own codepath.
         //
@@ -116,7 +116,7 @@ pub(crate) fn det_join_schema(
         // will result in
         //
         // df(cols=[B, A, B_right])
-        JoinType::Right if options.args.should_coalesce() => {
+        JoinHow::Right if options.should_coalesce() => {
             let join_on_left: PlIndexSet<_> = condition
                 .left_on()
                 .map(|e| e.output_name().clone())
@@ -191,10 +191,10 @@ pub(crate) fn join_right_output_names(
     schema_right: &Schema,
     options: &JoinOptionsIR,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
-    let condition = &options.options;
-    let is_coalesced = options.args.should_coalesce();
+    let condition = &options.join_type;
+    let is_coalesced = options.should_coalesce();
 
-    if is_coalesced && matches!(options.args.how, JoinType::Right) {
+    if is_coalesced && matches!(options.join_type.how(), JoinHow::Right) {
         let join_on_left: PlIndexSet<_> = condition.left_on().map(|e| e.output_name()).collect();
         return Ok(schema_right
             .iter_names()
@@ -217,7 +217,7 @@ pub(crate) fn join_right_output_names(
 
     let mut right_by: PlIndexSet<&PlSmallStr> = PlIndexSet::default();
     #[cfg(feature = "asof_join")]
-    if let JoinType::AsOf(asof_options) = &options.args.how {
+    if let Some(asof_options) = options.join_type.asof_options() {
         if let Some(v) = &asof_options.right_by {
             right_by.extend(v.iter());
         }
@@ -242,7 +242,7 @@ pub(crate) fn join_right_output_names(
                 // so the columns that are joined on, may have different
                 // values so if the right has a different name, it is added to the schema
                 #[cfg(feature = "asof_join")]
-                if matches!(&options.args.how, JoinType::AsOf(_)) {
+                if matches!(options.join_type.how(), JoinHow::AsOf) {
                     need_to_include_column =
                         condition.left_on().nth(idx).unwrap().output_name() != name;
                 }

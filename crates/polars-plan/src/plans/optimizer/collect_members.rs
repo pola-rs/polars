@@ -82,12 +82,12 @@ impl MemberCollector {
                 SinkMultiple { .. } => self.has_sink_multiple = true,
                 Join { options, .. } => {
                     self.has_joins = true;
-                    self.has_preserving_join |= matches!(options.args.how, JoinType::Left)
-                        || options.args.how.is_semi_anti();
+                    self.has_preserving_join |= matches!(options.join_type.how(), JoinHow::Left)
+                        || options.join_type.how().is_semi_anti();
                 },
                 Union { .. } | HConcat { .. } => self.has_unions = true,
                 Filter { input, .. } => {
-                    self.has_filter_with_join_input |= matches!(lp_arena.get(*input), Join { options, .. } if options.args.how.is_cross())
+                    self.has_filter_with_join_input |= matches!(lp_arena.get(*input), Join { options, .. } if options.join_type.how().is_cross())
                 },
                 Distinct { .. } => {
                     self.has_distinct = true;

@@ -16,7 +16,6 @@ use polars_plan::dsl::{
     FileSinkOptions, PartitionStrategyIR, PartitionedSinkOptionsIR, ScanSources,
 };
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::options::JoinOptionsIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::FunctionFlags;
 use polars_plan::utils::aexpr_to_leaf_names_iter;
@@ -1469,7 +1468,6 @@ fn to_graph_rec<'a>(
         InMemoryJoin {
             input_left,
             input_right,
-            args,
             options,
         } => {
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
@@ -1488,14 +1486,7 @@ fn to_graph_rec<'a>(
                 input_left: left_node,
                 input_right: right_node,
                 schema: node.output_schema(0).clone(),
-                options: Arc::new(JoinOptionsIR {
-                    allow_parallel: true,
-                    force_parallel: false,
-                    args: args.clone(),
-                    options: options.clone(),
-                    runtime_filters: Vec::new(),
-                    estimated_rows: None,
-                }),
+                options: options.clone(),
             });
 
             let executor = Mutex::new(create_physical_plan(

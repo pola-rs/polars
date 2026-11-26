@@ -77,7 +77,7 @@ pub(super) fn process_join(
         &mut options,
     )?;
 
-    let (mut left_on, mut right_on) = options.options.key_vecs();
+    let (mut left_on, mut right_on) = options.join_type.key_vecs();
 
     let opt_post_select = try_rewrite_join_type(
         &schema_left,
@@ -103,10 +103,10 @@ pub(super) fn process_join(
         expr_arena,
     )?;
 
-    if match &options.args.how {
+    if match options.join_type.how() {
         // Full-join with no coalesce. We can only push filters if they do not remove NULLs, but
         // we don't have a reliable way to guarantee this.
-        JoinType::Full => !options.args.should_coalesce(),
+        JoinHow::Full => !options.should_coalesce(),
 
         _ => false,
     } || (acc_predicates.is_empty() && pushdown_left.is_empty() && pushdown_right.is_empty())
@@ -134,22 +134,26 @@ pub(super) fn process_join(
         return result;
     }
 
-    let should_coalesce = options.args.should_coalesce();
+    let should_coalesce = options.should_coalesce();
 
     // AsOf has the equality join keys under `asof_options.left/right_by`. This code builds an
     // iterator to address these generically without creating a `Box<dyn Iterator>`.
     let get_lhs_column_keys_iter = || {
-        let len = match &options.args.how {
+        let len = match &options.join_type {
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(asof_options) => {
-                asof_options.left_by.as_deref().unwrap_or_default().len()
-            },
+            JoinTypeIR::AsOf {
+                options: asof_options,
+                ..
+            } => asof_options.left_by.as_deref().unwrap_or_default().len(),
             _ => left_on.len(),
         };
 
-        (0..len).map(|i| match &options.args.how {
+        (0..len).map(|i| match &options.join_type {
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(asof_options) => Some(
+            JoinTypeIR::AsOf {
+                options: asof_options,
+                ..
+            } => Some(
                 asof_options
                     .left_by
                     .as_deref()
@@ -181,17 +185,21 @@ pub(super) fn process_join(
     };
 
     let get_rhs_column_keys_iter = || {
-        let len = match &options.args.how {
+        let len = match &options.join_type {
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(asof_options) => {
-                asof_options.right_by.as_deref().unwrap_or_default().len()
-            },
+            JoinTypeIR::AsOf {
+                options: asof_options,
+                ..
+            } => asof_options.right_by.as_deref().unwrap_or_default().len(),
             _ => right_on.len(),
         };
 
-        (0..len).map(|i| match &options.args.how {
+        (0..len).map(|i| match &options.join_type {
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(asof_options) => Some(
+            JoinTypeIR::AsOf {
+                options: asof_options,
+                ..
+            } => Some(
                 asof_options
                     .right_by
                     .as_deref()
@@ -222,10 +230,10 @@ pub(super) fn process_join(
         })
     };
 
-    if cfg!(debug_assertions) && options.args.should_coalesce() {
-        match &options.args.how {
+    if cfg!(debug_assertions) && options.should_coalesce() {
+        match options.join_type.how() {
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(_) => {},
+            JoinHow::AsOf => {},
 
             _ => {
                 assert!(get_lhs_column_keys_iter().len() > 0);
@@ -239,7 +247,7 @@ pub(super) fn process_join(
 
     // Key columns of the left table that are coalesced into an output column of the right table.
     let coalesced_to_right: PlIndexSet<PlSmallStr> =
-        if matches!(&options.args.how, JoinType::Right) && options.args.should_coalesce() {
+        if matches!(options.join_type.how(), JoinHow::Right) && options.should_coalesce() {
             get_lhs_column_keys_iter()
                 .map(|x| x.unwrap().clone())
                 .collect()
@@ -270,16 +278,16 @@ pub(super) fn process_join(
             let dtypes_differ = lhs_dtype != rhs_dtype;
 
             // lhs_input_key: Column name within the left table.
-            use JoinType::*;
+            use JoinHow::*;
             // Map output name of an LHS join key output to an input key column of the right table.
             // This will cause predicates referring to LHS join keys to also be pushed to the RHS table.
-            if match &options.args.how {
+            if match options.join_type.how() {
                 Left | Inner | Full => true,
 
                 // Asof matches `by` keys on their physical values, so a cast to the other
                 // logical dtype can change the value.
                 #[cfg(feature = "asof_join")]
-                AsOf(_) => !dtypes_differ,
+                AsOf => !dtypes_differ,
                 #[cfg(feature = "semi_anti_join")]
                 Semi | Anti => true,
 
@@ -302,10 +310,10 @@ pub(super) fn process_join(
 
             // Map output name of an RHS join key output to a key column of the left table.
             // This will cause predicates referring to RHS join keys to also be pushed to the LHS table.
-            if match &options.args.how {
-                JoinType::Right => true,
+            if match options.join_type.how() {
+                JoinHow::Right => true,
                 // Non-coalesced output columns of an inner join are equivalent between LHS and RHS.
-                JoinType::Inner => !options.args.should_coalesce(),
+                JoinHow::Inner => !options.should_coalesce(),
                 _ => false,
             } {
                 let rhs_output_key: PlSmallStr = if schema_left.contains(rhs_input_key.as_str())
@@ -340,8 +348,8 @@ pub(super) fn process_join(
 
     // A filter on the left key of an as-of join also bounds the right keys it can match.
     #[cfg(feature = "asof_join")]
-    let asof_keys = match (&options.args.how, left_on.as_slice(), right_on.as_slice()) {
-        (JoinType::AsOf(asof), [l], [r]) => {
+    let asof_keys = match (&options.join_type, left_on.as_slice(), right_on.as_slice()) {
+        (JoinTypeIR::AsOf { options: asof, .. }, [l], [r]) => {
             match (expr_arena.get(l.node()), expr_arena.get(r.node())) {
                 (AExpr::Column(l), AExpr::Column(r))
                     if schema_left.get(l) == schema_right.get(r) =>
@@ -403,28 +411,28 @@ pub(super) fn process_join(
         // Note: If `push_left` and `push_right` are both `true`, it means the predicate refers only
         // to the join key columns, or the predicate does not refer any columns.
 
-        let has_residual = match &options.args.how {
+        let has_residual = match options.join_type.how() {
             // Pushing to a single side is enough to observe the full effect of the filter.
-            JoinType::Inner => !(push_left || push_right),
+            JoinHow::Inner => !(push_left || push_right),
 
             // Left-join: Pushing filters to the left table is enough to observe the effect of the
             // filter. Pushing filters to the right is optional, but can only be done if the
             // filter is also pushed to the left (if this is the case it means the filter only
             // references join key columns).
-            JoinType::Left => {
+            JoinHow::Left => {
                 push_right &= push_left;
                 !push_left
             },
 
             // Same as left-join, just flipped around.
-            JoinType::Right => {
+            JoinHow::Right => {
                 push_left &= push_right;
                 !push_right
             },
 
             // Full-join: Filters must strictly apply only to coalesced output key columns.
-            JoinType::Full => {
-                assert!(options.args.should_coalesce());
+            JoinHow::Full => {
+                assert!(options.should_coalesce());
 
                 let push = push_left && push_right;
                 push_left = push;
@@ -433,7 +441,7 @@ pub(super) fn process_join(
                 !push
             },
 
-            JoinType::Cross => {
+            JoinHow::Cross => {
                 // Predicate should only refer to a single side.
                 assert!(output_key_to_left_input_map.is_empty());
                 assert!(output_key_to_right_input_map.is_empty());
@@ -443,26 +451,26 @@ pub(super) fn process_join(
             // Behaves similarly to left-join on "by" columns (takes a single match instead of
             // all matches according to asof strategy).
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(_) => {
+            JoinHow::AsOf => {
                 push_right &= push_left;
                 !push_left
             },
 
             // Same as inner-join.
             #[cfg(feature = "semi_anti_join")]
-            JoinType::Semi => !(push_left || push_right),
+            JoinHow::Semi => !(push_left || push_right),
 
             // Anti-join is an exclusion of key tuples that exist in the right table, meaning that
             // filters can only be pushed to the right table if they are also pushed to the left.
             #[cfg(feature = "semi_anti_join")]
-            JoinType::Anti => {
+            JoinHow::Anti => {
                 push_right &= push_left;
                 !push_left
             },
 
             // Same as inner-join.
             #[cfg(feature = "iejoin")]
-            JoinType::IEJoin | JoinType::Range => !(push_left || push_right),
+            JoinHow::IEJoin | JoinHow::Range => !(push_left || push_right),
         };
 
         Placement {
@@ -611,15 +619,15 @@ fn key_non_null_predicates(
     PlIndexMap<PlSmallStr, ExprIR>,
     PlIndexMap<PlSmallStr, ExprIR>,
 )> {
-    let (left_keys_non_null, right_keys_non_null) = match options.args.how {
-        _ if options.args.nulls_equal || options.is_non_equi() => (false, false),
-        JoinType::Inner => (true, true),
-        JoinType::Left => (false, true),
-        JoinType::Right => (true, false),
+    let (left_keys_non_null, right_keys_non_null) = match options.join_type.how() {
+        _ if options.join_type.nulls_equal() || options.is_non_equi() => (false, false),
+        JoinHow::Inner => (true, true),
+        JoinHow::Left => (false, true),
+        JoinHow::Right => (true, false),
         #[cfg(feature = "semi_anti_join")]
-        JoinType::Semi => (true, true),
+        JoinHow::Semi => (true, true),
         #[cfg(feature = "semi_anti_join")]
-        JoinType::Anti => (false, true),
+        JoinHow::Anti => (false, true),
         _ => (false, false),
     };
 
@@ -696,7 +704,7 @@ fn downgradable_outer_join_below(
         if !schema.contains(&name) {
             return Ok(false);
         }
-        let how = &options.args.how;
+        let how = options.join_type.how();
         let schema_left = lp_arena.get(*input_left).schema(lp_arena);
         let schema_right = lp_arena.get(*input_right).schema(lp_arena);
         let origin = non_null_side_for_column(&name, &schema_left, &schema_right, options);
@@ -707,12 +715,12 @@ fn downgradable_outer_join_below(
         }
         // Only the side whose rows the join keeps can take the predicate.
         node = match origin {
-            ExprOrigin::Left if !matches!(how, JoinType::Right | JoinType::Full) => *input_left,
+            ExprOrigin::Left if !matches!(how, JoinHow::Right | JoinHow::Full) => *input_left,
             ExprOrigin::Right
                 if match how {
-                    JoinType::Left | JoinType::Full => false,
+                    JoinHow::Left | JoinHow::Full => false,
                     #[cfg(feature = "asof_join")]
-                    JoinType::AsOf(_) => false,
+                    JoinHow::AsOf => false,
                     _ => true,
                 } =>
             {
@@ -763,23 +771,23 @@ fn try_reduce_redundant_join_keys(
     output_schema: &mut SchemaRef,
     options: &mut Arc<JoinOptionsIR>,
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
-    if options.options.left_on_len() <= 1 {
+    if options.join_type.left_on_len() <= 1 {
         return Ok(None);
     }
 
-    let (left_on, right_on) = options.options.key_vecs();
+    let (left_on, right_on) = options.join_type.key_vecs();
 
     // Only filter a side when removed rows from that side cannot contribute to the join output.
-    let reduce_left = match options.args.how {
-        JoinType::Inner | JoinType::Right => true,
+    let reduce_left = match options.join_type.how() {
+        JoinHow::Inner | JoinHow::Right => true,
         #[cfg(feature = "semi_anti_join")]
-        JoinType::Semi => true,
+        JoinHow::Semi => true,
         _ => false,
     };
-    let reduce_right = match options.args.how {
-        JoinType::Inner | JoinType::Left => true,
+    let reduce_right = match options.join_type.how() {
+        JoinHow::Inner | JoinHow::Left => true,
         #[cfg(feature = "semi_anti_join")]
-        JoinType::Semi => true,
+        JoinHow::Semi => true,
         _ => false,
     };
 
@@ -795,7 +803,7 @@ fn try_reduce_redundant_join_keys(
         collect_redundant_join_key_filters(
             &left_on,
             &right_on,
-            options.args.nulls_equal,
+            options.join_type.nulls_equal(),
             &mut remove_key,
             &mut pushdown_left,
             expr_arena,
@@ -807,7 +815,7 @@ fn try_reduce_redundant_join_keys(
         collect_redundant_join_key_filters(
             &right_on,
             &left_on,
-            options.args.nulls_equal,
+            options.join_type.nulls_equal(),
             &mut remove_key,
             &mut pushdown_right,
             expr_arena,
@@ -839,7 +847,7 @@ fn try_reduce_redundant_join_keys(
         }
     }
     Arc::make_mut(options)
-        .options
+        .join_type
         .set_keys(new_left_on, new_right_on);
 
     *output_schema = det_join_schema(schema_left, schema_right, options)?;

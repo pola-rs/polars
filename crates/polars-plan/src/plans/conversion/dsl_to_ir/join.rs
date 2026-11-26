@@ -56,7 +56,7 @@ pub fn resolve_join(
     input_left: Either<Arc<DslPlan>, Node>,
     input_right: Either<Arc<DslPlan>, Node>,
     condition: JoinCondition,
-    mut options: JoinOptionsIR,
+    mut options: JoinOptions,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
     let (mut left_on, mut right_on) = match condition {
@@ -145,9 +145,8 @@ pub fn resolve_join(
             }
             options.args.coalesce = JoinCoalesce::KeepColumns;
         }
-
-        options.args.validation.is_valid_join(&options.args.how)?;
     }
+    options.args.validation.is_valid_join(&options.args.how)?;
 
     let mut left_on = to_join_expr_irs(left_on, &schema_left, ctxt.expr_arena, ctxt.opt_flags)?;
     let mut right_on = to_join_expr_irs(right_on, &schema_right, ctxt.expr_arena, ctxt.opt_flags)?;
@@ -432,16 +431,20 @@ pub fn resolve_join(
         .schema(ctxt.lp_arena)
         .into_owned();
 
-    options.options = {
-        let on = left_on.into_iter().zip(right_on).collect();
-        match &options.args.how {
-            #[cfg(feature = "asof_join")]
-            JoinType::AsOf(_) => JoinTypeOptionsIR::AsOf { on },
-            _ => JoinTypeOptionsIR::Equi {
-                on,
-                fused_predicate: None,
-            },
-        }
+    let JoinOptions {
+        allow_parallel,
+        force_parallel,
+        args,
+    } = options;
+    let (join_type, args) =
+        JoinTypeIR::from_args(args, left_on.into_iter().zip(right_on).collect())?;
+    let options = JoinOptionsIR {
+        allow_parallel,
+        force_parallel,
+        join_type,
+        args,
+        runtime_filters: Vec::new(),
+        estimated_rows: None,
     };
 
     let join_schema = det_join_schema(&schema_left, &schema_right, &options)
@@ -495,7 +498,7 @@ fn resolve_join_where(
     input_left: Arc<DslPlan>,
     input_right: Arc<DslPlan>,
     predicates: Vec<Expr>,
-    mut options: JoinOptionsIR,
+    mut options: JoinOptions,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
     polars_ensure!(
@@ -522,7 +525,13 @@ fn resolve_join_where(
         .into_owned();
 
     // We start assuming a cross join. Take the how, to keep join information.
-    let how = std::mem::replace(&mut options.args.how, JoinType::Cross);
+    let how = match std::mem::replace(&mut options.args.how, JoinType::Cross) {
+        JoinType::Inner => NonEquiJoinType::Inner,
+        JoinType::Left => NonEquiJoinType::Left,
+        JoinType::Right => NonEquiJoinType::Right,
+        JoinType::Full => NonEquiJoinType::Full,
+        _ => unreachable!("checked by `supports_non_equi`"),
+    };
     // Left and right joins coalesce. We don't want that in join_where.
     options.args.coalesce = JoinCoalesce::KeepColumns;
 
@@ -585,7 +594,7 @@ fn resolve_join_where(
         })
         .expect("'join_where' requires at least one predicate");
 
-    let is_inner = how.is_inner();
+    let is_inner = how == NonEquiJoinType::Inner;
     if is_inner {
         // Use the filter splitter so aggregates see the full join input,
         // regardless of the predicate order.
@@ -611,8 +620,7 @@ fn resolve_join_where(
             unreachable!()
         };
         let mut new_options = (**options).clone();
-        new_options.args.how = how;
-        new_options.options = JoinTypeOptionsIR::CrossAndFilter { predicate };
+        new_options.join_type = JoinTypeIR::CrossAndFilter { how, predicate };
 
         let IR::Join { options, .. } = ctxt.lp_arena.get_mut(join_node) else {
             unreachable!()

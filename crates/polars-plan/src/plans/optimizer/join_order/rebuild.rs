@@ -8,7 +8,7 @@ use polars_utils::arena::{Arena, Node};
 use super::cluster::Cluster;
 use crate::plans::schema::det_join_schema;
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, ProjectionOptions, SchemaRef,
+    AExpr, EquiJoinType, ExprIR, IR, JoinOptionsIR, JoinTypeIR, ProjectionOptions, SchemaRef,
 };
 use crate::utils::check_input_node;
 
@@ -36,13 +36,23 @@ pub(super) fn rebuild(
         let leaf = &cluster.leaves[next];
         let on = keys_joining(cluster, &is_placed, next);
 
+        // A leaf with no keys to the placed leaves is joined as a cross product.
+        let join_type = if on.is_empty() {
+            JoinTypeIR::Cross
+        } else {
+            JoinTypeIR::Equi {
+                how: EquiJoinType::Inner,
+                on,
+                fused_predicate: None,
+                nulls_equal: cluster.options.join_type.nulls_equal(),
+                validation: cluster.options.join_type.validation(),
+                coalesce: cluster.options.join_type.coalesce(),
+            }
+        };
         // Field-by-field rather than struct-update syntax, which would clone the
         // old key vector only to overwrite it.
         let options = Arc::new(JoinOptionsIR {
-            options: JoinTypeOptionsIR::Equi {
-                on,
-                fused_predicate: None,
-            },
+            join_type,
             args: cluster.options.args.clone(),
             allow_parallel: cluster.options.allow_parallel,
             force_parallel: cluster.options.force_parallel,

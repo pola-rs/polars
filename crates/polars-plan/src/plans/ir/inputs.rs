@@ -71,7 +71,7 @@ impl IR {
 
             GroupBy { keys, aggs, .. } => Exprs::double_slice(keys, aggs),
 
-            Join { options, .. } => options.options.exprs(),
+            Join { options, .. } => options.join_type.exprs(),
 
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => Exprs::Empty,
@@ -133,7 +133,7 @@ impl IR {
 
             GroupBy { keys, aggs, .. } => ExprsMut::double_slice(keys, aggs),
 
-            Join { options, .. } => Arc::make_mut(options).options.exprs_mut(),
+            Join { options, .. } => Arc::make_mut(options).join_type.exprs_mut(),
 
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => ExprsMut::Empty,
@@ -278,7 +278,7 @@ impl IR {
     /// The schema that the `idx`-th expression of [`Self::exprs`] resolves against.
     pub fn expr_schema(&self, idx: usize) -> ExprSchema {
         match self {
-            IR::Join { options, .. } => options.options.expr_schema(idx),
+            IR::Join { options, .. } => options.join_type.expr_schema(idx),
             _ => ExprSchema::Input(0),
         }
     }

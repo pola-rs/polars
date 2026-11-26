@@ -26,11 +26,11 @@ fn is_hive_partitioned(node: Node, ir_arena: &Arena<IR>) -> Option<HivePartition
 }
 
 #[cfg(feature = "is_in")]
-fn hive_rewrite_supports_join_type(how: &JoinType) -> bool {
+fn hive_rewrite_supports_join_type(how: JoinHow) -> bool {
     match how {
-        JoinType::Inner | JoinType::Left | JoinType::Right => true,
+        JoinHow::Inner | JoinHow::Left | JoinHow::Right => true,
         #[cfg(feature = "semi_anti_join")]
-        JoinType::Semi => true,
+        JoinHow::Semi => true,
         _ => false,
     }
 }
@@ -167,7 +167,7 @@ pub fn rewrite_hive(
                 options,
             } if let (MaintainOrderJoin::None, true, Some(hive_left), Some(hive_right)) = (
                 &options.args.maintain_order,
-                hive_rewrite_supports_join_type(&options.args.how),
+                hive_rewrite_supports_join_type(options.join_type.how()),
                 is_hive_partitioned(input_left, ir_arena),
                 is_hive_partitioned(input_right, ir_arena),
             ) =>
@@ -181,7 +181,7 @@ pub fn rewrite_hive(
                 let mut hive_cols: Option<(usize, PlSmallStr, PlSmallStr)> = None;
                 let hive_left_schema = hive_left.schema();
                 let hive_right_schema = hive_right.schema();
-                for (l, r) in options.options.key_pairs().unwrap_or_default() {
+                for (l, r) in options.join_type.key_pairs().unwrap_or_default() {
                     let l = expr_arena.get(l.node());
                     let r = expr_arena.get(r.node());
                     if let (AExpr::Column(l), AExpr::Column(r)) = (l, r) {
@@ -204,8 +204,8 @@ pub fn rewrite_hive(
                         l.as_str(),
                         r.as_str(),
                         JoinArgs {
-                            how: options.args.how.clone(),
-                            nulls_equal: options.args.nulls_equal,
+                            how: options.join_type.to_join_type(),
+                            nulls_equal: options.join_type.nulls_equal(),
                             ..Default::default()
                         },
                     )?;

@@ -434,18 +434,14 @@ mod tests {
 
     use super::super::cluster::{ColumnKey, Leaf};
     use super::*;
-    use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats};
-    use crate::prelude::JoinArgs;
+    use crate::plans::{ExprIR, JoinArgsIR, JoinOptionsIR, JoinTypeIR, NodeStats};
 
     fn dummy_options() -> std::sync::Arc<JoinOptionsIR> {
         std::sync::Arc::new(JoinOptionsIR {
             allow_parallel: true,
             force_parallel: false,
-            args: JoinArgs::default(),
-            options: JoinTypeOptionsIR::Equi {
-                on: Vec::new(),
-                fused_predicate: None,
-            },
+            args: JoinArgsIR::default(),
+            join_type: JoinTypeIR::Cross,
             runtime_filters: Vec::new(),
             estimated_rows: None,
         })

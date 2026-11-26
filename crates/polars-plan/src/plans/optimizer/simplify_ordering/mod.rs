@@ -417,21 +417,19 @@ impl SimplifyIRNodeOrder<'_> {
                 schema: _,
                 options,
             } => {
-                use polars_defs::join::JoinType;
-
                 let ([in_edge_lhs, in_edge_rhs], [out_edge]) = unpack_edges!(3);
 
                 let ae_nodes_scratch = self.ae_nodes_scratch.get();
 
                 let mut eos = expr_order_simplifier!();
-                ae_nodes_scratch.extend(options.options.left_on().map(|eir| eir.node()));
+                ae_nodes_scratch.extend(options.join_type.left_on().map(|eir| eir.node()));
                 let left_keys_observable = eos.simplify_projected_exprs(ae_nodes_scratch, false);
                 // Sortedness hints on the keys pin the input order.
                 let left_keys_pin_order = eos.internally_observed_orders().contains(O::COLUMN);
 
                 ae_nodes_scratch.clear();
                 let mut eos = expr_order_simplifier!();
-                ae_nodes_scratch.extend(options.options.right_on().map(|eir| eir.node()));
+                ae_nodes_scratch.extend(options.join_type.right_on().map(|eir| eir.node()));
                 let right_keys_observable = eos.simplify_projected_exprs(ae_nodes_scratch, false);
                 let right_keys_pin_order = eos.internally_observed_orders().contains(O::COLUMN);
 
@@ -451,7 +449,7 @@ impl SimplifyIRNodeOrder<'_> {
                 }
 
                 #[cfg(feature = "asof_join")]
-                if let JoinType::AsOf(_) = &options.args.how {
+                if options.join_type.how().is_asof() {
                     if in_edge_lhs.is_unordered()
                         || (out_edge.is_unordered()
                             && options.args.slice.is_none()
@@ -491,11 +489,7 @@ impl SimplifyIRNodeOrder<'_> {
 
                 if in_edge_rhs.is_unordered()
                     || options.args.maintain_order == JO::Left
-                    || match &options.args.how {
-                        #[cfg(feature = "semi_anti_join")]
-                        JoinType::Semi | JoinType::Anti => true,
-                        _ => false,
-                    }
+                    || options.join_type.how().is_semi_anti()
                 {
                     *in_edge_rhs = Edge::Unordered;
 

@@ -53,10 +53,10 @@ use crate::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeIR, NodeStats, Operator, into_column,
     is_inherently_nondeterministic,
 };
-use crate::prelude::{JoinType, MaintainOrderJoin};
+use crate::prelude::MaintainOrderJoin;
 use crate::utils::has_aexpr;
 
 pub(super) fn attach_join_runtime_filters(
@@ -116,7 +116,7 @@ fn process_join(
     {
         return;
     }
-    let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
+    let JoinTypeIR::Equi { on, .. } = &options.join_type else {
         return;
     };
     let on = on.clone();
@@ -132,7 +132,7 @@ fn process_join(
     // Try the right side first when candidates rank equally.
     let mut sides = build_candidates(false, &right_stats);
     sides.extend(build_candidates(true, &left_stats));
-    let how = &options.args.how;
+    let how = options.join_type.how();
     if how.is_semi() || how.is_anti() {
         let right_distinct = on.iter().try_fold(1.0, |acc, (_, right_key)| {
             let name = into_column(right_key.node(), expr_arena)?;
@@ -333,7 +333,7 @@ fn trace_probe_keys(
 /// gives no filter, as the join evaluates it again when it builds.
 fn is_eligible_join(options: &JoinOptionsIR, expr_arena: &Arena<AExpr>) -> bool {
     let args = &options.args;
-    let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
+    let JoinTypeIR::Equi { on, .. } = &options.join_type else {
         return false;
     };
     !on.is_empty()
@@ -341,11 +341,11 @@ fn is_eligible_join(options: &JoinOptionsIR, expr_arena: &Arena<AExpr>) -> bool 
             !is_inherently_nondeterministic(left.node(), expr_arena)
                 && !is_inherently_nondeterministic(right.node(), expr_arena)
         })
-        && (args.how == JoinType::Inner || args.how.is_semi_anti())
+        && (options.join_type.how().is_inner() || options.join_type.how().is_semi_anti())
         && args.maintain_order == MaintainOrderJoin::None
-        && !args.nulls_equal
+        && !options.join_type.nulls_equal()
         && args.slice.is_none()
-        && !args.validation.needs_checks()
+        && !options.join_type.validation().needs_checks()
 }
 
 /// The scans whose column `predicate` reads, following the column down from `node`
@@ -436,7 +436,7 @@ fn scan_origins(
                     let schema_left = ir_arena.get(*input_left).schema(ir_arena);
                     let schema_right = ir_arena.get(*input_right).schema(ir_arena);
                     // A semi or anti join outputs the left columns only.
-                    let from_right = if options.args.how.is_semi_anti() {
+                    let from_right = if options.join_type.how().is_semi_anti() {
                         None
                     } else {
                         let Ok(names) =

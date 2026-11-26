@@ -766,7 +766,7 @@ fn create_physical_plan_impl(
                 options.allow_parallel
             };
 
-            let (key_left, key_right) = options.options.key_vecs();
+            let (key_left, key_right) = options.join_type.key_vecs();
             let left_on = create_physical_expressions_from_irs(
                 &key_left,
                 expr_arena,
@@ -780,10 +780,11 @@ fn create_physical_plan_impl(
                 &mut ExpressionConversionState::new(true),
             )?;
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
+            let args = options.to_join_args();
 
             // Convert the join options, to the physical join options. This requires the physical
             // planner, so we do this last minute.
-            let join_type_options = options.options.compile(|e| {
+            let join_type_options = options.join_type.compile(|e| {
                 let phys_expr = create_physical_expr(
                     e,
                     expr_arena,
@@ -806,7 +807,7 @@ fn create_physical_plan_impl(
                 left_on,
                 right_on,
                 parallel,
-                options.args,
+                args,
                 join_type_options,
             )))
         },

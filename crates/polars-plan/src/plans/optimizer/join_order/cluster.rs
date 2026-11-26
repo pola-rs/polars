@@ -23,7 +23,7 @@ use crate::plans::{
     AExpr, ExprIR, IR, JoinOptionsIR, MintermIter, NodeStats, OutputName, ProjectionOptions,
     aexpr_to_leaf_names_iter,
 };
-use crate::prelude::{JoinArgs, Operator};
+use crate::prelude::{JoinArgsIR, Operator};
 use crate::utils::rename_columns;
 
 /// With two leaves there is only one order, so a cluster needs at least three.
@@ -262,7 +262,7 @@ pub(super) fn extract(
         });
     }
 
-    let coalesced = if options.args.should_coalesce() {
+    let coalesced = if options.should_coalesce() {
         coalesce_keys(&schemas, &edges, expr_arena)?
     } else {
         PlIndexSet::default()
@@ -555,7 +555,7 @@ impl<'a> Collector<'a> {
                     let schema_left = self.ir_arena.get(*input_left).schema(self.ir_arena);
                     let schema_right = self.ir_arena.get(*input_right).schema(self.ir_arena);
 
-                    if let Some(on) = options.options.key_pairs() {
+                    if let Some(on) = options.join_type.key_pairs() {
                         for (left_key, right_key) in on {
                             self.key_pairs.push(RawKey {
                                 left_key: left_key.clone(),
@@ -602,8 +602,7 @@ impl<'a> Collector<'a> {
     /// The cluster's joins drop null keys and keep both key columns, so the key
     /// keeps exactly the rows the predicate keeps.
     fn equality_key(&self, conjunct: Node, schema: &Schema, origins: &[Origin]) -> Option<RawKey> {
-        let args = &self.root_options.args;
-        if args.nulls_equal || args.should_coalesce() {
+        if self.root_options.join_type.nulls_equal() || self.root_options.should_coalesce() {
             return None;
         }
         let AExpr::BinaryExpr {
@@ -863,24 +862,20 @@ fn rename_expr(expr: &ExprIR, renames: &Renames, expr_arena: &mut Arena<AExpr>) 
 /// table, so no two joins agree on it. This is only sound while
 /// [`column_names_are_unambiguous`] holds, since a suffix only applies on a collision.
 ///
-/// Destructured so that a new `JoinArgs` field is a compile error here.
+/// Destructured so that a new `JoinArgsIR` field is a compile error here.
 fn same_settings(a: &JoinOptionsIR, b: &JoinOptionsIR) -> bool {
-    let JoinArgs {
-        how,
-        validation,
+    let JoinArgsIR {
         suffix: _,
         slice,
-        nulls_equal,
-        coalesce,
         maintain_order,
         build_side,
     } = &a.args;
 
-    *how == b.args.how
-        && *validation == b.args.validation
+    a.join_type.how() == b.join_type.how()
+        && a.join_type.validation() == b.join_type.validation()
+        && a.join_type.nulls_equal() == b.join_type.nulls_equal()
+        && a.join_type.coalesce() == b.join_type.coalesce()
         && *slice == b.args.slice
-        && *nulls_equal == b.args.nulls_equal
-        && *coalesce == b.args.coalesce
         && *maintain_order == b.args.maintain_order
         && *build_side == b.args.build_side
         && a.allow_parallel == b.allow_parallel

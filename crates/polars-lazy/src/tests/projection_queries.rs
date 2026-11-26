@@ -178,7 +178,7 @@ fn test_coalesce_toggle_projection_pushdown() -> PolarsResult<()> {
     let lp_arena = plan.lp_arena;
 
     assert!(lp_arena.iter(node).all(|(_, plan)| match plan {
-        IR::Join { options, .. } => options.args.should_coalesce(),
+        IR::Join { options, .. } => options.should_coalesce(),
         _ => true,
     }));
 

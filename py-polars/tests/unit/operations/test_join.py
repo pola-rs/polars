@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from polars._typing import (
         EngineType,
         JoinStrategy,
+        JoinValidation,
         MaintainOrderJoin,
         PolarsDataType,
     )
@@ -893,6 +894,19 @@ def test_join_validation() -> None:
 
             # right longer
             test_each_join_validation(short_unique, long_duplicate, join_col, how)
+
+
+@pytest.mark.parametrize("validate", ["m:1", "1:m", "1:1"])
+def test_join_validation_cross_raises(validate: JoinValidation) -> None:
+    lf = pl.LazyFrame({"a": [1, 2]})
+    other = pl.LazyFrame({"b": [3, 4]})
+    q = lf.join(other, how="cross", validate=validate).filter(
+        pl.col("a") == pl.col("b")
+    )
+    with pytest.raises(
+        ComputeError, match="validation on a CROSS join is not supported"
+    ):
+        q.collect()
 
 
 @typing.no_type_check
