@@ -1299,6 +1299,31 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step, dtype }),
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 2);
+                let start = build_select_stream_with_ctx(input, &inner_exprs[0..1], ctx)?;
+                let end = build_select_stream_with_ctx(input, &inner_exprs[1..2], ctx)?;
+
+                let out_name = unique_column_name();
+                let output_schema = Schema::from_iter([(out_name.clone(), dtype.clone())]);
+                let kind = PhysNodeKind::IntRange {
+                    start,
+                    end,
+                    step,
+                    dtype,
+                };
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
             #[cfg(all(feature = "strings", feature = "temporal"))]
             AExpr::Function {
                 input: ref inner_exprs,

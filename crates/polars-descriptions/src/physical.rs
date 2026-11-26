@@ -213,6 +213,10 @@ pub enum PhysicalPropsDescription {
         exprs: Vec<String>,
     },
     Repeat,
+    IntRange {
+        step: i64,
+        dtype: String,
+    },
     Rle,
     RleId,
     Select {

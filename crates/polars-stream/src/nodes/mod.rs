@@ -17,6 +17,8 @@ pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
 pub mod input_independent_select;
+#[cfg(feature = "range")]
+pub mod int_range;
 #[cfg(feature = "interpolate")]
 pub mod interpolate;
 pub mod io_sinks;

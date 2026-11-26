@@ -506,7 +506,7 @@ def test_streaming_int_range_over_length(
     # cast of the row index would, so that one keeps evaluating `int_range`.
     is_row_index = dtype != pl.Int32
     assert ("with-row-index" in plan) == is_row_index
-    assert ("columnar-function" in plan) != is_row_index
+    assert ("int-range" in plan) != is_row_index
 
     expected = pl.DataFrame({"literal": range(height)}, schema={"literal": dtype})
     assert_frame_equal(q.collect(), expected)

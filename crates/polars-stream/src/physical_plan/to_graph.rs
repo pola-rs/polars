@@ -882,6 +882,33 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(feature = "range")]
+        IntRange {
+            start,
+            end,
+            step,
+            dtype,
+        } => {
+            let name = node.output_schema(0).get_at_index(0).unwrap().0.clone();
+            let start_key = to_graph_rec(start.node, ctx)?;
+            let end_key = to_graph_rec(end.node, ctx)?;
+            let start_schema = start.output_schema(ctx.phys_sm).clone();
+            let end_schema = end.output_schema(ctx.phys_sm).clone();
+            ctx.add_node_with_metrics(
+                |registry| {
+                    nodes::int_range::IntRangeNode::new(
+                        name,
+                        dtype.clone(),
+                        *step,
+                        start_schema,
+                        end_schema,
+                        registry.task_metrics(),
+                    )
+                },
+                [(start_key, start.port), (end_key, end.port)],
+            )
+        },
+
         #[cfg(feature = "cum_agg")]
         CumAgg { input, kind } => {
             let input_key = to_graph_rec(input.node, ctx)?;
