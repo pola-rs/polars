@@ -3248,7 +3248,7 @@ dependencies = [
 
 [[package]]
 name = "polars-database"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bitflags",
  "chrono",
@@ -3269,7 +3269,7 @@ dependencies = [
 
 [[package]]
 name = "polars-database-python"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "polars-database",
  "pyo3",
@@ -3811,7 +3811,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "either",
  "libc",
@@ -3822,7 +3822,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "either",
  "libc",
@@ -3833,7 +3833,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "either",
  "libc",
@@ -3871,9 +3871,11 @@ dependencies = [
  "polars-plan",
  "polars-testing",
  "polars-utils",
+ "recursive",
  "regex",
  "serde",
  "sqlparser",
+ "stacker",
 ]
 
 [[package]]
@@ -5367,7 +5369,7 @@ dependencies = [
 [[package]]
 name = "tikv-jemalloc-sys"
 version = "0.7.1+5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc"
-source = "git+https://github.com/pola-rs/jemallocator?rev=e947a0d1a786e221ac1c14ba1566b55151e61ec9#e947a0d1a786e221ac1c14ba1566b55151e61ec9"
+source = "git+https://github.com/pola-rs/jemallocator?rev=ad55c8c42c4a0dfb2ca6674acf9e3d8d749e6b30#ad55c8c42c4a0dfb2ca6674acf9e3d8d749e6b30"
 dependencies = [
  "cc",
  "libc",

@@ -885,8 +885,9 @@ fn to_graph_rec<'a>(
         #[cfg(feature = "cum_agg")]
         CumAgg { input, kind } => {
             let input_key = to_graph_rec(input.node, ctx)?;
+            let (_, dtype) = node.output_schema(0).get_at_index(0).unwrap();
             ctx.graph.add_node(
-                nodes::cum_agg::CumAggNode::new(*kind),
+                nodes::cum_agg::CumAggNode::new(*kind, dtype.clone()),
                 [(input_key, input.port)],
             )
         },

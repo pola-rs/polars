@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -134,6 +134,15 @@ def test_datetime_to_int(dt: datetime, time_unit: TimeUnit, expected: int) -> No
         (
             datetime(2000, 1, 1, 12, 0, tzinfo=ZoneInfo("America/Chicago")),
             946_749_600_000_000,
+        ),
+        # sub-second offsets
+        (
+            datetime(2000, 1, 1, 12, tzinfo=timezone(timedelta(microseconds=5))),
+            946_727_999_999_995,
+        ),
+        (
+            datetime(2000, 1, 1, 12, tzinfo=timezone(-timedelta(microseconds=5))),
+            946_728_000_000_005,
         ),
     ],
 )

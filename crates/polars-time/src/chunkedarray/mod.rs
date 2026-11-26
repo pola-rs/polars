@@ -5,7 +5,7 @@ mod date;
 mod datetime;
 #[cfg(feature = "dtype-duration")]
 mod duration;
-mod kernels;
+pub(crate) mod kernels;
 #[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
 mod rolling_window;
 #[cfg(feature = "dtype-time")]

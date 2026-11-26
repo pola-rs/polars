@@ -912,6 +912,30 @@ impl OptimizationRule for TypeCoercionRule {
                 );
                 None
             },
+            #[cfg(feature = "find_many")]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::BinaryExpr(IRBinaryFunction::FindMany { .. }),
+                ref input,
+                ..
+            } => {
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_other) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+
+                let DataType::List(inner_dtype) = &type_other else {
+                    polars_bail!(InvalidOperation: "`{function}` with a flat {type_other} datatype is invalid. Use `implode` to wrap the value into a list.");
+                };
+
+                polars_ensure!(
+                    type_left.is_binary() && (inner_dtype.is_binary() || inner_dtype.is_string()),
+                    op = format!("{function}"),
+                    type_left,
+                    type_other
+                );
+                None
+            },
 
             #[cfg(feature = "string_pad")]
             AExpr::Function {
@@ -1656,10 +1680,11 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             max_int_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
                 && min_int_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
         },
-        // Can't check for more granular time_unit in less-granular time_unit
-        // data, or we'll cast away valid/necessary precision (eg: nanosecs to
-        // millisecs):
-        (DataType::Datetime(to_unit, _), DataType::Datetime(from_unit, _)) => to_unit <= from_unit,
+        // The target unit must be at least as fine as the source unit. A cast
+        // between naive and time zone aware datetimes changes their meaning.
+        (DataType::Datetime(to_unit, to_tz), DataType::Datetime(from_unit, from_tz)) => {
+            to_unit <= from_unit && to_tz.is_some() == from_tz.is_some()
+        },
         (DataType::Duration(to_unit), DataType::Duration(from_unit)) => to_unit <= from_unit,
         (DataType::List(to), DataType::List(from)) => return can_cast_to_lossless(to, from),
         #[cfg(feature = "dtype-array")]

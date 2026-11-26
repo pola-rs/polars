@@ -34,7 +34,6 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
-  RUSTFLAGS: -Z share-generics=y
 
   COMPAT_TUNE_CPU: ''
   COMPAT_FEATURES: '+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b'
@@ -168,7 +167,8 @@ jobs:
         package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
         job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
         # abi3 covers GIL-enabled Python, abi3t covers free-threaded Python 3.15+.
-        abi: [abi3, abi3t]
+        # abi3t is disabled for now.
+        abi: [abi3]
         include:
           - job_config: linux-x64
             os: ubuntu-latest
@@ -289,10 +289,10 @@ jobs:
           CFG: ${{ matrix.package == 'polars-runtime-compat' && '--cfg allocator="default"' || '' }}
         run: |
           if [[ -z "$TUNE_CPU" ]]; then
-            echo "RUSTFLAGS=$RUSTFLAGS -C target-feature=$FEATURES $CFG" >> $GITHUB_ENV
+            echo "RUSTFLAGS=-C target-feature=$FEATURES $CFG" >> $GITHUB_ENV
             echo "CFLAGS=$CC_FEATURES" >> $GITHUB_ENV
           else
-            echo "RUSTFLAGS=$RUSTFLAGS -C target-feature=$FEATURES -Z tune-cpu=$TUNE_CPU $CFG" >> $GITHUB_ENV
+            echo "RUSTFLAGS=-C target-feature=$FEATURES -Z tune-cpu=$TUNE_CPU $CFG" >> $GITHUB_ENV
             echo "CFLAGS=$CC_FEATURES -mtune=$TUNE_CPU" >> $GITHUB_ENV
           fi
 

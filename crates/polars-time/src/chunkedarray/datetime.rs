@@ -30,12 +30,18 @@ fn cast_and_apply<
     ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)
 }
 
+fn is_utc_or_naive(ca: &DatetimeChunked) -> bool {
+    ca.time_zone()
+        .as_ref()
+        .is_none_or(|time_zone| time_zone.as_str() == "UTC")
+}
+
 pub trait DatetimeMethods: AsDatetime {
     /// Extract year from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
         let ca = self.as_datetime();
-        if ca.time_zone().is_some() {
+        if !is_utc_or_naive(ca) {
             return cast_and_apply(ca, temporal::year);
         }
         let time_unit = ca.time_unit();
@@ -97,7 +103,7 @@ pub trait DatetimeMethods: AsDatetime {
     /// The return value ranges from 1 to 12.
     fn month(&self) -> Int8Chunked {
         let ca = self.as_datetime();
-        if ca.time_zone().is_some() {
+        if !is_utc_or_naive(ca) {
             return cast_and_apply(ca, temporal::month);
         }
         let time_unit = ca.time_unit();
@@ -143,7 +149,7 @@ pub trait DatetimeMethods: AsDatetime {
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     fn day(&self) -> Int8Chunked {
         let ca = self.as_datetime();
-        if ca.time_zone().is_some() {
+        if !is_utc_or_naive(ca) {
             return cast_and_apply(ca, temporal::day);
         }
         let time_unit = ca.time_unit();
@@ -154,26 +160,72 @@ pub trait DatetimeMethods: AsDatetime {
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
     fn hour(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::hour)
+        let ca = self.as_datetime();
+        if !is_utc_or_naive(ca) {
+            return cast_and_apply(ca, temporal::hour);
+        }
+        let time_unit = ca.time_unit();
+        ca.physical()
+            .apply_kernel_cast::<Int8Type>(&|arr| datetime_to_hour(arr, time_unit))
     }
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
     fn minute(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::minute)
+        let ca = self.as_datetime();
+        if !is_utc_or_naive(ca) {
+            return cast_and_apply(ca, temporal::minute);
+        }
+        let time_unit = ca.time_unit();
+        ca.physical()
+            .apply_kernel_cast::<Int8Type>(&|arr| datetime_to_minute(arr, time_unit))
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
     fn second(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::second)
+        let ca = self.as_datetime();
+        if !is_utc_or_naive(ca) {
+            return cast_and_apply(ca, temporal::second);
+        }
+        let time_unit = ca.time_unit();
+        ca.physical()
+            .apply_kernel_cast::<Int8Type>(&|arr| datetime_to_second(arr, time_unit))
     }
 
     /// Extract nanosecond from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> Int32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::nanosecond)
+        let ca = self.as_datetime();
+        if !is_utc_or_naive(ca) {
+            return cast_and_apply(ca, temporal::nanosecond);
+        }
+        let time_unit = ca.time_unit();
+        ca.physical()
+            .apply_kernel_cast::<Int32Type>(&|arr| datetime_to_nanosecond(arr, time_unit))
+    }
+
+    /// Extract the milliseconds since the whole second.
+    fn millisecond(&self) -> Int32Chunked {
+        let ca = self.as_datetime();
+        let time_unit = ca.time_unit();
+        if !is_utc_or_naive(ca) {
+            return self.nanosecond().wrapping_trunc_div_scalar(1_000_000);
+        }
+        ca.physical()
+            .apply_kernel_cast::<Int32Type>(&|arr| datetime_to_millisecond(arr, time_unit))
+    }
+
+    /// Extract the microseconds since the whole second.
+    fn microsecond(&self) -> Int32Chunked {
+        let ca = self.as_datetime();
+        let time_unit = ca.time_unit();
+        if !is_utc_or_naive(ca) {
+            return self.nanosecond().wrapping_trunc_div_scalar(1_000);
+        }
+        ca.physical()
+            .apply_kernel_cast::<Int32Type>(&|arr| datetime_to_microsecond(arr, time_unit))
     }
 
     /// Returns the day of year starting from 1.
