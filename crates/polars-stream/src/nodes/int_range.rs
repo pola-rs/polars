@@ -169,6 +169,7 @@ impl ComputeNode for IntRangeNode {
                             };
                             new_int_range::<$T>(at(offset), morsel_end, step, name.clone())?
                         });
+                        assert_eq!(range.len(), height);
                         let mut morsel = Morsel::new_unregistered(
                             range.into_frame(),
                             *seq,
