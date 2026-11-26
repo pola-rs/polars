@@ -306,6 +306,46 @@ def test_truncdiv_float() -> None:
     assert_series_equal(out, expected)
 
 
+@pytest.mark.parametrize(("dtype", "divisor"), [(pl.Float32, 41), (pl.Float64, 49)])
+def test_float_division_by_scalar(dtype: pl.DataType, divisor: int) -> None:
+    values = [divisor, 2 * divisor, 150, 3, -divisor, -150]
+    np_dtype = np.float32 if dtype == pl.Float32 else np.float64
+    expected = pl.DataFrame(
+        {
+            "floordiv": [math.floor(Fraction(v, divisor)) for v in values],
+            "truncdiv": [math.trunc(Fraction(v, divisor)) for v in values],
+            "mod": [v % divisor for v in values],
+            "truediv": np.array(values, dtype=np_dtype)
+            / np.array(1500, dtype=np_dtype),
+        },
+        schema=dict.fromkeys(["floordiv", "truncdiv", "mod", "truediv"], dtype),
+    )
+    df = pl.DataFrame({"a": values}, schema={"a": dtype})
+    exprs = {
+        "floordiv": pl.col("a") // divisor,
+        "truncdiv": pl.col("a").truncdiv(divisor),
+        "mod": pl.col("a") % divisor,
+        "truediv": pl.col("a") / 1500,
+    }
+    assert_frame_equal(df.select(**exprs), expected, check_exact=True)
+    for engine in ["in-memory", "streaming"]:
+        out = df.lazy().select(**exprs).collect(engine=engine)  # type: ignore[call-overload]
+        assert_frame_equal(out, expected, check_exact=True)
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_integer_true_division_by_scalar(dtype: pl.DataType) -> None:
+    values = [35, 41, 100, 127]
+    if dtype.is_signed_integer():
+        values += [-35, -127]
+    df = pl.DataFrame({"a": values}, schema={"a": dtype})
+    expected = pl.DataFrame({"a": [v / 100 for v in values]})
+    assert_frame_equal(df.select(pl.col("a") / 100), expected, check_exact=True)
+    for engine in ["in-memory", "streaming"]:
+        out = df.lazy().select(pl.col("a") / 100).collect(engine=engine)  # type: ignore[call-overload]
+        assert_frame_equal(out, expected, check_exact=True)
+
+
 def test_truncdiv_decimal() -> None:
     lf = pl.LazyFrame(
         {"a": [PyDecimal("7.50"), PyDecimal("-7.50")]},
