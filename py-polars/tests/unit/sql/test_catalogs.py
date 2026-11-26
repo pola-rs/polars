@@ -7960,6 +7960,24 @@ def test_call_expire_snapshots_keeps_a_file_added_again(
     assert table_rows(lake, "tpch", "lineitem") == [(1, "a"), (2, "b"), (2, "b")]
 
 
+@pytest.mark.write_disk
+def test_call_expire_snapshots_keeps_a_file_with_glob_characters(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    table = lake.load_table(("tpch", "lineitem"))
+    # A file whose name a FileIO would read as a pattern.
+    added = tmp_path / "f[1].parquet"
+    pl.DataFrame({"k": [9], "v": ["z"]}).write_parquet(added)
+    table.add_files([str(added)])
+    ctx = lake_ctx(lake)
+    ctx.execute("DELETE FROM lineitem WHERE k = 9")
+
+    with pytest.warns(UserWarning, match="1 of their files could not be deleted"):
+        ctx.execute(f"CALL lake.system.expire_snapshots('lineitem', {LATER})")
+
+    assert added.exists()
+
+
 @pytest.mark.parametrize("when", ["retry", "cleanup"])
 @pytest.mark.write_disk
 def test_call_expire_snapshots_gc_disabled_meanwhile(

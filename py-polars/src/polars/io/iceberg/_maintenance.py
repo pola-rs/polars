@@ -1359,6 +1359,10 @@ def _delete_expired_files(
         nonlocal failed
 
         def one(path: str) -> bool:
+            # FileIOs drop a query or fragment, and fsspec expands globs: both widen
+            # the delete.
+            if any(c in path for c in "?#*["):
+                return False
             try:
                 io.delete(path)
             except Exception:
