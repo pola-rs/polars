@@ -868,7 +868,6 @@ fn same_settings(a: &JoinOptionsIR, b: &JoinOptionsIR) -> bool {
         suffix: _,
         slice,
         maintain_order,
-        build_side,
     } = &a.args;
 
     a.join_type.how() == b.join_type.how()
@@ -877,7 +876,7 @@ fn same_settings(a: &JoinOptionsIR, b: &JoinOptionsIR) -> bool {
         && a.join_type.coalesce() == b.join_type.coalesce()
         && *slice == b.args.slice
         && *maintain_order == b.args.maintain_order
-        && *build_side == b.args.build_side
+        && a.join_type.build_side() == b.join_type.build_side()
         && a.allow_parallel == b.allow_parallel
         && a.force_parallel == b.force_parallel
 }

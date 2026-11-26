@@ -6,7 +6,7 @@ use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, Tas
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
-use polars_defs::join::{IEJoinOptions, InequalityOperator, JoinArgs, JoinBuildSide};
+use polars_defs::join::{IEJoinOptions, InequalityOperator, JoinArgs};
 use polars_ops::frame::_finish_join;
 use polars_ops::series::{SearchSortedSide, search_sorted};
 
@@ -16,16 +16,6 @@ use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::nodes::{ComputeNode, NodeMemoryUsage};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
-
-pub fn left_is_point<T>(left_on: &[T], right_on: &[T], args: &JoinArgs) -> bool {
-    let left_can_be_point = left_on.len() == 1;
-    let right_can_be_point = right_on.len() == 1;
-    match args.build_side {
-        None | Some(JoinBuildSide::PreferLeft) => left_can_be_point,
-        Some(JoinBuildSide::PreferRight) => !right_can_be_point,
-        Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight) => unreachable!(),
-    }
-}
 
 #[derive(Debug)]
 enum RangeJoinState {
@@ -88,11 +78,11 @@ impl RangeJoinNode {
         tmp_left_key_cols: Vec<Option<PlSmallStr>>,
         tmp_right_key_cols: Vec<Option<PlSmallStr>>,
         descending: bool,
+        left_is_point: bool,
         args: JoinArgs,
         options: IEJoinOptions,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
-        let left_is_point = left_is_point(&left_on, &right_on, &args);
         let ops_n = if options.operator2.is_some() { 2 } else { 1 };
         let op1_is_lower_bound = match (left_is_point, options.operator1) {
             (true, InequalityOperator::Gt | InequalityOperator::GtEq) => true,

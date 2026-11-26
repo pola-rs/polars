@@ -1816,6 +1816,7 @@ fn to_graph_rec<'a>(
             tmp_left_key_cols,
             tmp_right_key_cols,
             descending,
+            left_is_point,
             args,
             options,
         } => {
@@ -1835,6 +1836,7 @@ fn to_graph_rec<'a>(
                         tmp_left_key_cols.clone(),
                         tmp_right_key_cols.clone(),
                         *descending,
+                        *left_is_point,
                         args,
                         options,
                         registry.task_metrics(),

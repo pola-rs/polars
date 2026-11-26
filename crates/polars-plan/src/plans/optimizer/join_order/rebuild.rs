@@ -37,8 +37,9 @@ pub(super) fn rebuild(
         let on = keys_joining(cluster, &is_placed, next);
 
         // A leaf with no keys to the placed leaves is joined as a cross product.
+        let build_side = cluster.options.join_type.build_side().cloned();
         let join_type = if on.is_empty() {
-            JoinTypeIR::Cross
+            JoinTypeIR::Cross { build_side }
         } else {
             JoinTypeIR::Equi {
                 how: EquiJoinType::Inner,
@@ -47,6 +48,7 @@ pub(super) fn rebuild(
                 nulls_equal: cluster.options.join_type.nulls_equal(),
                 validation: cluster.options.join_type.validation(),
                 coalesce: cluster.options.join_type.coalesce(),
+                build_side,
             }
         };
         // Field-by-field rather than struct-update syntax, which would clone the

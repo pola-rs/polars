@@ -7,7 +7,7 @@ use polars_defs::join::JoinBuildSide;
 use polars_utils::arena::{Arena, Node};
 
 use crate::plans::stats::{StatsCache, node_stats_with_cache};
-use crate::plans::{AExpr, IR, NodeStats};
+use crate::plans::{AExpr, IR, JoinTypeIR, NodeStats};
 use crate::prelude::MaintainOrderJoin;
 
 /// A side has to be this many times smaller to be picked as the build side.
@@ -38,14 +38,18 @@ pub(super) fn set_join_build_sides(
             continue;
         };
         if options.join_type.how().is_semi_anti() {
-            if options.args.build_side.is_none() {
+            if options.join_type.build_side().is_none() {
                 set_estimated_rows(node, ir_arena, expr_arena, &mut stats);
             }
             continue;
         }
-        if options.args.build_side.is_some()
+        let may_estimate = match &options.join_type {
+            JoinTypeIR::Equi { .. } => false,
+            JoinTypeIR::Cross { .. } => true,
+            _ => continue,
+        };
+        if options.join_type.build_side().is_some()
             || options.args.maintain_order != MaintainOrderJoin::None
-            || !(options.join_type.how().is_equi() || options.join_type.how().is_cross())
         {
             continue;
         }
@@ -54,13 +58,12 @@ pub(super) fn set_join_build_sides(
         // cross joins don't so, plan time estimates
         // are all we have. TODO!: change this if that
         // assumption changes.
-        let may_estimate = options.join_type.how().is_cross();
         match build_side(left, right, may_estimate, ir_arena, expr_arena, &mut stats) {
             Some(side) => {
                 let IR::Join { options, .. } = ir_arena.get_mut(node) else {
                     unreachable!()
                 };
-                Arc::make_mut(options).args.build_side = Some(side);
+                Arc::make_mut(options).join_type.set_build_side(Some(side));
             },
             None if !may_estimate => set_estimated_rows(node, ir_arena, expr_arena, &mut stats),
             None => {},

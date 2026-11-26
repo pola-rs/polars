@@ -400,10 +400,10 @@ pub struct JoinOptionsIR {
     pub join_type: JoinTypeIR,
     pub args: JoinArgsIR,
     /// Ranges of build-side keys the join publishes to scans below its probe side once
-    /// the build is done. Only set together with a forced `args.build_side`.
+    /// the build is done. Only set on an equi join with a forced build side.
     pub runtime_filters: Vec<RuntimeFilter>,
-    /// The estimated rows of the left and right input of a join that has no
-    /// `args.build_side`.
+    /// The estimated rows of the left and right input of an equi join that has no
+    /// build side.
     #[cfg_attr(feature = "ir_serde", serde(default))]
     pub estimated_rows: Option<[u64; 2]>,
 }
@@ -417,7 +417,6 @@ pub struct JoinArgsIR {
     pub suffix: Option<PlSmallStr>,
     pub slice: Option<Slice>,
     pub maintain_order: MaintainOrderJoin,
-    pub build_side: Option<JoinBuildSide>,
 }
 
 impl JoinArgsIR {
@@ -466,7 +465,6 @@ impl JoinOptionsIR {
             suffix,
             slice,
             maintain_order,
-            build_side,
         } = self.args.clone();
         JoinArgs {
             how: self.join_type.to_join_type(),
@@ -476,7 +474,7 @@ impl JoinOptionsIR {
             nulls_equal: self.join_type.nulls_equal(),
             coalesce: self.join_type.coalesce(),
             maintain_order,
-            build_side,
+            build_side: self.join_type.build_side().cloned(),
         }
     }
 
@@ -791,6 +789,9 @@ pub enum JoinTypeIR {
         /// Which side's keys must be unique. Always many-to-many on a semi or anti join.
         validation: JoinValidation,
         coalesce: JoinCoalesce,
+        /// Which input the streaming hash join builds its table from. `None` lets the
+        /// engine choose.
+        build_side: Option<JoinBuildSide>,
     },
     /// Each left row is matched to at most one right row: the backward, forward or nearest
     /// match of the key pair `on`, within the `by` groups that `options` gives.
@@ -823,9 +824,15 @@ pub enum JoinTypeIR {
         ie_options: IEJoinOptions,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
+        /// The left side holds the point. The engine buffers the point side in memory.
+        left_is_point: bool,
     },
     /// Every left row paired with every right row.
-    Cross,
+    Cross {
+        /// Which input the streaming cross join buffers in memory. `None` lets the
+        /// engine choose.
+        build_side: Option<JoinBuildSide>,
+    },
     /// A cross join that keeps the pairs for which `predicate` holds. Executed by the
     /// in-memory engine. The streaming engine has no native node for this and falls back
     /// to it via `InMemoryJoin`.
@@ -862,7 +869,7 @@ impl JoinTypeIR {
             Self::IEJoin { how, .. } => (*how).into(),
             #[cfg(feature = "iejoin")]
             Self::Range { .. } => JoinHow::Range,
-            Self::Cross
+            Self::Cross { .. }
             | Self::CrossAndFilter {
                 how: NonEquiJoinType::Inner,
                 ..
@@ -899,8 +906,8 @@ impl JoinTypeIR {
     /// Builds the join that `args` describe on the key pairs `on`, and splits off the
     /// settings that apply to every join type.
     ///
-    /// Settings that do not apply to the join type are dropped: e.g. `validation` on a
-    /// cross join.
+    /// Settings that do not apply to the join type are dropped: e.g. `build_side` on an
+    /// as-of join.
     ///
     /// Errors on [`JoinType::IEJoin`] and [`JoinType::Range`], which only the optimizer
     /// creates.
@@ -926,7 +933,6 @@ impl JoinTypeIR {
             suffix,
             slice,
             maintain_order,
-            build_side,
         };
         let how = match how {
             JoinType::Inner => EquiJoinType::Inner,
@@ -956,7 +962,7 @@ impl JoinTypeIR {
             },
             JoinType::Cross => {
                 assert!(on.is_empty(), "a cross join takes no keys");
-                return Ok((Self::Cross, args));
+                return Ok((Self::Cross { build_side }, args));
             },
         };
         assert!(!on.is_empty(), "an equi join takes at least one key pair");
@@ -967,8 +973,28 @@ impl JoinTypeIR {
             nulls_equal,
             validation,
             coalesce,
+            build_side,
         };
         Ok((join_type, args))
+    }
+
+    /// Which input the join builds from. Only equi and cross joins have this setting.
+    pub fn build_side(&self) -> Option<&JoinBuildSide> {
+        match self {
+            Self::Equi { build_side, .. } | Self::Cross { build_side } => build_side.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Sets the build side.
+    ///
+    /// # Panics
+    /// On joins other than equi and cross joins, which have no build side.
+    pub fn set_build_side(&mut self, new: Option<JoinBuildSide>) {
+        match self {
+            Self::Equi { build_side, .. } | Self::Cross { build_side } => *build_side = new,
+            _ => panic!("a '{}' join has no build side", self.how()),
+        }
     }
 
     /// Null keys match each other. Always false for a join without equality keys.
@@ -1031,12 +1057,20 @@ impl JoinTypeIR {
         self.nulls_equal().hash(state);
         self.validation().hash(state);
         self.coalesce().hash(state);
+        self.build_side().hash(state);
         match self {
             #[cfg(feature = "asof_join")]
             Self::AsOf { options, .. } => options.hash(state),
             #[cfg(feature = "iejoin")]
-            Self::IEJoin { ie_options, .. } | Self::Range { ie_options, .. } => {
-                ie_options.hash(state)
+            Self::IEJoin { ie_options, .. } => ie_options.hash(state),
+            #[cfg(feature = "iejoin")]
+            Self::Range {
+                ie_options,
+                left_is_point,
+                ..
+            } => {
+                ie_options.hash(state);
+                left_is_point.hash(state);
             },
             _ => {},
         }
@@ -1049,6 +1083,7 @@ impl JoinTypeIR {
             || self.nulls_equal() != other.nulls_equal()
             || self.validation() != other.validation()
             || self.coalesce() != other.coalesce()
+            || self.build_side() != other.build_side()
         {
             return false;
         }
@@ -1056,10 +1091,20 @@ impl JoinTypeIR {
             #[cfg(feature = "asof_join")]
             (Self::AsOf { options: l, .. }, Self::AsOf { options: r, .. }) => l == r,
             #[cfg(feature = "iejoin")]
+            (Self::IEJoin { ie_options: l, .. }, Self::IEJoin { ie_options: r, .. }) => l == r,
+            #[cfg(feature = "iejoin")]
             (
-                Self::IEJoin { ie_options: l, .. } | Self::Range { ie_options: l, .. },
-                Self::IEJoin { ie_options: r, .. } | Self::Range { ie_options: r, .. },
-            ) => l == r,
+                Self::Range {
+                    ie_options: l,
+                    left_is_point: l_point,
+                    ..
+                },
+                Self::Range {
+                    ie_options: r,
+                    left_is_point: r_point,
+                    ..
+                },
+            ) => l == r && l_point == r_point,
             _ => true,
         }
     }
@@ -1110,7 +1155,7 @@ impl JoinTypeIR {
                     predicate,
                 })))
             },
-            Self::Equi { .. } | Self::Cross => Ok(None),
+            Self::Equi { .. } | Self::Cross { .. } => Ok(None),
             #[cfg(feature = "asof_join")]
             Self::AsOf { .. } => Ok(None),
         }
@@ -1126,7 +1171,7 @@ impl JoinTypeIR {
             Self::Equi { on, .. } => Some(on),
             #[cfg(feature = "asof_join")]
             Self::AsOf { on, .. } => Some(std::slice::from_ref(on)),
-            Self::Cross => Some(&[]),
+            Self::Cross { .. } => Some(&[]),
             _ => None,
         }
     }
@@ -1137,7 +1182,7 @@ impl JoinTypeIR {
             Self::Equi { on, .. } => Some(on),
             #[cfg(feature = "asof_join")]
             Self::AsOf { on, .. } => Some(std::slice::from_mut(on)),
-            Self::Cross => Some(&mut []),
+            Self::Cross { .. } => Some(&mut []),
             _ => None,
         }
     }
@@ -1289,7 +1334,7 @@ impl JoinTypeIR {
                 *left_on = left;
                 *right_on = right;
             },
-            Self::Cross => assert!(
+            Self::Cross { .. } => assert!(
                 left.is_empty() && right.is_empty(),
                 "cross join holds no keys"
             ),

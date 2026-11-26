@@ -295,7 +295,7 @@ impl<'a> IRDisplay<'a> {
                 let (left_keys, right_keys) = options.join_type.key_vecs();
                 let left_on = self.display_expr_slice(&left_keys);
                 let right_on = self.display_expr_slice(&right_keys);
-                let build_side = match &options.args.build_side {
+                let build_side = match options.join_type.build_side() {
                     Some(side) => format!("\n{:indent$}BUILD SIDE: {side:?}", ""),
                     None => String::new(),
                 };

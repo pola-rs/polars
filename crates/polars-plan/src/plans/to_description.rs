@@ -225,7 +225,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             };
 
             match &o.join_type {
-                JoinTypeIR::Cross
+                JoinTypeIR::Cross { .. }
                 | JoinTypeIR::CrossAndFilter {
                     how: NonEquiJoinType::Inner,
                     ..

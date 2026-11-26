@@ -110,7 +110,7 @@ fn process_join(
     let (input_left, input_right) = (*input_left, *input_right);
     if !is_eligible_join(options, expr_arena)
         || matches!(
-            options.args.build_side,
+            options.join_type.build_side(),
             Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight)
         )
     {
@@ -224,12 +224,12 @@ fn process_join(
         unreachable!()
     };
     let options = Arc::make_mut(options);
-    options.args.build_side = Some(match (left, forced) {
+    options.join_type.set_build_side(Some(match (left, forced) {
         (true, true) => JoinBuildSide::ForceLeft,
         (false, true) => JoinBuildSide::ForceRight,
         (true, false) => JoinBuildSide::PreferLeft,
         (false, false) => JoinBuildSide::PreferRight,
-    });
+    }));
     options.runtime_filters = runtime_filters;
 }
 
@@ -422,7 +422,7 @@ fn scan_origins(
                     // A preferred side is only read first when the join carries runtime
                     // filters; an ordinary preference samples both sides at once.
                     let sequential = !options.runtime_filters.is_empty();
-                    let probe_left = match options.args.build_side {
+                    let probe_left = match options.join_type.build_side() {
                         Some(JoinBuildSide::ForceRight) => true,
                         Some(JoinBuildSide::ForceLeft) => false,
                         Some(JoinBuildSide::PreferRight) if sequential => true,

@@ -19,7 +19,7 @@ from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
-    from polars._typing import EngineType, PolarsDataType
+    from polars._typing import EngineType, JoinBuildSide, PolarsDataType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1074,6 +1074,28 @@ def test_range_join_dtypes(
     actual = q.collect(engine="streaming").sort("index", "index_right")
     assert expected.height > 0
     assert_frame_equal(actual, expected, check_exact=True)
+
+
+@pytest.mark.parametrize(
+    "build_side", ["auto", "prefer_left", "prefer_right", "force_left", "force_right"]
+)
+@pytest.mark.parametrize("double_bounded", [False, True])
+def test_range_join_from_cross_build_side(
+    build_side: JoinBuildSide, double_bounded: bool
+) -> None:
+    points = pl.LazyFrame({"x": [1, 5, 9, None]})
+    intervals = pl.LazyFrame({"lo": [0, 4, None], "hi": [6, 10, 3]})
+    predicates = [pl.col("x") >= pl.col("lo")]
+    if double_bounded:
+        predicates.append(pl.col("x") < pl.col("hi"))
+
+    q = points.join(intervals, how="cross", build_side=build_side).filter(*predicates)
+
+    assert "RANGE" in q.explain(engine="streaming")
+    expected = q.collect(engine="in-memory").sort(pl.all())
+    actual = q.collect(engine="streaming").sort(pl.all())
+    assert expected.height > 0
+    assert_frame_equal(actual, expected)
 
 
 @pytest.mark.parametrize("lower_op", [None, ">=", ">"])

@@ -1378,11 +1378,8 @@ fn lower_ir_inner(
             #[cfg(feature = "iejoin")]
             let mut range_point_descending = None;
             #[cfg(feature = "iejoin")]
-            if args.how.is_range() {
-                use crate::nodes::joins::range_join;
-
+            if let JoinTypeIR::Range { left_is_point, .. } = join_type {
                 // Check this before adding the key columns, the new nodes have no known sortedness.
-                let left_is_point = range_join::left_is_point(&left_on, &right_on, &args);
                 range_point_descending = if left_is_point {
                     ctx.sortedness.is_expr_sorted(
                         input_left,
@@ -1643,6 +1640,7 @@ fn lower_ir_inner(
                     _ if args.how.is_range() => {
                         let JoinTypeIR::Range {
                             ie_options: range_options,
+                            left_is_point,
                             ..
                         } = join_type
                         else {
@@ -1662,6 +1660,7 @@ fn lower_ir_inner(
                                 tmp_left_key_cols: tmp_left_col_names,
                                 tmp_right_key_cols: tmp_right_col_names,
                                 descending,
+                                left_is_point,
                                 args: args.clone(),
                                 options: range_options,
                             },

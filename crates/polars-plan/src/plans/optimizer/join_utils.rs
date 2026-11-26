@@ -36,7 +36,7 @@ pub(super) fn unconstrained(options: &JoinOptionsIR) -> bool {
         && matches!(args.maintain_order, MaintainOrderJoin::None)
         && matches!(options.join_type.validation(), JoinValidation::ManyToMany)
         && matches!(
-            args.build_side,
+            options.join_type.build_side(),
             None | Some(JoinBuildSide::PreferLeft | JoinBuildSide::PreferRight)
         )
 }

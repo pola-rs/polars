@@ -353,7 +353,7 @@ pub(crate) fn node_stats_with_cache(
                     fused_predicate,
                     ..
                 } => (on, fused_predicate.as_ref()),
-                JoinTypeIR::Cross => (&[], None),
+                JoinTypeIR::Cross { .. } => (&[], None),
                 _ => return None,
             };
             let left = node_stats_with_cache(*input_left, ir_arena, expr_arena, cache)?;

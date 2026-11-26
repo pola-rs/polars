@@ -1,5 +1,5 @@
 use polars_core::chunked_array::cast::CastOptions;
-use polars_defs::join::JoinValidation;
+use polars_defs::join::{JoinBuildSide, JoinValidation};
 
 use super::*;
 use crate::plans::aexpr::{ExprPushdownGroup, is_elementwise_rec, is_inherently_nondeterministic};
@@ -85,6 +85,7 @@ pub(super) fn push_down_join_condition(
                 nulls_equal: false,
                 validation: JoinValidation::ManyToMany,
                 coalesce: JoinCoalesce::KeepColumns,
+                build_side: None,
             }
         };
     Ok(())
@@ -697,9 +698,10 @@ pub fn try_rewrite_join_type(
         }
 
         if matches!(&options.join_type, JoinTypeIR::CrossAndFilter { .. }) {
-            let JoinTypeIR::CrossAndFilter { predicate, .. } =
-                std::mem::replace(&mut Arc::make_mut(options).join_type, JoinTypeIR::Cross)
-            else {
+            let JoinTypeIR::CrossAndFilter { predicate, .. } = std::mem::replace(
+                &mut Arc::make_mut(options).join_type,
+                JoinTypeIR::Cross { build_side: None },
+            ) else {
                 unreachable!()
             };
 
@@ -708,7 +710,7 @@ pub fn try_rewrite_join_type(
 
         // We are in a cross join + filter
         // Try converting to inner join
-        assert!(matches!(options.join_type, JoinTypeIR::Cross));
+        assert!(matches!(options.join_type, JoinTypeIR::Cross { .. }));
         let equality_conditions = take_equi_join_keys(
             acc_predicates,
             expr_arena,
@@ -728,7 +730,8 @@ pub fn try_rewrite_join_type(
                 left_on,
                 right_on,
             );
-            // A cross join keeps no validation, so the new keys are not validated.
+            // A cross join has no validation, so the new keys are not validated.
+            let build_side = options.join_type.build_side().cloned();
             Arc::make_mut(options).join_type = JoinTypeIR::Equi {
                 how: EquiJoinType::Inner,
                 on,
@@ -736,6 +739,7 @@ pub fn try_rewrite_join_type(
                 nulls_equal: false,
                 validation: JoinValidation::ManyToMany,
                 coalesce: JoinCoalesce::KeepColumns,
+                build_side,
             };
             return Ok(());
         }
@@ -778,6 +782,7 @@ pub fn try_rewrite_join_type(
                     },
                     left_on: left_on.clone(),
                     right_on: right_on.clone(),
+                    left_is_point,
                 };
                 return Ok(());
             }
@@ -803,6 +808,12 @@ pub fn try_rewrite_join_type(
                 remove_suffix(&mut rexpr, expr_arena, schema_right, &suffix);
                 right_on.push(rexpr);
 
+                // Either side can hold the point. The point side is buffered, so it
+                // follows the cross join's build side.
+                let left_is_point = !matches!(
+                    options.join_type.build_side(),
+                    Some(JoinBuildSide::PreferRight | JoinBuildSide::ForceRight)
+                );
                 Arc::make_mut(options).join_type = JoinTypeIR::Range {
                     ie_options: IEJoinOptions {
                         operator1: pred.ie_op,
@@ -810,6 +821,7 @@ pub fn try_rewrite_join_type(
                     },
                     left_on: left_on.clone(),
                     right_on: right_on.clone(),
+                    left_is_point,
                 };
                 return Ok(());
             }
@@ -857,9 +869,9 @@ pub fn try_rewrite_join_type(
             }
         }
 
-        debug_assert!(matches!(options.join_type, JoinTypeIR::Cross));
+        debug_assert!(matches!(options.join_type, JoinTypeIR::Cross { .. }));
 
-        if !matches!(options.join_type, JoinTypeIR::Cross) {
+        if !matches!(options.join_type, JoinTypeIR::Cross { .. }) {
             return Ok(());
         }
 
@@ -892,7 +904,7 @@ pub fn try_rewrite_join_type(
             },
         );
         // Important
-        assert!(matches!(existing, JoinTypeIR::Cross));
+        assert!(matches!(existing, JoinTypeIR::Cross { .. }));
 
         Ok(())
     })()?;
@@ -1326,7 +1338,9 @@ pub fn try_rewrite_join_type(
             )
         })
     {
-        options.join_type = JoinTypeIR::Cross;
+        options.join_type = JoinTypeIR::Cross {
+            build_side: options.join_type.build_side().cloned(),
+        };
         left_on.clear();
         right_on.clear();
     }
@@ -1442,6 +1456,7 @@ fn try_rewrite_outer_equi_join(
         nulls_equal,
         validation: JoinValidation::ManyToMany,
         coalesce: JoinCoalesce::KeepColumns,
+        build_side: None,
     };
     Ok(true)
 }

@@ -441,7 +441,7 @@ mod tests {
             allow_parallel: true,
             force_parallel: false,
             args: JoinArgsIR::default(),
-            join_type: JoinTypeIR::Cross,
+            join_type: JoinTypeIR::Cross { build_side: None },
             runtime_filters: Vec::new(),
             estimated_rows: None,
         })
