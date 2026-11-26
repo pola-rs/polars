@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from decimal import Decimal
 
 import pytest
 from hypothesis import given
@@ -15,7 +16,8 @@ def test_fill_null_minimal_upcast_4056() -> None:
     df = pl.DataFrame({"a": [-1, 2, None]})
     df = df.with_columns(pl.col("a").cast(pl.Int8))
     assert df.with_columns(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
-    assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int16
+    with pytest.deprecated_call():
+        assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int16
 
 
 def test_fill_enum_upcast() -> None:
@@ -185,3 +187,89 @@ def test_fill_null_null_dtype_24451() -> None:
 def test_fill_null_arr_nonull_cat_28247() -> None:
     s = pl.Series([["a", "b"]], dtype=pl.Array(pl.Categorical, 2))
     assert_series_equal(s, s.arr.eval(pl.element().fill_null(strategy="forward")))
+
+
+def test_fill_null_cast_to_input_dtype_31073() -> None:
+    s = pl.Series("a", [datetime.datetime(2020, 1, 1), None])
+    s = s.dt.replace_time_zone("Europe/Amsterdam")
+    fill = pl.lit(datetime.datetime(2000, 1, 1)).dt.replace_time_zone("UTC")
+    expected = pl.Series(
+        "a", [datetime.datetime(2020, 1, 1), datetime.datetime(2000, 1, 1, 1)]
+    ).dt.replace_time_zone("Europe/Amsterdam")
+    assert_series_equal(s.fill_null(fill), expected)
+
+    s = pl.Series("a", [Decimal("1.50"), None], dtype=pl.Decimal(10, 2))
+    expected = pl.Series(
+        "a", [Decimal("1.50"), Decimal("7.00")], dtype=pl.Decimal(10, 2)
+    )
+    assert_series_equal(s.fill_null(7), expected)
+
+
+def test_fill_null_supertype_deprecated_31073() -> None:
+    s = pl.Series("a", [1, None], dtype=pl.Int8)
+    with pytest.deprecated_call(match="will raise an error in 3.0"):
+        out = s.fill_null(1.5)
+    assert_series_equal(out, pl.Series("a", [1.0, 1.5], dtype=pl.Float64))
+
+
+def test_fill_null_no_supertype_31073() -> None:
+    s = pl.Series("a", [1, None])
+    with pytest.raises(
+        pl.exceptions.SchemaError, match="failed to determine supertype"
+    ):
+        s.fill_null(b"x")
+
+
+def test_fill_null_float_literal_keeps_float32_31073(
+    recwarn: pytest.WarningsRecorder,
+) -> None:
+    s = pl.Series("a", [1.5, None], dtype=pl.Float32)
+    expected = pl.Series("a", [1.5, 0.1], dtype=pl.Float32)
+    assert_series_equal(s.fill_null(0.1), expected)
+    assert len(recwarn) == 0
+
+
+def test_fill_null_datetime_literal_time_unit_31073(
+    recwarn: pytest.WarningsRecorder,
+) -> None:
+    fill = datetime.datetime(2021, 1, 1, 12)
+    s = pl.Series("a", [datetime.datetime(2020, 1, 1), None], dtype=pl.Datetime("ns"))
+    expected = pl.Series(
+        "a", [datetime.datetime(2020, 1, 1), fill], dtype=pl.Datetime("ns")
+    )
+    assert_series_equal(s.fill_null(fill), expected)
+    assert len(recwarn) == 0
+
+    s = pl.Series("a", [datetime.datetime(2020, 1, 1), None], dtype=pl.Datetime("ms"))
+    with pytest.deprecated_call(match="will raise an error in 3.0"):
+        out = s.fill_null(fill)
+    expected = pl.Series(
+        "a", [datetime.datetime(2020, 1, 1), fill], dtype=pl.Datetime("ms")
+    )
+    assert_series_equal(out, expected)
+
+
+@pytest.mark.parametrize(("fill", "dtype"), [(1, pl.Int32), ("x", pl.String)])
+def test_null_input_takes_fill_dtype_31073(
+    fill: int | str, dtype: pl.DataType, recwarn: pytest.WarningsRecorder
+) -> None:
+    out = pl.LazyFrame({"a": [None, None]}).select(
+        pl.col("a").fill_null(fill).alias("fill_null"),
+        pl.col("a").shift(1, fill_value=fill).alias("shift"),
+    )
+    expected = pl.DataFrame(
+        {"fill_null": [fill, fill], "shift": [fill, None]},
+        schema={"fill_null": dtype, "shift": dtype},
+    )
+    assert_frame_equal(out.collect(), expected)
+
+    out = pl.LazyFrame().select(
+        pl.lit(None).fill_null(fill).alias("fill_null"),
+        pl.lit(None).shift(1, fill_value=fill).alias("shift"),
+    )
+    expected = pl.DataFrame(
+        {"fill_null": [fill], "shift": [fill]},
+        schema={"fill_null": dtype, "shift": dtype},
+    )
+    assert_frame_equal(out.collect(), expected)
+    assert len(recwarn) == 0

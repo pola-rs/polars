@@ -14,9 +14,11 @@ use regex::{Regex, Replacer};
 use regex_syntax::hir::{Class, Hir, HirKind, Look};
 
 use super::literal_chain::LiteralChain;
+use super::utf8::byte_to_char_idx;
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
+use crate::chunked_array::binary::find::find_literal_offsets;
 
 // We need this to infer the right lifetimes for the match closure.
 #[inline(always)]
@@ -452,6 +454,7 @@ pub trait StringNameSpaceImpl: AsString {
         }
     }
 
+    /// Return the character offset of the first match of each pattern in each string.
     fn find_chunked(
         &self,
         pat: &StringChunked,
@@ -459,13 +462,16 @@ pub trait StringNameSpaceImpl: AsString {
         strict: bool,
     ) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_string();
+        if literal {
+            return Ok(find_literal_offsets(
+                &ca.as_binary(),
+                &pat.as_binary(),
+                byte_to_char_idx,
+            ));
+        }
         if pat.len() == 1 {
             return if let Some(pat) = pat.get(0) {
-                if literal {
-                    ca.find_literal(pat)
-                } else {
-                    ca.find(pat, strict)
-                }
+                ca.find(pat, strict)
             } else {
                 Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len()))
             };
@@ -475,24 +481,18 @@ pub trait StringNameSpaceImpl: AsString {
                 ca.len().max(pat.len()),
             ));
         }
-        if literal {
-            Ok(broadcast_binary_elementwise(
-                ca,
-                pat,
-                |src: Option<&str>, pat: Option<&str>| src?.find(pat?).map(|idx| idx as u32),
-            ))
-        } else {
-            with_regex_cache(|reg_cache| {
-                let matcher = |src: Option<&str>, pat: Option<&str>| -> PolarsResult<Option<u32>> {
-                    if let (Some(src), Some(pat)) = (src, pat) {
-                        let re = reg_cache.compile(pat)?;
-                        return Ok(re.find(src).map(|m| m.start() as u32));
-                    }
-                    Ok(None)
-                };
-                broadcast_try_binary_elementwise(ca, pat, matcher)
-            })
-        }
+        with_regex_cache(|reg_cache| {
+            let matcher = |src: Option<&str>, pat: Option<&str>| -> PolarsResult<Option<u32>> {
+                if let (Some(src), Some(pat)) = (src, pat) {
+                    let re = reg_cache.compile(pat)?;
+                    return Ok(re
+                        .find(src)
+                        .map(|m| byte_to_char_idx(src.as_bytes(), m.start()) as u32));
+                }
+                Ok(None)
+            };
+            broadcast_try_binary_elementwise(ca, pat, matcher)
+        })
     }
 
     /// Get the length of the string values as number of chars.
@@ -583,17 +583,24 @@ pub trait StringNameSpaceImpl: AsString {
         self.contains(regex::escape(lit).as_str(), true)
     }
 
-    /// Return the index position of a literal substring in the target string.
+    /// Return the character offset of a literal substring in the target string.
     fn find_literal(&self, lit: &str) -> PolarsResult<UInt32Chunked> {
-        self.find(regex::escape(lit).as_str(), true)
+        let pat = BinaryChunked::from_slice(PlSmallStr::EMPTY, &[lit.as_bytes()]);
+        Ok(find_literal_offsets(
+            &self.as_string().as_binary(),
+            &pat,
+            byte_to_char_idx,
+        ))
     }
 
-    /// Return the index position of a regular expression substring in the target string.
+    /// Return the character offset of a regular expression substring in the target string.
     fn find(&self, pat: &str, strict: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_string();
         match polars_utils::regex_cache::compile_regex(pat) {
-            Ok(rx) => Ok(unary_elementwise(ca, |opt_s| {
-                opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
+            Ok(rx) => Ok(unary_elementwise(ca, |opt_s: Option<&str>| {
+                let s = opt_s?;
+                rx.find(s)
+                    .map(|m| byte_to_char_idx(s.as_bytes(), m.start()) as u32)
             })),
             Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len())),
             Err(e) => Err(PolarsError::ComputeError(
@@ -754,31 +761,45 @@ pub trait StringNameSpaceImpl: AsString {
     fn split_exact(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n + 1, str::split, false)
+        split_to_struct(ca, by, n + 1, str::split, str::split, false)
     }
 
     #[cfg(feature = "dtype-struct")]
     fn split_exact_inclusive(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n + 1, str::split_inclusive, false)
+        split_to_struct(
+            ca,
+            by,
+            n + 1,
+            str::split_inclusive,
+            str::split_inclusive,
+            false,
+        )
     }
 
     #[cfg(feature = "dtype-struct")]
     fn splitn(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n, |s, by| s.splitn(n, by), true)
+        split_to_struct(
+            ca,
+            by,
+            n,
+            |s, by| s.splitn(n, by),
+            |s, by| s.splitn(n, by),
+            true,
+        )
     }
 
     fn split(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-        split_helper(ca, by, str::split)
+        split_helper(ca, by, str::split, str::split)
     }
 
     fn split_inclusive(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-        split_helper(ca, by, str::split_inclusive)
+        split_helper(ca, by, str::split_inclusive, str::split_inclusive)
     }
 
     /// Extract each successive non-overlapping regex match in an individual string as an array.

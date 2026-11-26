@@ -4,8 +4,9 @@ use polars_core::chunked_array::ops::binning::quantiles_without_nan;
 use polars_core::prelude::*;
 use polars_core::utils::cut::compute_cut_labels;
 
-fn map_enum_cats(
+fn map_cats<C: PolarsCategoricalType>(
     s: &Series,
+    cat_dtype: DataType,
     labels: &[PlSmallStr],
     sorted_breaks: &[f64],
     left_closed: bool,
@@ -22,48 +23,88 @@ fn map_enum_cats(
         PartialOrd::gt
     };
 
+    let (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) = &cat_dtype else {
+        unreachable!()
+    };
+    let mapping = mapping.clone();
+    let is_enum = cat_dtype.is_enum();
+
+    // Labels are resolved to category ids on first use.
+    let mut label_cats: Vec<Option<CatSize>> = vec![None; labels.len()];
+    let mut bld = CategoricalChunkedBuilder::<C>::new(out_name.clone(), cat_dtype);
+    bld.reserve(s.len());
+    let mut brk_vals = include_breaks.then(|| {
+        PrimitiveChunkedBuilder::<Float64Type>::new(PlSmallStr::from_static("breakpoint"), s.len())
+    });
+    let right_ends = if include_breaks {
+        [sorted_breaks, &[f64::INFINITY]].concat()
+    } else {
+        Vec::new()
+    };
+
+    for opt in s_iter {
+        let idx = opt
+            .filter(|x| !x.is_nan())
+            .map(|x| sorted_breaks.partition_point(|v| op(&x, v)));
+        match idx {
+            None => {
+                bld.append_null();
+                if let Some(brk_vals) = &mut brk_vals {
+                    brk_vals.append_null();
+                }
+            },
+            Some(idx) => unsafe {
+                let slot = label_cats.get_unchecked_mut(idx);
+                let cat = match *slot {
+                    Some(cat) => cat,
+                    None => {
+                        let label = labels.get_unchecked(idx).as_str();
+                        let cat = if is_enum {
+                            mapping.get_cat(label).ok_or_else(|| {
+                                polars_err!(ComputeError: "attempted to insert '{label}' into Enum which does not contain this string")
+                            })?
+                        } else {
+                            mapping.insert_cat(label)?
+                        };
+                        *slot = Some(cat);
+                        cat
+                    },
+                };
+                bld.append_cat(cat, &mapping)?;
+                if let Some(brk_vals) = &mut brk_vals {
+                    brk_vals.append_value(*right_ends.get_unchecked(idx));
+                }
+            },
+        }
+    }
+
+    let cats = bld.finish().into_series();
+    match brk_vals {
+        // The breakpoint column is the right endpoint of each interval. A struct is returned
+        // so it can be turned into a dataframe later.
+        Some(brk_vals) => {
+            let outvals = [brk_vals.finish().into_series(), cats];
+            Ok(
+                StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?
+                    .into_series(),
+            )
+        },
+        None => Ok(cats),
+    }
+}
+
+fn map_enum_cats(
+    s: &Series,
+    labels: &[PlSmallStr],
+    sorted_breaks: &[f64],
+    left_closed: bool,
+    include_breaks: bool,
+) -> PolarsResult<Series> {
     let fcats = FrozenCategories::new(labels.iter().map(|s| s.as_str()))?;
     let enum_dtype = DataType::from_frozen_categories(fcats.clone());
 
     with_match_categorical_physical_type!(fcats.physical(), |$C| {
-        if include_breaks {
-            let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
-            let mut bld = CategoricalChunkedBuilder::<$C>::new(out_name.clone(), enum_dtype);
-            let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new(
-                PlSmallStr::from_static("breakpoint"),
-                s.len(),
-            );
-            s_iter
-                .map(|opt| {
-                    opt.filter(|x| !x.is_nan())
-                        .map(|x| sorted_breaks.partition_point(|v| op(&x, v)))
-                })
-                .for_each(|idx| match idx {
-                    None => {
-                        bld.append_null();
-                        brk_vals.append_null();
-                    },
-                    Some(idx) => unsafe {
-                        bld.append_str(labels.get_unchecked(idx)).unwrap();
-                        brk_vals.append_value(*right_ends.get_unchecked(idx));
-                    },
-                });
-
-            let outvals = [brk_vals.finish().into_series(), bld.finish().into_series()];
-            Ok(StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?.into_series())
-        } else {
-            Ok(CategoricalChunked::<$C>::from_str_iter(
-                out_name,
-                enum_dtype,
-                s_iter.map(|opt| {
-                    opt.filter(|x| !x.is_nan()).map(|x| {
-                        let pt = sorted_breaks.partition_point(|v| op(&x, v));
-                        unsafe { labels.get_unchecked(pt).as_str() }
-                    })
-                }),
-            )?
-            .into_series())
-        }
+        map_cats::<$C>(s, enum_dtype, labels, sorted_breaks, left_closed, include_breaks)
     })
 }
 
@@ -74,62 +115,15 @@ fn map_categorical_cats(
     left_closed: bool,
     include_breaks: bool,
 ) -> PolarsResult<Series> {
-    let out_name = PlSmallStr::from_static("category");
-
-    let s2 = s.cast(&DataType::Float64)?;
-    // It would be nice to parallelize this
-    let s_iter = s2.f64()?.iter();
-
-    let op: fn(&f64, &f64) -> bool = if left_closed {
-        PartialOrd::ge
-    } else {
-        PartialOrd::gt
-    };
-
     let cat_dtype = DataType::from_categories(Categories::global());
-
-    if include_breaks {
-        // This is to replicate the behavior of the old buggy version that only worked on series and
-        // returned a dataframe. That included a column of the right endpoint of the interval. So we
-        // return a struct series instead which can be turned into a dataframe later.
-        let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
-        let mut bld =
-            CategoricalChunkedBuilder::<Categorical32Type>::new(out_name.clone(), cat_dtype);
-        let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new(
-            PlSmallStr::from_static("breakpoint"),
-            s.len(),
-        );
-        s_iter
-            .map(|opt| {
-                opt.filter(|x| !x.is_nan())
-                    .map(|x| sorted_breaks.partition_point(|v| op(&x, v)))
-            })
-            .for_each(|idx| match idx {
-                None => {
-                    bld.append_null();
-                    brk_vals.append_null();
-                },
-                Some(idx) => unsafe {
-                    bld.append_str(labels.get_unchecked(idx)).unwrap();
-                    brk_vals.append_value(*right_ends.get_unchecked(idx));
-                },
-            });
-
-        let outvals = [brk_vals.finish().into_series(), bld.finish().into_series()];
-        Ok(StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?.into_series())
-    } else {
-        Ok(CategoricalChunked::<Categorical32Type>::from_str_iter(
-            out_name,
-            cat_dtype,
-            s_iter.map(|opt| {
-                opt.filter(|x| !x.is_nan()).map(|x| {
-                    let pt = sorted_breaks.partition_point(|v| op(&x, v));
-                    unsafe { labels.get_unchecked(pt).as_str() }
-                })
-            }),
-        )?
-        .into_series())
-    }
+    map_cats::<Categorical32Type>(
+        s,
+        cat_dtype,
+        labels,
+        sorted_breaks,
+        left_closed,
+        include_breaks,
+    )
 }
 
 pub fn cut(
@@ -170,8 +164,6 @@ pub fn qcut(
     allow_duplicates: bool,
     include_breaks: bool,
 ) -> PolarsResult<Series> {
-    polars_ensure!(!probs.iter().any(|x| x.is_nan()), ComputeError: "quantiles cannot be NaN");
-
     let s = s.cast(&DataType::Float64)?;
     let Some(mut qbreaks) = quantiles_without_nan(s.f64()?, &probs, QuantileMethod::Linear)? else {
         // No usable values (all null/NaN/empty): no breakpoints. With

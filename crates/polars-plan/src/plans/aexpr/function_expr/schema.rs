@@ -1,9 +1,10 @@
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::chunked_array::ops::row_encode::rows_dtype;
-use polars_core::utils::{get_supertype, materialize_dyn_int};
+use polars_core::utils::materialize_dyn_int;
 
 use super::*;
+use crate::plans::conversion::type_coercion::fill_supertype;
 
 impl IRFunctionExpr {
     pub(crate) fn get_field(&self, fields: &[Field]) -> PolarsResult<Field> {
@@ -81,7 +82,7 @@ impl IRFunctionExpr {
                     },
                     dt => dt.clone(),
                 }),
-            FillNull => mapper.map_to_supertype(),
+            FillNull => mapper.map_to_fill_supertype(1),
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
                 use IRRollingFunction::*;
@@ -146,21 +147,7 @@ impl IRFunctionExpr {
                     },
                 }
             },
-            ShiftAndFill => {
-                // Mirror type coercion, which casts the input and fill value to their supertype.
-                // @3.0: Raise a type error instead of upcasting the input.
-                let dtype = mapper.args()[0].dtype();
-                let fill_dtype = mapper.args()[2].dtype();
-                let is_cat_with_str_fill = (dtype.is_categorical() || dtype.is_enum())
-                    && matches!(
-                        fill_dtype,
-                        DataType::String | DataType::Unknown(UnknownKind::Str)
-                    );
-                match get_supertype(dtype, fill_dtype) {
-                    Some(st) if !is_cat_with_str_fill => mapper.with_dtype(st),
-                    _ => mapper.with_same_dtype(),
-                }
-            },
+            ShiftAndFill => mapper.map_to_fill_supertype(2),
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
@@ -716,6 +703,26 @@ impl<'a> FieldsMapper<'a> {
         self.moment_dtype()
     }
 
+    /// Returns an error if the operation `op` (e.g. "median") doesn't support the input dtype.
+    /// It supports null, Boolean, numeric and Decimal input, and temporal input if
+    /// `allow_temporal`. An unknown dtype passes, since it can't be checked yet.
+    pub fn ensure_moment_input(&self, op: &str, allow_temporal: bool) -> PolarsResult<()> {
+        let dt = self.fields[0].dtype();
+        let supported = match dt {
+            DataType::Null | DataType::Unknown(_) | DataType::Boolean => true,
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => true,
+            dt if dt.is_primitive_numeric() => true,
+            dt if dt.is_temporal() => allow_temporal,
+            _ => false,
+        };
+        polars_ensure!(
+            supported,
+            InvalidOperation: "`{op}` operation not supported for dtype `{dt}`"
+        );
+        Ok(())
+    }
+
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
         let map_inner = |dt: &DataType| match dt {
             DataType::Boolean => DataType::Float64,
@@ -822,6 +829,16 @@ impl<'a> FieldsMapper<'a> {
         let mut first = self.fields[0].clone();
         first.set_dtype(st);
         Ok(first)
+    }
+
+    /// Map to the dtype that the input and the fill value at `fill_idx` are cast to.
+    pub fn map_to_fill_supertype(&self, fill_idx: usize) -> PolarsResult<Field> {
+        let dtype = self.fields[0].dtype();
+        let fill_dtype = self.fields[fill_idx].dtype();
+        let st = fill_supertype(dtype, fill_dtype, None).ok_or_else(
+            || polars_err!(SchemaMismatch: "failed to determine supertype of {} and {}", dtype, fill_dtype),
+        )?;
+        self.with_dtype(st)
     }
 
     /// Map the dtype to the dtype of the list/array elements.
@@ -961,6 +978,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub fn quantile_dtype(&self) -> PolarsResult<Field> {
+        self.ensure_moment_input("quantile", true)?;
         let mut out = self.moment_dtype()?;
         if matches!(self.fields[1].dtype(), DataType::List(_)) {
             out.set_dtype(DataType::List(Box::new(out.dtype().clone())));

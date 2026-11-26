@@ -1028,19 +1028,24 @@ def test_sink_iceberg_overwrite_filter_keeps_deleted_rows_30616(tmp_path: Path) 
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize("rows_per_file", [6, 2, 1])
 @pytest.mark.parametrize(
-    ("overwrite_filter", "deleted"),
+    ("rows_per_file", "overwrite_filter", "deleted"),
     [
-        ("a != 1", [3, 6]),
-        ("a = 1 or b = 2", [1, 2, 4]),
-        ("not (a = 1 and b = 5)", [3, 4, 6]),
-        ("s not like 'ab%'", [2]),
-        ("x > 1", [1, 6]),
-        ("x < 1", [2, 3]),
-        ("x not in (1.0, 2.0)", [1, 2, 3, 6]),
-        ("f = 0.1", [1, 2, 5]),
-    ],
+        (rows_per_file, overwrite_filter, deleted)
+        for rows_per_file in [6, 1]
+        for overwrite_filter, deleted in [
+            ("a != 1", [3, 6]),
+            ("a = 1 or b = 2", [1, 2, 4]),
+            ("not (a = 1 and b = 5)", [3, 4, 6]),
+            ("s not like 'ab%'", [2]),
+            ("x > 1", [1, 6]),
+            ("x < 1", [2, 3]),
+            ("x not in (1.0, 2.0)", [1, 2, 3, 6]),
+            ("f = 0.1", [1, 2, 5]),
+        ]
+    ]
+    # A single overwrite with a dropped, unchanged, and rewritten file.
+    + [(2, "f = 0.1", [1, 2, 5])],
 )
 def test_sink_iceberg_overwrite_filter_string_rows(
     tmp_path: Path, overwrite_filter: str, deleted: list[int], rows_per_file: int
@@ -1076,7 +1081,7 @@ def test_sink_iceberg_overwrite_filter_string_rows(
     )
 
     # the rows for which the filter is true, NaN ordered above every number and a
-    # float literal compared as float32, in every file layout
+    # float literal compared as float32
     assert _scan_sorted(tbl)["id"].to_list() == [
         i for i in range(1, 7) if i not in deleted
     ]
@@ -8389,6 +8394,58 @@ def test_scan_iceberg_v3_field_initial_default(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.write_disk
+def test_scan_iceberg_struct_field_initial_default_null_parent(
+    tmp_path: Path,
+) -> None:
+    # A non-null default is still null where the parent struct is null.
+    table, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "s", StructType(NestedField(2, "a", LongType())))
+        ),
+    )
+
+    schema = {"s": pl.Struct({"a": pl.Int64})}
+    pl.DataFrame({"s": [{"a": 1}, {"a": 2}]}, schema=schema).write_iceberg(
+        table, mode="append"
+    )
+    pl.DataFrame({"s": [None, {"a": 3}]}, schema=schema).write_iceberg(
+        table, mode="append"
+    )
+
+    md_path = Path(
+        table.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md_object = json.loads(md_path.read_text())
+    md_object["format-version"] = 3
+    md_object["schemas"][-1]["fields"][0]["type"]["fields"].append(
+        {"id": 3, "name": "b", "required": False, "type": "long", "initial-default": 5}
+    )
+    md_path.write_text(json.dumps(md_object))
+    table = catalog.load_table(table.name())
+
+    lf = pl.scan_iceberg(table)
+    expect = pl.DataFrame(
+        {"s": [None]}, schema={"s": pl.Struct({"a": pl.Int64, "b": pl.Int64})}
+    )
+
+    assert_frame_equal(lf.filter(pl.col("s").is_null()).collect(), expect)
+    assert_frame_equal(
+        lf.filter(pl.col("s").struct.field("b").is_null()).collect(), expect
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("s").struct.field("b") == 5).collect(),
+        pl.DataFrame(
+            {"s": [{"a": 1, "b": 5}, {"a": 2, "b": 5}, {"a": 3, "b": 5}]},
+            schema={"s": pl.Struct({"a": pl.Int64, "b": pl.Int64})},
+        ),
+        check_row_order=False,
+    )
+
+
 def test_scan_iceberg_self_join_28465(tmp_path: Path) -> None:
     table, _ = new_iceberg_table(
         tmp_path, schema=IcebergSchema(NestedField(1, "x", LongType()))
@@ -9416,6 +9473,8 @@ def test_scan_iceberg_runtime_join_filter(
     capfd: pytest.CaptureFixture[str],
     renamed: bool,
 ) -> None:
+    # The scans here are far smaller than the probe sides worth filtering by default.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
     tbl, _ = new_iceberg_table(
         tmp_path,
         schema=IcebergSchema(

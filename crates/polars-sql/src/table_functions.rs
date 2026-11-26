@@ -2,9 +2,7 @@ use std::str::FromStr;
 
 #[cfg(feature = "csv")]
 use polars_core::prelude::PlSmallStr;
-use polars_core::prelude::{
-    DataFrame, ExplodeOptions, PolarsError, PolarsResult, polars_bail, polars_ensure,
-};
+use polars_core::prelude::{DataFrame, PolarsError, PolarsResult, polars_bail, polars_ensure};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
 use polars_lazy::prelude::{IntoLazy, LazyFrame};
@@ -17,7 +15,7 @@ use sqlparser::ast::{
 
 use crate::SQLContext;
 use crate::context::SubqueryShape;
-use crate::functions::series_expr;
+use crate::functions::{UNNEST_OPTIONS, series_expr};
 use crate::sql_expr::parse_sql_expr;
 use crate::subquery::strip_nested;
 #[cfg(any(
@@ -164,7 +162,12 @@ impl PolarsTableFunctions {
     /// The function that reads `path`, by its extension as written.
     #[allow(unreachable_code)]
     fn for_path(path: &str) -> Option<Self> {
-        Some(match FileFormat::of_path(path)? {
+        FileFormat::of_path(path).map(Self::for_format)
+    }
+
+    /// The table function that reads `format`.
+    fn for_format(format: FileFormat) -> Self {
+        match format {
             #[cfg(feature = "csv")]
             FileFormat::Csv => PolarsTableFunctions::ReadCsv,
             #[cfg(feature = "parquet")]
@@ -173,7 +176,7 @@ impl PolarsTableFunctions {
             FileFormat::Ipc => PolarsTableFunctions::ReadIpc,
             #[cfg(feature = "json")]
             FileFormat::Ndjson => PolarsTableFunctions::ReadNdjson,
-        })
+        }
     }
 
     /// Whether `path` has the extension of a file format.
@@ -189,9 +192,26 @@ impl PolarsTableFunctions {
         let Some(read_fn) = Self::for_path(path) else {
             return Ok(None);
         };
+        read_fn.read_with_defaults(path, ctx).map(Some)
+    }
+
+    /// The file at `path`, read with defaults as `format`, whatever its extension.
+    pub(crate) fn read_as(
+        format: FileFormat,
+        path: &str,
+        ctx: &mut SQLContext,
+    ) -> PolarsResult<LazyFrame> {
+        Ok(Self::for_format(format).read_with_defaults(path, ctx)?.1)
+    }
+
+    fn read_with_defaults(
+        &self,
+        path: &str,
+        ctx: &mut SQLContext,
+    ) -> PolarsResult<(String, LazyFrame)> {
         let path = SQLValue::SingleQuotedString(path.to_string()).with_empty_span();
         let arg = SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(SQLExpr::Value(path)));
-        read_fn.execute(&[arg], ctx).map(Some)
+        self.execute(&[arg], ctx)
     }
 
     #[allow(unreachable_code)]
@@ -243,7 +263,7 @@ impl PolarsTableFunctions {
                 _ => polars_bail!(SQLSyntax: "`{}` expects positional arguments; found {}", fname, arg),
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        let mut expr = series_expr(fname, &args, include_end, |e| {
+        let mut expr = series_expr(fname, &args, include_end, None, |e| {
             let expr = parse_sql_expr(e, ctx, None)?;
             polars_ensure!(
                 expr_to_leaf_column_names_iter(&expr).next().is_none(),
@@ -256,12 +276,7 @@ impl PolarsTableFunctions {
             vec![&mut expr],
             SubqueryShape::Scalar,
         )?;
-        let lf = lf.select([expr
-            .explode(ExplodeOptions {
-                empty_as_null: false,
-                keep_nulls: false,
-            })
-            .alias(fname)]);
+        let lf = lf.select([expr.explode(UNNEST_OPTIONS).alias(fname)]);
         Ok((fname.to_string(), lf))
     }
 
@@ -358,6 +373,9 @@ impl PolarsTableFunctions {
                 ),
             });
         reader = reader.with_null_values(null_values);
+        if let Some(empty_string_is_null) = options.bool("empty_string_is_null")? {
+            reader = reader.with_missing_is_null(empty_string_is_null);
+        }
         if let Some(ignore_errors) = options.bool("ignore_errors")? {
             reader = reader.with_ignore_errors(ignore_errors);
         }
@@ -630,6 +648,7 @@ const READ_CSV_OPTIONS: &[&str] = &[
     "try_parse_dates",
     "decimal_comma",
     "null_values",
+    "empty_string_is_null",
     "ignore_errors",
     "truncate_ragged_lines",
     "missing_columns",
@@ -659,7 +678,6 @@ const READ_CSV_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
     ("eol_char", ""),
     ("raise_if_empty", ""),
     ("glob", ""),
-    ("empty_string_is_null", ""),
     ("row_index_name", ""),
     ("row_index_offset", ""),
 ];

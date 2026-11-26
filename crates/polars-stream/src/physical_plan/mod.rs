@@ -30,7 +30,7 @@ use polars_plan::dsl::{
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::options::{JoinTypeOptionsIR, RuntimeFilter};
-use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, ExprProperties, FunctionArgMap, IR};
 
 mod fmt;
 mod io;
@@ -61,7 +61,6 @@ use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::Forb
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::rolling_fixed_window::RollingFixedWindow;
-use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
     /// Key used for physical nodes.
@@ -1136,7 +1135,7 @@ pub fn build_physical_plan(
 ) -> PolarsResult<(PhysNodeKey, SecondaryMap<PhysNodeKey, Node>)> {
     let original_ir_len = ir_arena.len();
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
-    let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
+    let mut expr_props = ExprProperties::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
     let mut phys_to_ir: SecondaryMap<PhysNodeKey, Node> =
         SecondaryMap::with_capacity(ir_arena.len());
@@ -1148,7 +1147,7 @@ pub fn build_physical_plan(
         &mut phys_to_ir,
         original_ir_len,
         &mut schema_cache,
-        &mut expr_cache,
+        &mut expr_props,
         &mut cache_nodes,
         ctx,
         None,

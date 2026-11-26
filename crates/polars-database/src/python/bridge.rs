@@ -144,7 +144,7 @@ impl StreamOwner for NoOwner {}
 fn python_df_to_rust(py_df: &Bound<'_, PyAny>) -> PyResult<PolarsResult<DataFrame>> {
     let stream = take_stream(&py_df.call_method0("__arrow_c_stream__")?)?;
     // SAFETY: Polars' own stream, usable from any thread.
-    let batches = match unsafe { adbc::import_stream(stream, NoOwner) } {
+    let batches = match unsafe { adbc::import_stream(stream, NoOwner, DialectName::Generic) } {
         Ok(b) => b,
         Err(e) => return Ok(Err(e)),
     };
@@ -372,6 +372,33 @@ impl DatabaseSession for PySession {
         Ok(())
     }
 
+    fn converts_mysql_timestamps(&self) -> bool {
+        Python::attach(|py| {
+            self.session
+                .getattr(py, "mysql_converts")
+                .and_then(|v| v.extract::<bool>(py))
+                .unwrap_or(false)
+        })
+    }
+
+    fn time_with_zone_columns(&self) -> Vec<String> {
+        Python::attach(|py| {
+            self.session
+                .getattr(py, "timetz_columns")
+                .and_then(|v| v.extract::<Vec<String>>(py))
+                .unwrap_or_default()
+        })
+    }
+
+    fn bigquery_text_columns(&self) -> Vec<String> {
+        Python::attach(|py| {
+            self.session
+                .getattr(py, "bigquery_text_columns")
+                .and_then(|v| v.extract::<Vec<String>>(py))
+                .unwrap_or_default()
+        })
+    }
+
     fn cancel_handle(&self) -> Option<CancelHandle> {
         if !self.can_cancel {
             return None;
@@ -467,7 +494,7 @@ impl DatabaseSession for PyAdbcSession {
         };
         // SAFETY: a C stream, from the driver or the driver manager's wrapper around it (for
         // ADBC 1.1 errors), never a Python object.
-        let batches = unsafe { adbc::import_stream(stream, owner) }?;
+        let batches = unsafe { adbc::import_stream(stream, owner, self.dialect) }?;
         Ok(adbc::check_batches(self.dialect, batches))
     }
 

@@ -5,7 +5,6 @@ import ast
 import contextlib
 import math
 import re
-import uuid
 from _ast import GtE, Lt, LtE
 from ast import (
     Attribute,
@@ -29,6 +28,7 @@ from functools import cache, singledispatch
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
+from polars._dependencies import uuid
 from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_expr, wrap_s

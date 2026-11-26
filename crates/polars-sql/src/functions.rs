@@ -1,14 +1,16 @@
 use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
-    TimeZone, UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
+    AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileFractionDtypes, QuantileMethod,
+    Scalar, Schema, TimeUnit, TimeZone, UnknownKind, datetime_to_timestamp_us,
+    extract_non_null_quantiles, polars_bail, polars_ensure, polars_err,
 };
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "rank")]
 use polars_defs::expr::{RankMethod, RankOptions};
 use polars_defs::expr::{RoundMode, UnicodeForm};
 use polars_defs::time::date_diff::DateDiffUnit;
+use polars_defs::time::duration::Duration;
 use polars_defs::time::group_by::ClosedWindow;
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
@@ -26,17 +28,19 @@ use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
-    DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
-    FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
-    ObjectName, OrderByExpr, OrderBySort, Value as SQLValue, ValueWithSpan, WindowFrame,
-    WindowFrameBound, WindowFrameUnits, WindowSpec,
+    BinaryOperator as SQLBinaryOperator, DateTimeField, DuplicateTreatment, Expr as SQLExpr,
+    Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentClause,
+    FunctionArgumentList, FunctionArguments, Ident, ObjectName, OrderByExpr, OrderBySort,
+    Value as SQLValue, ValueWithSpan, WindowFrame, WindowFrameBound, WindowFrameUnits, WindowSpec,
 };
 use sqlparser::tokenizer::Span;
 
+use crate::context::is_using_left_key;
 use crate::datetime_template::{ParseFormat, format_with_template, parse_format};
 use crate::group_context::{is_marked_aggregate, mark_aggregate};
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::lambda::{is_lambda_arg, lambda_arg, lambda_element_name};
+use crate::literal_folding::fold_scalar;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
     decimal_literal_to_f64, interval_to_duration, null_as_string, null_on_null_length,
@@ -541,6 +545,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT PRINTF('%s costs %.2f', col1, col2) FROM df;
     /// ```
     Printf,
+    /// SQL 'json_extract_path' function, as in Postgres.
+    /// The value at a path of keys or array indexes, as `#>` reads it.
+    /// ```sql
+    /// SELECT JSON_EXTRACT_PATH(col1, 'user', 'name') FROM df;
+    /// ```
+    JsonExtractPath,
+    /// SQL 'json_extract_path_text' function, as in Postgres.
+    /// The value at a path of keys or array indexes as text, as `#>>` reads it.
+    /// ```sql
+    /// SELECT JSON_EXTRACT_PATH_TEXT(col1, 'user', 'name') FROM df;
+    /// ```
+    JsonExtractPathText,
     /// SQL 'regexp_extract' function.
     /// Returns the given capture group of the first match of `pattern` (optional: `group`,
     /// 0 for the whole match), or an empty string if there is no match.
@@ -548,6 +564,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT REGEXP_EXTRACT(col1, '(\d+)-(\d+)', 2) FROM df;
     /// ```
     RegexpExtract,
+    /// SQL 'regexp_substr' function, as in Postgres.
+    /// The `n`th match of `pattern`, or its capture group `subexpr`; NULL if there is none.
+    /// ```sql
+    /// SELECT REGEXP_SUBSTR(col1, 'user=(\w+)', 1, 1, 'i', 1) FROM df;
+    /// ```
+    RegexpSubstr,
     /// SQL 'regexp_like' function.
     /// True if `pattern` matches the value (optional: `flags`).
     /// ```sql
@@ -1120,6 +1142,37 @@ pub(crate) enum PolarsSQLFunctions {
     Udf(String),
 }
 
+/// A literal key of `JSON_EXTRACT_PATH` as an element of a Postgres text array.
+fn json_path_element(key: &FunctionArgExpr) -> Option<String> {
+    let FunctionArgExpr::Expr(SQLExpr::Value(ValueWithSpan { value, .. })) = key else {
+        return None;
+    };
+    Some(match value {
+        // quoted only when needed: a struct's path does not read quotes
+        SQLValue::SingleQuotedString(s) if !needs_quotes(s) => s.clone(),
+        SQLValue::SingleQuotedString(s) => {
+            format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+        },
+        SQLValue::Number(n, _) => n.to_string(),
+        SQLValue::Null => "NULL".to_string(),
+        _ => return None,
+    })
+}
+
+/// Whether a Postgres text array element must be quoted to be read as written.
+fn needs_quotes(key: &str) -> bool {
+    key.is_empty()
+        || key.eq_ignore_ascii_case("NULL")
+        || key.contains([',', '{', '}', '"', '\\'])
+        || key.contains(char::is_whitespace)
+}
+
+/// How `UNNEST` and `EXPLODE` explode a list: as in Postgres, an empty or NULL list gives no row.
+pub(crate) const UNNEST_OPTIONS: ExplodeOptions = ExplodeOptions {
+    empty_as_null: false,
+    keep_nulls: false,
+};
+
 /// Whether `name` is a SQL function or a registered user-defined function.
 pub(crate) fn is_builtin_function(name: &Ident, ctx: &SQLContext) -> bool {
     let function = SQLFunction {
@@ -1144,9 +1197,9 @@ impl PolarsSQLFunctions {
             InitCap => true,
             BitLength | Date | EndsWith | Left | LeftPad | LeftTrim | Length | Lower
             | Normalize | OctetLength | RegexpExtract | RegexpLike | RegexpMatches
-            | RegexpReplace | Replace | Repeat | Reverse | Right | RightPad | RightTrim
-            | SplitPart | StartsWith | StrPos | Substring | StringToArray | Strptime
-            | TryStrptime | Time | Timestamp | Upper => true,
+            | RegexpSubstr | RegexpReplace | Replace | Repeat | Reverse | Right | RightPad
+            | RightTrim | SplitPart | StartsWith | StrPos | Substring | StringToArray
+            | Strptime | TryStrptime | Time | Timestamp | Upper => true,
             _ => false,
         }
     }
@@ -1160,6 +1213,9 @@ impl PolarsSQLFunctions {
             "apply",
             "approx_count_distinct",
             "approx_quantile",
+            "arg_max",
+            "arg_min",
+            "array_agg",
             "array_apply",
             "array_contains",
             "array_dot_product",
@@ -1185,8 +1241,14 @@ impl PolarsSQLFunctions {
             "bit_and",
             "bit_count",
             "bit_length",
+            "bit_not",
             "bit_or",
             "bit_xor",
+            "bitand",
+            "bitcount",
+            "bitnot",
+            "bitor",
+            "bitxor",
             "bool_and",
             "bool_or",
             "cardinality",
@@ -1207,6 +1269,7 @@ impl PolarsSQLFunctions {
             "cotd",
             "count",
             "count_if",
+            "countif",
             "covar",
             "covar_pop",
             "covar_samp",
@@ -1219,15 +1282,18 @@ impl PolarsSQLFunctions {
             "date_part",
             "date_trunc",
             "datediff",
+            "datetime",
             "day",
             "dayofmonth",
             "dayofweek",
             "dayofyear",
             "degrees",
             "dense_rank",
+            "div",
             "ends_with",
             "erf",
             "erfc",
+            "every",
             "exp",
             "filter",
             "first",
@@ -1236,10 +1302,15 @@ impl PolarsSQLFunctions {
             "format",
             "generate_series",
             "greatest",
+            "group_concat",
+            "grouping",
+            "grouping_id",
             "hour",
             "if",
             "ifnull",
             "initcap",
+            "json_extract_path",
+            "json_extract_path_text",
             "lag",
             "last",
             "last_value",
@@ -1250,6 +1321,7 @@ impl PolarsSQLFunctions {
             "list_apply",
             "list_filter",
             "list_transform",
+            "listagg",
             "ln",
             "localtime",
             "localtimestamp",
@@ -1269,6 +1341,7 @@ impl PolarsSQLFunctions {
             "minute",
             "mod",
             "month",
+            "normalize",
             "now",
             "nth_value",
             "ntile",
@@ -1292,6 +1365,7 @@ impl PolarsSQLFunctions {
             "regexp_like",
             "regexp_matches",
             "regexp_replace",
+            "regexp_substr",
             "repeat",
             "replace",
             "reverse",
@@ -1304,6 +1378,7 @@ impl PolarsSQLFunctions {
             "sign",
             "sin",
             "sind",
+            "split_part",
             "sqrt",
             "starts_with",
             "stddev",
@@ -1311,16 +1386,22 @@ impl PolarsSQLFunctions {
             "stdev",
             "stdev_samp",
             "strftime",
+            "string_agg",
+            "string_to_array",
             "strpos",
             "strptime",
             "substr",
             "sum",
             "tan",
             "tand",
+            "time",
+            "timestamp",
             "to_char",
             "to_date",
             "to_timestamp",
             "total",
+            "trunc",
+            "truncate",
             "try_strptime",
             "typeof",
             "unnest",
@@ -1329,6 +1410,7 @@ impl PolarsSQLFunctions {
             "var_samp",
             "variance",
             "week",
+            "xor",
             "year",
         ]
     }
@@ -1458,6 +1540,9 @@ impl PolarsSQLFunctions {
             "regexp_like" => Self::RegexpLike,
             "regexp_matches" => Self::RegexpMatches,
             "regexp_replace" => Self::RegexpReplace,
+            "regexp_substr" => Self::RegexpSubstr,
+            "json_extract_path" => Self::JsonExtractPath,
+            "json_extract_path_text" => Self::JsonExtractPathText,
             "repeat" => Self::Repeat,
             "replace" => Self::Replace,
             "reverse" => Self::Reverse,
@@ -2051,6 +2136,9 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             RegexpExtract => self.visit_regexp_extract(),
+            RegexpSubstr => self.visit_regexp_substr(),
+            JsonExtractPath => self.visit_json_extract_path(false),
+            JsonExtractPathText => self.visit_json_extract_path(true),
             RegexpMatches => self.visit_regexp_matches(),
             RegexpReplace => self.try_visit_variadic(|args| match args {
                 [e, pat, replacement] => regexp_replace(e, pat, replacement, None),
@@ -2073,6 +2161,16 @@ impl SQLFunctionVisitor<'_> {
                                 .when(lit(false))
                                 .then(read(new))
                                 .otherwise(lit(LiteralValue::untyped_null()).cast(DataType::String))
+                        } else if matches!(&old, Expr::Literal(lv) if lv.extract_str() == Some("")) {
+                            // As in Postgres; the folded branch keeps the string type check.
+                            let replaced = e.clone().str().replace_all(old, new.clone(), true);
+                            let kept = when(lit(true)).then(e).otherwise(replaced);
+                            match new {
+                                Expr::Literal(_) => kept,
+                                new => when(new.is_not_null())
+                                    .then(kept)
+                                    .otherwise(lit(LiteralValue::untyped_null())),
+                            }
                         } else if matches!((&old, &new), (Expr::Literal(_), Expr::Literal(_))) {
                             e.str().replace_all(old, new, true)
                         } else {
@@ -2085,15 +2183,22 @@ impl SQLFunctionVisitor<'_> {
                                 .map(|e| e.clone().is_not_null())
                                 .reduce(Expr::and)
                                 .unwrap();
-                            when(has_args)
+                            let e = when(has_args)
                                 .then(e)
-                                .otherwise(lit(LiteralValue::untyped_null()))
-                                .str()
-                                .replace_all(
-                                    old.cast(DataType::String).fill_null(lit("_")),
-                                    new.cast(DataType::String).fill_null(lit("")),
-                                    true,
-                                )
+                                .otherwise(lit(LiteralValue::untyped_null()));
+                            let pattern_is_literal = matches!(old, Expr::Literal(_));
+                            let old = old.cast(DataType::String);
+                            let replaced = e.clone().str().replace_all(
+                                old.clone().fill_null(lit("_")),
+                                new.cast(DataType::String).fill_null(lit("")),
+                                true,
+                            );
+                            match pattern_is_literal {
+                                true => replaced,
+                                false => when(old.str().len_bytes().eq(lit(0)))
+                                    .then(e)
+                                    .otherwise(replaced),
+                            }
                         })
                     }),
                     _ => {
@@ -2336,10 +2441,7 @@ impl SQLFunctionVisitor<'_> {
             ListTransform => self.visit_list_lambda(false),
             ListFilter => self.visit_list_lambda(true),
             Explode => self.visit_unary(|e| {
-                e.explode(ExplodeOptions {
-                    empty_as_null: true,
-                    keep_nulls: true,
-                })
+                e.explode(UNNEST_OPTIONS)
             }),
             GenerateSeries => self.visit_series(true),
             Range => self.visit_series(false),
@@ -2373,7 +2475,7 @@ impl SQLFunctionVisitor<'_> {
                             let rx = polars_utils::regex_cache::compile_regex(&pat).unwrap();
                             let col_names = active_schema
                                 .iter_names()
-                                .filter(|name| rx.is_match(name))
+                                .filter(|name| rx.is_match(name) && !is_using_left_key(name))
                                 .cloned()
                                 .collect::<Vec<_>>();
 
@@ -2386,7 +2488,18 @@ impl SQLFunctionVisitor<'_> {
                             Ok(Expr::Selector(Selector::Matches(pat.into())))
                         }
                     },
-                    Expr::Selector(s) => Ok(s.as_expr()),
+                    Expr::Selector(s) => {
+                        let hidden: Vec<PlSmallStr> = active_schema
+                            .iter()
+                            .flat_map(|schema| schema.iter_names())
+                            .filter(|name| is_using_left_key(name))
+                            .cloned()
+                            .collect();
+                        Ok(match hidden.is_empty() {
+                            true => s.as_expr(),
+                            false => s.exclude_cols(hidden).as_expr(),
+                        })
+                    },
                     _ => polars_bail!(SQLSyntax: "COLUMNS expects a regex; found {:?}", e),
                 })
             },
@@ -2965,8 +3078,10 @@ impl SQLFunctionVisitor<'_> {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         let fname = self.func.name.to_string();
-        series_expr(&fname, &args, include_end, |e| self.parse_sql_arg(e))
-            .and_then(|e| self.apply_window_spec(e))
+        series_expr(&fname, &args, include_end, self.active_schema, |e| {
+            self.parse_sql_arg(e)
+        })
+        .and_then(|e| self.apply_window_spec(e))
     }
 
     fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
@@ -3474,6 +3589,133 @@ impl SQLFunctionVisitor<'_> {
         self.apply_window_spec(e)
     }
 
+    /// `REGEXP_SUBSTR(string, pattern [, 1 [, n [, flags [, subexpr]]]])`, as in Postgres.
+    fn visit_regexp_substr(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let exprs: Vec<&SQLExpr> = args
+            .iter()
+            .map(|arg| match arg {
+                FunctionArgExpr::Expr(e) => Ok(e),
+                _ => polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects expressions; found {}", arg),
+            })
+            .collect::<PolarsResult<_>>()?;
+        let (value, pattern, rest) = match exprs.as_slice() {
+            [value, pattern, rest @ ..] if rest.len() <= 4 => (value, pattern, rest),
+            _ => {
+                polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects 2-6 arguments (found {})", args.len())
+            },
+        };
+        // An argument left out is `min`.
+        let int_arg = |this: &mut Self, i: usize, name: &str, min: i64| -> PolarsResult<i64> {
+            let Some(arg) = rest.get(i) else {
+                return Ok(min);
+            };
+            match parse_sql_expr(arg, this.ctx, this.active_schema)? {
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n >= min as i128 => {
+                    Ok(n as i64)
+                },
+                _ => polars_bail!(
+                    SQLSyntax: "REGEXP_SUBSTR expects an integer literal of at least {} as `{}`; found {}",
+                    min, name, arg
+                ),
+            }
+        };
+        let start = int_arg(self, 0, "start", 1)?;
+        let n = int_arg(self, 1, "n", 1)?;
+        let subexpr = int_arg(self, 3, "subexpr", 0)?;
+        let mut case_insensitive = false;
+        if let Some(flags) = rest.get(2) {
+            let SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::SingleQuotedString(flags),
+                ..
+            }) = flags
+            else {
+                polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects literal flags; found {}", flags)
+            };
+            // As in Postgres, the last of 'c' and 'i' decides.
+            for flag in flags.chars() {
+                match flag {
+                    'i' => case_insensitive = true,
+                    'c' => case_insensitive = false,
+                    _ => {
+                        polars_bail!(SQLSyntax: "REGEXP_SUBSTR supports the flags 'c' and 'i'; found '{}'", flag)
+                    },
+                }
+            }
+        }
+        // Another start would need `^` to anchor at the start of the whole string.
+        polars_ensure!(
+            start == 1,
+            SQLInterface: "REGEXP_SUBSTR supports a `start` of 1 only (found {})", start
+        );
+        // As in Postgres, a pattern without capture groups is its own group 1.
+        let groups = match pattern {
+            SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::SingleQuotedString(p),
+                ..
+            }) => polars_utils::regex_cache::compile_regex(p)
+                .ok()
+                .map(|re| re.captures_len() - 1),
+            _ => None,
+        };
+        let subexpr = match (subexpr, groups) {
+            (1, Some(0)) => 0,
+            (subexpr, _) => subexpr,
+        };
+        let value = self.string_arg(value)?;
+        let mut pattern = self.string_arg(pattern)?;
+        if case_insensitive {
+            pattern = concat_str([lit("(?i)"), pattern], "", false);
+        }
+        let e = match (n, subexpr) {
+            (1, group) => value.str().extract(pattern, group as usize),
+            (n, 0) => value
+                .str()
+                .extract_all(pattern)
+                .list()
+                .get(lit(n - 1), true),
+            _ => polars_bail!(
+                SQLInterface: "REGEXP_SUBSTR of a capture group (`subexpr`) is supported for the first match only"
+            ),
+        };
+        self.apply_window_spec(e)
+    }
+
+    /// `JSON_EXTRACT_PATH[_TEXT](json, key, ...)`: `json #> '{key,...}'` (or `#>>`).
+    fn visit_json_extract_path(&mut self, text: bool) -> PolarsResult<Expr> {
+        let name = match text {
+            true => "JSON_EXTRACT_PATH_TEXT",
+            false => "JSON_EXTRACT_PATH",
+        };
+        let args = extract_args(self.func)?;
+        let [FunctionArgExpr::Expr(json), keys @ ..] = args.as_slice() else {
+            polars_bail!(SQLSyntax: "{} expects a JSON value and a path of keys", name)
+        };
+        polars_ensure!(!keys.is_empty(), SQLSyntax: "{} expects at least one key", name);
+        let elements = keys
+            .iter()
+            .map(|key| {
+                json_path_element(key).ok_or_else(
+                    || polars_err!(SQLSyntax: "{} expects literal keys; found {}", name, key),
+                )
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let path = format!("{{{}}}", elements.join(","));
+        let access = SQLExpr::BinaryOp {
+            left: Box::new(json.clone()),
+            op: match text {
+                true => SQLBinaryOperator::HashLongArrow,
+                false => SQLBinaryOperator::HashArrow,
+            },
+            right: Box::new(SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::SingleQuotedString(path),
+                span: Span::empty(),
+            })),
+        };
+        let e = self.parse_sql_arg(&access)?;
+        self.apply_window_spec(e)
+    }
+
     /// A string argument, where a NULL is a string NULL.
     fn string_arg(&mut self, e: &SQLExpr) -> PolarsResult<Expr> {
         let e = self.parse_sql_arg(e)?;
@@ -3686,7 +3928,9 @@ impl SQLFunctionVisitor<'_> {
         let total = if is_distinct {
             sum
         } else {
-            (sum.clone() * rows.clone()).cast(DataTypeExpr::OfExpr(Box::new(sum)))
+            // Signed: an integer constant takes the other operand's type.
+            let rows = rows.clone().cast(DataType::Int64);
+            (sum.clone() * rows).cast(DataTypeExpr::OfExpr(Box::new(sum)))
         };
         when(rows.gt(lit(0)).and(c.is_not_null()))
             .then(total)
@@ -3938,6 +4182,17 @@ pub(crate) fn is_random(expr: &Expr) -> bool {
     }
 }
 
+/// Make each [`random`] in `expr` one value, the one it gives the first row, with the same seed.
+pub(crate) fn random_once(expr: Expr) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::Function {
+            function: FunctionExpr::Hash(seed),
+            ..
+        } if is_random(&e) => lit(Scalar::new_idxsize(0)).hash(seed),
+        e => e,
+    })
+}
+
 /// Whether a window key is a scalar that doesn't depend on the input, as `1` or `LOWER('A')`.
 pub(crate) fn is_constant_key(key: &Expr) -> bool {
     matches!(key.clone().meta().is_input_independent_scalar(), Ok(true))
@@ -4110,30 +4365,22 @@ fn literal_sum(arg: &Expr) -> Option<Expr> {
     }
 }
 
-/// Parse a literal quantile argument, validating that it lies in [0, 1].
+/// Parses a quantile argument, which must be a literal, and checks it like any `quantile`
+/// fraction.
 fn parse_quantile_literal(
     quantile: Expr,
     fname: &str,
     arg: &FunctionArgExpr,
 ) -> PolarsResult<Expr> {
-    match quantile {
-        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) if (0.0..=1.0).contains(&f) => {
-            Ok(Expr::from(f))
-        },
-        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if (0..=1).contains(&n) => {
-            Ok(Expr::from(n as f64))
-        },
-        ref e if let Some(f) = decimal_literal_to_f64(e) => {
-            if !(0.0..=1.0).contains(&f) {
-                polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, arg)
-            }
-            Ok(Expr::from(f))
-        },
-        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_) | DynLiteralValue::Int(_))) => {
-            polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, arg)
-        },
-        _ => polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg),
-    }
+    let fraction = match &quantile {
+        Expr::Literal(lv) => lv.to_quantile_fraction()?,
+        _ => None,
+    };
+    let Some(fraction) = fraction else {
+        polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg)
+    };
+    let quantiles = extract_non_null_quantiles(&fraction, QuantileFractionDtypes::Number)?;
+    Ok(Expr::from(quantiles[0]))
 }
 
 /// SQL `REGEXP_REPLACE(e, pattern, replacement [, flags])`. The 'g' flag replaces every
@@ -4221,6 +4468,7 @@ pub(crate) fn series_expr(
     fname: &str,
     args: &[&SQLExpr],
     include_end: bool,
+    schema: Option<&Schema>,
     mut parse: impl FnMut(&SQLExpr) -> PolarsResult<Expr>,
 ) -> PolarsResult<Expr> {
     let int_series = |start: Expr, stop: Expr, step: Expr| {
@@ -4231,29 +4479,70 @@ pub(crate) fn series_expr(
         };
         int_ranges(start, stop, step, DataType::Int64)
     };
+    let temporal_series = |start: Expr, stop: Expr, interval: Duration| {
+        polars_ensure!(
+            !interval.negative(),
+            SQLInterface: "{} does not support negative INTERVAL steps", fname
+        );
+        let closed = if include_end {
+            ClosedWindow::Both
+        } else {
+            ClosedWindow::Left
+        };
+        datetime_ranges(
+            Some(start),
+            Some(stop),
+            Some(interval),
+            None,
+            closed,
+            None,
+            None,
+        )
+    };
     match args {
-        [start, stop, SQLExpr::Interval(interval)] => {
-            let closed = if include_end {
-                ClosedWindow::Both
-            } else {
-                ClosedWindow::Left
-            };
-            datetime_ranges(
-                Some(parse(start)?),
-                Some(parse(stop)?),
-                Some(interval_to_duration(interval, false)?),
-                None,
-                closed,
-                None,
-                None,
-            )
-        },
+        [start, stop, SQLExpr::Interval(interval)] => temporal_series(
+            parse(start)?,
+            parse(stop)?,
+            interval_to_duration(interval, false)?,
+        ),
         [_, _, SQLExpr::UnaryOp { expr, .. }] if matches!(**expr, SQLExpr::Interval(_)) => {
             polars_bail!(SQLInterface: "{} does not support negative INTERVAL steps", fname)
         },
         [stop] => Ok(int_series(lit(0i64), parse(stop)?, lit(1i64))),
         [start, stop] => Ok(int_series(parse(start)?, parse(stop)?, lit(1i64))),
-        [start, stop, step] => Ok(int_series(parse(start)?, parse(stop)?, parse(step)?)),
+        [start, stop, step] => {
+            let (start, stop, step) = (parse(start)?, parse(stop)?, parse(step)?);
+            if !matches!(
+                resolve_expr_dtype(&step, schema),
+                Some(DataType::Duration(_))
+            ) {
+                return Ok(int_series(start, stop, step));
+            }
+            polars_ensure!(
+                is_constant_key(&step),
+                SQLInterface: "{} takes only a constant INTERVAL step", fname
+            );
+            let step = fold_scalar(step.strict_cast(DataType::Duration(TimeUnit::Nanoseconds)))?;
+            let Expr::Literal(step) = step else {
+                unreachable!()
+            };
+            match step.to_any_value() {
+                Some(AnyValue::Duration(ns, _)) => {
+                    polars_ensure!(
+                        ns >= 0,
+                        SQLInterface: "{} does not support negative INTERVAL steps", fname
+                    );
+                    temporal_series(start, stop, Duration::from_nsecs(ns))
+                },
+                // A NULL step gives a NULL series.
+                _ => {
+                    let null_stop = when(lit(false))
+                        .then(stop)
+                        .otherwise(lit(LiteralValue::untyped_null()));
+                    temporal_series(start, null_stop, Duration::new_days(1))
+                },
+            }
+        },
         _ => polars_bail!(SQLSyntax: "{} expects 1 to 3 arguments; found {}", fname, args.len()),
     }
 }

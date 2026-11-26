@@ -1,11 +1,10 @@
-use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::datatypes::AnyValue;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet,
+    DataType, Field, IDX_DTYPE, InitHashMaps, PlHashSet, PlIndexMap, PlIndexSet,
     SortMultipleOptions,
 };
 #[cfg(feature = "rolling_window")]
@@ -20,13 +19,10 @@ use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_ops::series::{RLE_LENGTH_COLUMN_NAME, RLE_VALUE_COLUMN_NAME};
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::projection_height::{ExprHeightVisitor, ExprProjectionHeight};
 use polars_plan::prelude::*;
-use polars_plan::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::slice_enum::Slice;
 use slotmap::DenseSlotMap;
 
@@ -44,32 +40,12 @@ use crate::physical_plan::lower_ir::{
 };
 use crate::unique_column_name;
 
-type ExprNodeKey = Node;
-
-pub(crate) struct ExprCache {
-    is_elementwise: PlHashMap<Node, bool>,
-    is_input_independent: PlHashMap<Node, bool>,
-    is_length_preserving: PlHashMap<Node, bool>,
-}
-
-impl ExprCache {
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            is_elementwise: PlHashMap::with_capacity(capacity),
-            is_input_independent: PlHashMap::with_capacity(capacity),
-            is_length_preserving: PlHashMap::with_capacity(capacity),
-        }
-    }
-}
-
 pub(crate) struct LowerExprContext<'a> {
     pub(crate) prepare_visualization: bool,
     pub(crate) sortedness: &'a IRPlanSorted,
     pub(crate) expr_arena: &'a mut Arena<AExpr>,
     pub(crate) phys_sm: &'a mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    pub(crate) cache: &'a mut ExprCache,
-    pub(crate) node_scratch: &'a mut ScratchVec<Node>,
-    pub(crate) ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
+    pub(crate) expr_props: &'a mut ExprProperties,
 }
 
 impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
@@ -91,196 +67,6 @@ impl<'a> From<&LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
     }
 }
 
-pub(crate) fn is_elementwise_rec_cached(
-    expr_key: ExprNodeKey,
-    arena: &Arena<AExpr>,
-    cache: &mut ExprCache,
-) -> bool {
-    *cache
-        .is_elementwise
-        .entry(expr_key)
-        .or_insert_with(|| is_elementwise_rec(expr_key, arena))
-}
-
-#[recursive::recursive]
-pub fn is_input_independent_rec(
-    expr_key: ExprNodeKey,
-    arena: &Arena<AExpr>,
-    cache: &mut PlHashMap<ExprNodeKey, bool>,
-) -> bool {
-    if let Some(ret) = cache.get(&expr_key) {
-        return *ret;
-    }
-
-    let ret = match arena.get(expr_key) {
-        // Handled separately in `Eval`.
-        AExpr::Element | AExpr::EvalColumn(_) => unreachable!(),
-        AExpr::StructField(_) => false,
-        AExpr::Explode { expr: inner, .. }
-        | AExpr::Cast {
-            expr: inner,
-            dtype: _,
-            options: _,
-        }
-        | AExpr::Sort {
-            expr: inner,
-            options: _,
-        } => is_input_independent_rec(*inner, arena, cache),
-        AExpr::Column(_) => false,
-
-        AExpr::Literal(_) => true,
-        AExpr::BinaryExpr { left, op: _, right } => {
-            is_input_independent_rec(*left, arena, cache)
-                && is_input_independent_rec(*right, arena, cache)
-        },
-        AExpr::Gather {
-            expr,
-            idx,
-            returns_scalar: _,
-            null_on_oob: _,
-        } => {
-            is_input_independent_rec(*expr, arena, cache)
-                && is_input_independent_rec(*idx, arena, cache)
-        },
-        AExpr::SortBy {
-            expr,
-            by,
-            sort_options: _,
-        } => {
-            is_input_independent_rec(*expr, arena, cache)
-                && by
-                    .iter()
-                    .all(|expr| is_input_independent_rec(*expr, arena, cache))
-        },
-        AExpr::Filter { input, by } => {
-            is_input_independent_rec(*input, arena, cache)
-                && is_input_independent_rec(*by, arena, cache)
-        },
-        AExpr::Agg(agg_expr) => match agg_expr.get_input() {
-            polars_plan::plans::NodeInputs::Leaf => true,
-            polars_plan::plans::NodeInputs::Single(expr) => {
-                is_input_independent_rec(expr, arena, cache)
-            },
-            polars_plan::plans::NodeInputs::Many(exprs) => exprs
-                .iter()
-                .all(|expr| is_input_independent_rec(*expr, arena, cache)),
-        },
-        AExpr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => {
-            is_input_independent_rec(*predicate, arena, cache)
-                && is_input_independent_rec(*truthy, arena, cache)
-                && is_input_independent_rec(*falsy, arena, cache)
-        },
-        AExpr::AnonymousFunction {
-            input,
-            function: _,
-            options: _,
-            fmt_str: _,
-        }
-        | AExpr::AnonymousAgg {
-            input,
-            function: _,
-            fmt_str: _,
-        }
-        | AExpr::Function {
-            input,
-            function: _,
-            options: _,
-        } => input
-            .iter()
-            .all(|expr| is_input_independent_rec(expr.node(), arena, cache)),
-        AExpr::Eval {
-            expr,
-            evaluation: _,
-            variant: _,
-            columns,
-        } => {
-            is_input_independent_rec(*expr, arena, cache)
-                && columns
-                    .iter()
-                    .all(|c| is_input_independent_rec(c.node(), arena, cache))
-        },
-        AExpr::StructEval {
-            expr,
-            evaluation,
-            variant: _,
-        } => {
-            // The `StructField`s of `evaluation` read the struct of `expr`, not the input. The
-            // bodies of `Eval`s are skipped (`inputs_rev`): a `len()` there is a list's length.
-            is_input_independent_rec(*expr, arena, cache)
-                && evaluation.iter().all(|expr| {
-                    let mut stack = vec![expr.node()];
-                    while let Some(node) = stack.pop() {
-                        let ae = arena.get(node);
-                        if matches!(ae, AExpr::Column(_) | AExpr::Len) {
-                            return false;
-                        }
-                        ae.inputs_rev(&mut stack);
-                    }
-                    true
-                })
-        },
-        #[cfg(feature = "dynamic_group_by")]
-        AExpr::Rolling {
-            function,
-            index_column,
-            period: _,
-            offset: _,
-            closed_window: _,
-        } => {
-            is_input_independent_rec(*function, arena, cache)
-                && is_input_independent_rec(*index_column, arena, cache)
-        },
-        AExpr::Over {
-            function,
-            partition_by,
-            order_by,
-            mapping: _,
-            may_reorder: _,
-        } => {
-            is_input_independent_rec(*function, arena, cache)
-                && partition_by
-                    .iter()
-                    .all(|expr| is_input_independent_rec(*expr, arena, cache))
-                && order_by
-                    .iter()
-                    .all(|(expr, _options)| is_input_independent_rec(*expr, arena, cache))
-        },
-        AExpr::Slice {
-            input,
-            offset,
-            length,
-        } => {
-            is_input_independent_rec(*input, arena, cache)
-                && is_input_independent_rec(*offset, arena, cache)
-                && is_input_independent_rec(*length, arena, cache)
-        },
-        AExpr::Len => false,
-    };
-
-    cache.insert(expr_key, ret);
-    ret
-}
-
-pub fn is_input_independent(
-    expr_key: ExprNodeKey,
-    expr_arena: &Arena<AExpr>,
-    cache: &mut ExprCache,
-) -> bool {
-    is_input_independent_rec(expr_key, expr_arena, &mut cache.is_input_independent)
-}
-
-fn is_input_independent_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -> bool {
-    is_input_independent_rec(
-        expr_key,
-        ctx.expr_arena,
-        &mut ctx.cache.is_input_independent,
-    )
-}
-
 fn build_input_independent_node_with_ctx(
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
@@ -294,87 +80,12 @@ fn build_input_independent_node_with_ctx(
     )))
 }
 
-fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -> bool {
-    struct CachedLengthPreservingVisitor<'a> {
-        height_resolver: &'a mut ExprHeightVisitor<'a>,
-        cache: &'a mut PlHashMap<Node, bool>,
-    }
-
-    impl<'a> NodeVisitor for CachedLengthPreservingVisitor<'a> {
-        type Edge = ExprProjectionHeight;
-        type Key = Node;
-        type Storage = &'a Arena<AExpr>;
-        type BreakValue = ();
-
-        fn default_edge(
-            &mut self,
-            key: Self::Key,
-            parent_key_and_port: Option<(Self::Key, usize)>,
-        ) -> Self::Edge {
-            self.height_resolver.default_edge(key, parent_key_and_port)
-        }
-
-        fn pre_visit(
-            &mut self,
-            key: Self::Key,
-            storage: &mut Self::Storage,
-            edges: &mut dyn polars_plan::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
-        ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
-            use ControlFlow as CF;
-
-            if let Some(length_preserving) = self.cache.get(&key) {
-                edges.outputs()[0] = if *length_preserving {
-                    ExprProjectionHeight::Column
-                } else {
-                    ExprProjectionHeight::Unknown
-                };
-
-                CF::Continue(SubtreeVisit::Skip)
-            } else {
-                self.height_resolver.pre_visit(key, storage, edges)
-            }
-        }
-
-        fn post_visit(
-            &mut self,
-            key: Self::Key,
-            storage: &mut Self::Storage,
-            edges: &mut dyn polars_plan::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
-        ) -> ControlFlow<Self::BreakValue> {
-            let control_flow = self.height_resolver.post_visit(key, storage, edges);
-
-            let length_preserving = matches!(edges.outputs()[0], ExprProjectionHeight::Column);
-
-            self.cache.insert(key, length_preserving);
-
-            control_flow
-        }
-    }
-
-    let mut visitor = CachedLengthPreservingVisitor {
-        cache: &mut ctx.cache.is_length_preserving,
-        height_resolver: &mut Default::default(),
-    };
-
-    let height = aexpr_tree_traversal(
-        expr_key,
-        &mut &*ctx.expr_arena,
-        ctx.node_scratch.get(),
-        ctx.ae_height_scratch.get(),
-        &mut visitor,
-    )
-    .continue_value()
-    .unwrap();
-
-    matches!(height, ExprProjectionHeight::Column)
-}
-
 /// Replaces the maximal non-elementwise subexpressions without a `StructField` by columns, pushing
 /// their definitions to `hoisted`.
 #[recursive::recursive]
 fn hoist_frame_subexprs(expr: Node, ctx: &mut LowerExprContext, hoisted: &mut Vec<ExprIR>) -> Node {
     if !has_aexpr(expr, ctx.expr_arena, |e| matches!(e, AExpr::StructField(_))) {
-        if is_elementwise_rec_cached(expr, ctx.expr_arena, ctx.cache) {
+        if ctx.expr_props.is_elementwise(expr, ctx.expr_arena) {
             return expr;
         }
         let name = unique_column_name();
@@ -602,7 +313,10 @@ fn lower_exprs_with_ctx(
 ) -> PolarsResult<(PhysStream, Vec<Node>)> {
     // We have to catch this case separately, in case all the input independent expressions are elementwise.
     // TODO: we shouldn't always do this when recursing, e.g. pl.col.a.sum() + 1 will still hit this in the recursion.
-    if exprs.iter().all(|e| is_input_independent_ctx(*e, ctx)) {
+    if exprs
+        .iter()
+        .all(|e| ctx.expr_props.is_input_independent(*e, ctx.expr_arena))
+    {
         let expr_irs = exprs
             .iter()
             .map(|e| ExprIR::new(*e, OutputName::Alias(unique_column_name())))
@@ -626,8 +340,8 @@ fn lower_exprs_with_ctx(
     let mut transformed_exprs = Vec::with_capacity(exprs.len());
 
     for expr in exprs.iter().copied() {
-        if is_elementwise_rec_cached(expr, ctx.expr_arena, ctx.cache) {
-            if !is_input_independent_ctx(expr, ctx) {
+        if ctx.expr_props.is_elementwise(expr, ctx.expr_arena) {
+            if !ctx.expr_props.is_input_independent(expr, ctx.expr_arena) {
                 input_streams.insert(input);
             }
             transformed_exprs.push(expr);
@@ -837,7 +551,7 @@ fn lower_exprs_with_ctx(
                         None,
                         ctx.expr_arena,
                         ctx.phys_sm,
-                        ctx.cache,
+                        ctx.expr_props,
                         StreamingLowerIRContext::from(&*ctx),
                         false,
                     )?;
@@ -890,7 +604,7 @@ fn lower_exprs_with_ctx(
                     None,
                     ctx.expr_arena,
                     ctx.phys_sm,
-                    ctx.cache,
+                    ctx.expr_props,
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                         sortedness: ctx.sortedness,
@@ -957,7 +671,7 @@ fn lower_exprs_with_ctx(
                     None,
                     ctx.expr_arena,
                     ctx.phys_sm,
-                    ctx.cache,
+                    ctx.expr_props,
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                         sortedness: ctx.sortedness,
@@ -1060,7 +774,7 @@ fn lower_exprs_with_ctx(
                     None,
                     ctx.expr_arena,
                     ctx.phys_sm,
-                    ctx.cache,
+                    ctx.expr_props,
                     StreamingLowerIRContext::from(&*ctx),
                     false,
                 )?;
@@ -1157,7 +871,7 @@ fn lower_exprs_with_ctx(
                     None,
                     ctx.expr_arena,
                     ctx.phys_sm,
-                    ctx.cache,
+                    ctx.expr_props,
                     StreamingLowerIRContext::from(&*ctx),
                     false,
                 )?;
@@ -1846,7 +1560,7 @@ fn lower_exprs_with_ctx(
                     &[validity_expr_ir],
                     ctx.expr_arena,
                     ctx.phys_sm,
-                    ctx.cache,
+                    ctx.expr_props,
                     StreamingLowerIRContext::from(&*ctx),
                 )?;
 
@@ -1901,7 +1615,7 @@ fn lower_exprs_with_ctx(
                     &evaluation,
                     ctx.expr_arena,
                     ctx.phys_sm,
-                    ctx.cache,
+                    ctx.expr_props,
                     StreamingLowerIRContext::from(&*ctx),
                 )?;
 
@@ -2250,7 +1964,7 @@ fn lower_exprs_with_ctx(
                         None,
                         ctx.expr_arena,
                         ctx.phys_sm,
-                        ctx.cache,
+                        ctx.expr_props,
                         StreamingLowerIRContext::from(&*ctx),
                         false,
                     )?;
@@ -2714,7 +2428,8 @@ fn lower_exprs_with_ctx(
                     .map(|n| AExprBuilder::col(n.clone(), ctx.expr_arena).expr_ir(n))
                     .chain(std::iter::once(index_column_expr_ir.clone()))
                     .collect::<Vec<_>>();
-                let input = build_select_stream_with_ctx(input, &input_columns, ctx)?;
+                let input =
+                    build_length_preserving_select_stream_with_ctx(input, &input_columns, ctx)?;
 
                 let kind = PhysNodeKind::RollingGroupBy {
                     input,
@@ -2765,7 +2480,7 @@ fn lower_exprs_with_ctx(
                     GroupByLowerKind::Over,
                     ctx.expr_arena,
                     ctx.phys_sm,
-                    ctx.cache,
+                    ctx.expr_props,
                     StreamingLowerIRContext::from(&*ctx),
                 )? {
                     input_streams.insert(gb);
@@ -2937,10 +2652,10 @@ fn build_select_stream_with_ctx(
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysStream> {
-    if exprs
-        .iter()
-        .all(|e| is_input_independent_ctx(e.node(), ctx))
-    {
+    if exprs.iter().all(|e| {
+        ctx.expr_props
+            .is_input_independent(e.node(), ctx.expr_arena)
+    }) {
         return Ok(PhysStream::first(build_input_independent_node_with_ctx(
             exprs, ctx,
         )?));
@@ -3002,17 +2717,15 @@ pub fn lower_exprs(
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>)> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
-        cache: expr_cache,
+        expr_props,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
-        node_scratch: &mut Default::default(),
-        ae_height_scratch: &mut Default::default(),
     };
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
     let (transformed_input, transformed_exprs) =
@@ -3032,17 +2745,15 @@ pub fn build_select_stream(
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
-        cache: expr_cache,
+        expr_props,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
-        node_scratch: &mut Default::default(),
-        ae_height_scratch: &mut Default::default(),
     };
     build_select_stream_with_ctx(input, exprs, &mut ctx)
 }
@@ -3053,17 +2764,15 @@ pub fn build_hstack_stream(
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
-        cache: expr_cache,
+        expr_props,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
-        node_scratch: &mut Default::default(),
-        ae_height_scratch: &mut Default::default(),
     };
     build_hstack_stream_with_ctx(input, exprs, &mut ctx)
 }
@@ -3076,7 +2785,7 @@ pub(crate) fn build_hstack_stream_with_ctx(
     let input_schema = input.output_schema(ctx.phys_sm);
     if exprs
         .iter()
-        .all(|e| is_elementwise_rec_cached(e.node(), ctx.expr_arena, ctx.cache))
+        .all(|e| ctx.expr_props.is_elementwise(e.node(), ctx.expr_arena))
     {
         let mut output_schema = input_schema.as_ref().clone();
         for expr in exprs {
@@ -3153,9 +2862,10 @@ fn build_length_preserving_select_stream_with_ctx(
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysStream> {
-    let already_length_preserving = exprs
-        .iter()
-        .any(|expr| is_length_preserving_ctx(expr.node(), ctx));
+    let already_length_preserving = exprs.iter().any(|expr| {
+        ctx.expr_props
+            .is_length_preserving(expr.node(), ctx.expr_arena)
+    });
     let input_schema = input.output_schema(ctx.phys_sm);
     if exprs.is_empty() || already_length_preserving {
         return build_select_stream_with_ctx(input, exprs, ctx);
@@ -3339,17 +3049,15 @@ pub fn build_sort_stream(
     sort_options: SortMultipleOptions,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
-        cache: expr_cache,
+        expr_props,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
-        node_scratch: &mut Default::default(),
-        ae_height_scratch: &mut Default::default(),
     };
     build_sort_stream_with_ctx(input, by_column, slice, sort_options, &mut ctx)
 }

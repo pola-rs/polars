@@ -234,8 +234,8 @@ impl<O: Write, E: Write> Printer<O, E> {
                         table.vstack_mut(&rows)?;
                     },
                     ResultWriter::ArrowStream(writer) => {
-                        for batch in rows.iter_chunks(ARROW_COMPAT, true) {
-                            writer.write(&batch, None)?;
+                        for batch in rows.try_iter_chunks(ARROW_COMPAT, true) {
+                            writer.write(&batch?, None)?;
                         }
                     },
                 }

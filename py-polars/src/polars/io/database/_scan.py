@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import contextlib
+import contextvars
+import dis
+import functools
 import operator
 import re
 import sys
-from collections.abc import Collection, Mapping, Sequence
+import types
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
 from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_ldf
-from polars.expr import Expr
 from polars.schema import Schema
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -21,6 +24,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame
     from polars._typing import SchemaDict
+    from polars.expr import Expr
 
 # An ODBC connection string names its driver or data source in any of its keys.
 _ODBC_KEY = re.compile(r"(^|;)\s*(driver|dsn|filedsn)\s*=", re.IGNORECASE)
@@ -29,8 +33,13 @@ _URI = re.compile(r"^[A-Za-z][\w+.-]*://")
 _FILE_URI = re.compile(r"^(sqlite|duckdb)(\+\w+)?:", re.IGNORECASE)
 
 
-def _connection_kind(connection: Any) -> tuple[str, Any]:
-    """Classify a connection as `uri`, `odbc`, `factory` or `live`."""
+def _connection_kind(
+    connection: Any,
+    *,
+    params: Any = None,
+    execute_options: Mapping[str, Any] | None = None,
+) -> tuple[str, Any]:
+    """Classify a connection as `uri`, `odbc`, `factory`, `engine` or `live`."""
     if isinstance(connection, str):
         # a URI first: a SQLAlchemy URI can carry an ODBC string (`?odbc_connect=…`)
         if _URI.match(connection) or _FILE_URI.match(connection):
@@ -71,20 +80,52 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
         if hasattr(connection, "url") and callable(
             getattr(connection, "connect", None)
         ):
-            pool = type(getattr(connection, "pool", None)).__name__
-            if pool in _SHARED_CONNECTION_POOLS:
+            _check_bigquery_pool(connection)
+            # (a subclass of one shares the connection just the same)
+            pool = getattr(connection, "pool", None)
+            if _has_shared_pool(connection):
+                if connection.dialect.name == "bigquery" and _has_shared_pool(
+                    connection, ("StaticPool",)
+                ):
+                    return "engine", _in_caller_context(connection.connect)
+                _check_bigquery_shared_options(connection, params, execute_options)
                 # one connection (per thread) that the user's own statements use too
                 # (temporary tables, session settings, an open transaction): read as
                 # a live connection
                 return "live", _shared_dbapi_connection(connection)
-            return "factory", connection.connect
+            if type(pool).__name__ == "NullPool":
+                # every checkout is a new connection: nothing of a session survives
+                return "factory", _in_caller_context(connection.connect)
+            # A pooled connection carries the state of its session (temporary tables,
+            # `search_path`, session variables, a listener's settings): partitions read
+            # through several would each see their own. Each execution of the scan
+            # (a collect) checks out ONE connection when it first needs one, reads every
+            # partition on it, one after another, and gives it back to the pool (its
+            # own reset, after the plugin restored what its session setup changed)
+            # when the execution ends: nothing is held between collects.
+            return "engine", _in_caller_context(connection.connect)
 
+    if (shared := _session_shared_engine(connection)) is not None:
+        # an ORM Session over such an Engine: the one connection is the user's too, and
+        # the Session's own rollback or release would end the transaction on it
+        engine, session = shared
+        _check_bigquery_shared_options(engine, params, execute_options, session)
+        return "live", _shared_dbapi_connection(engine)
     if (
         callable(connection)
         and not hasattr(connection, "cursor")
         and not hasattr(connection, "execute")
     ):
-        return "factory", connection
+        if (engine := _factory_shared_engine(connection)) is not None:
+            # a SingletonThreadPool opens a connection for each thread that asks and
+            # closes others' beyond its `pool_size`: read through the calling thread's
+            # one connection, as for the Engine itself
+            if getattr(getattr(engine, "dialect", None), "name", None) == "bigquery":
+                _check_bigquery_shared_factory(
+                    connection, engine, params, execute_options
+                )
+            return "live", _shared_dbapi_connection(engine)
+        return "factory", _in_caller_context(connection)
     if hasattr(connection, "cursor") or hasattr(connection, "execute"):
         return "live", connection
 
@@ -96,18 +137,161 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
 _SHARED_CONNECTION_POOLS = ("StaticPool", "SingletonThreadPool", "AssertionPool")
 
 
+def _has_shared_pool(engine: Any, names: tuple[str, ...] | None = None) -> bool:
+    pool = getattr(engine, "pool", None)
+    return pool is not None and any(
+        c.__name__ in (names or _SHARED_CONNECTION_POOLS) for c in type(pool).__mro__
+    )
+
+
+def _session_shared_engine(obj: Any) -> tuple[Any, Any] | None:
+    """The Engine and ORM Session when its pool shares one connection."""
+    if type(obj).__name__ == "scoped_session":
+        # (its registry's Session of this thread; making it connects to nothing)
+        with contextlib.suppress(Exception):
+            obj = obj()
+    if not any(
+        c.__name__ == "Session" and c.__module__.startswith("sqlalchemy.orm")
+        for c in type(obj).__mro__
+    ):
+        return None
+    with contextlib.suppress(Exception):
+        engine = obj.get_bind()
+        if _has_shared_pool(engine):
+            return engine, obj
+    return None
+
+
+def _unwrap_empty_partials(factory: Any) -> Any:
+    while isinstance(factory, functools.partial) and not (
+        factory.args or factory.keywords
+    ):
+        factory = factory.func
+    return factory
+
+
+def _factory_shared_engine(factory: Any) -> Any:
+    """
+    Find a factory's Engine when the scan should read its DB-API connection directly.
+
+    A SingletonThreadPool opens a connection for each thread that asks and closes
+    others' beyond `pool_size`, and an AssertionPool refuses a second checkout: the
+    Engine is found where the factory is its `connect`/`raw_connection`, a
+    `sessionmaker`, a `functools.partial` or wrapper of one, or a function that refers
+    to one (closure or global); None if there is none. Raises if it refers to several.
+    Connecting through a StaticPool Engine's bound `connect` can change the
+    isolation level of the caller's transaction, so use its raw checkout in that
+    case too. Check that any referenced BigQuery Engine is safe to check out.
+    """
+    seen: set[int] = set()
+    engines: list[Any] = []
+    direct_factory = _unwrap_empty_partials(factory)
+
+    def visit(obj: Any, depth: int = 0) -> None:
+        if (
+            obj is None
+            or id(obj) in seen
+            or depth > 3
+            or isinstance(obj, (type, types.ModuleType, str, bytes, int, float))
+        ):
+            return
+        seen.add(id(obj))
+        if any(
+            cls.__name__ == "Engine" and cls.__module__ == "sqlalchemy.engine.base"
+            for cls in type(obj).__mro__
+        ):
+            _check_bigquery_pool(obj)
+            if _has_shared_pool(obj, ("SingletonThreadPool", "AssertionPool")):
+                engines.append(obj)
+            elif (
+                isinstance(direct_factory, types.MethodType)
+                and _has_shared_pool(obj, ("StaticPool",))
+                and obj.dialect.name != "bigquery"
+                and "isolation_level" in obj.get_execution_options()
+                and direct_factory.__self__ is obj
+            ):
+                from sqlalchemy.engine import Engine
+
+                # Applying a new isolation level on checkout can commit the
+                # user's uncommitted writes.
+                if direct_factory.__func__ is Engine.connect:
+                    engines.append(obj)
+            return
+        kw = getattr(obj, "kw", None)  # a sessionmaker's
+        if isinstance(kw, dict) and kw.get("bind") is not None:
+            visit(kw["bind"], depth + 1)
+            return
+        related = [
+            getattr(obj, "__self__", None),
+            getattr(obj, "func", None),
+            getattr(obj, "__wrapped__", None),
+        ]
+        if isinstance(obj, functools.partial):
+            related += [*obj.args, *obj.keywords.values()]
+        for cell in getattr(obj, "__closure__", None) or ():
+            with contextlib.suppress(ValueError):
+                related.append(cell.cell_contents)
+        related += getattr(obj, "__defaults__", None) or ()
+        related += (getattr(obj, "__kwdefaults__", None) or {}).values()
+        code = getattr(obj, "__code__", None)
+        globs = getattr(obj, "__globals__", None)
+        if code is not None and globs is not None:
+            # the globals it reads (`co_names` also holds attribute names)
+            related += [
+                globs.get(i.argval)
+                for i in dis.get_instructions(code)
+                if i.opname in ("LOAD_GLOBAL", "LOAD_NAME")
+            ]
+        for item in related:
+            visit(item, depth + 1)
+
+    visit(factory)
+    if len(engines) > 1:
+        msg = (
+            "a connection function that refers to several Engines over a "
+            "shared SQLAlchemy pool can't be scanned: the scan reads "
+            "through the Engine's one connection without calling the function, and "
+            "can't tell which one it returns. Pass the Engine itself"
+        )
+        raise TypeError(msg)
+    return engines[0] if engines else None
+
+
+def _in_caller_context(factory: Callable[[], Any]) -> Callable[[], Any]:
+    """
+    The factory, run in the context variables of the caller of `scan_database`.
+
+    The scan opens its connections on threads of its own, which don't see the caller's
+    `contextvars` (a tenant that a checkout listener reads, say). Thread-locals are not
+    carried over.
+    """
+    context = contextvars.copy_context()
+
+    def in_context() -> Any:
+        # (a context can be entered by one thread at a time)
+        return context.copy().run(factory)
+
+    return in_context
+
+
 def _shared_dbapi_connection(engine: Any) -> Any:
     """
     The DB-API connection that an Engine's shared-connection pool hands out.
 
-    Each check-in of it would roll it back (the pool's reset on return), also the
-    transaction of a user's own `engine.connect()`: it is checked in once, here, without
-    that reset, and the scan uses the DB-API connection directly.
+    Each check-in of it would reset it (the pool's reset on return: a rollback, or a
+    commit), also the transaction of a user's own `engine.connect()`: it is checked in
+    once, here, without that reset, and the scan uses the DB-API connection directly.
     """
     from sqlalchemy.pool.base import _ConnectionFairy
 
+    _plugin()
+    from polars_database._bridge import _release_without_reset
+
+    _check_bigquery_pool(engine)
     pool = engine.pool
-    if type(pool).__name__ == "AssertionPool" and getattr(pool, "_checked_out", False):
+    if any(c.__name__ == "AssertionPool" for c in type(pool).__mro__) and getattr(
+        pool, "_checked_out", False
+    ):
         # its one connection is checked out (a user's `engine.connect()`), and a second
         # checkout raises: use the checked-out connection itself
         record = getattr(pool, "_conn", None)
@@ -126,8 +310,72 @@ def _shared_dbapi_connection(engine: Any) -> Any:
         raise TypeError(msg)
     fairy = engine.raw_connection()
     dbapi_connection = fairy.driver_connection
-    fairy._close_special(transaction_reset=True)
+    _release_without_reset(fairy)
     return dbapi_connection
+
+
+def _check_bigquery_pool(engine: Any) -> None:
+    if getattr(getattr(engine, "dialect", None), "name", None) == "bigquery":
+        _plugin()
+        from polars_database._bridge import _check_bigquery_pool as check_pool
+
+        check_pool(engine)
+
+
+def _check_bigquery_shared_options(
+    engine: Any,
+    params: Any,
+    execute_options: Mapping[str, Any] | None,
+    session: Any = None,
+) -> None:
+    if getattr(getattr(engine, "dialect", None), "name", None) == "bigquery":
+        _plugin()
+        from polars_database._bridge import _check_bigquery_shared_options as check
+
+        check(engine, params, execute_options, session)
+
+
+def _check_bigquery_shared_factory(
+    factory: Any,
+    engine: Any,
+    params: Any,
+    execute_options: Mapping[str, Any] | None,
+) -> None:
+    from sqlalchemy.engine import Engine
+    from sqlalchemy.orm import Session, sessionmaker
+
+    factory = _unwrap_empty_partials(factory)
+    method = (
+        getattr(factory, "__func__", None)
+        if getattr(factory, "__self__", None) is engine
+        else None
+    )
+    if method is Engine.raw_connection:
+        return
+    if method is Engine.connect:
+        _check_bigquery_shared_options(engine, params, execute_options)
+        return
+    if (
+        type(factory) is sessionmaker
+        and factory.class_.__bases__ == (Session,)
+        and factory.kw.get("bind") is engine
+        and not factory.kw.get("binds")
+    ) or (
+        isinstance(factory, functools.partial)
+        and factory.func is Session
+        and factory.args == (engine,)
+        and not factory.keywords
+    ):
+        # A standard Session doesn't check out a connection until first use.
+        with factory() as session:
+            _check_bigquery_shared_options(engine, params, execute_options, session)
+        return
+    msg = (
+        "scan_database cannot use a BigQuery factory that may configure a shared "
+        "SQLAlchemy checkout; pass an established "
+        "SQLAlchemy Connection or use engine.connect directly"
+    )
+    raise TypeError(msg)
 
 
 # Python package of the I/O plugin that implements `scan_database`.
@@ -176,10 +424,6 @@ def _string_options(options: Mapping[str, Any] | None) -> list[tuple[str, str]]:
     return [(str(k), str(v)) for k, v in (options or {}).items()]
 
 
-# The most partitions a scan may ask for (the plugin caps at the same number).
-_MAX_PARTITION_NUM = 65536
-
-
 def _positive_int(name: str, value: Any, maximum: int = sys.maxsize) -> None:
     if value is None:
         return
@@ -194,17 +438,6 @@ def _positive_int(name: str, value: Any, maximum: int = sys.maxsize) -> None:
     if index > maximum:
         msg = f"{name} must be at most {maximum}, got {value!r}"
         raise ValueError(msg)
-
-
-def _materialize(name: str, value: Any) -> Any:
-    """`value` as a tuple if it is an iterable without a length (e.g. a generator)."""
-    if value is None or isinstance(value, Collection):
-        return value
-    try:
-        return tuple(value)
-    except TypeError:
-        msg = f"{name} must be a sequence, got {qualified_type_name(value)!r}"
-        raise TypeError(msg) from None
 
 
 def _copy_containers(value: Any) -> Any:
@@ -346,8 +579,7 @@ def scan_database(
     Lazily read from a database table or query.
 
     The scan runs on the streaming engine. Projections, filters and limits are pushed
-    into the SQL sent to the database, and the read can be split into partitions that
-    are fetched concurrently.
+    into the SQL sent to the database, which is read with one query.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
@@ -374,22 +606,55 @@ def scan_database(
           to the driver (an unknown one raises);
         * an ODBC connection string (`"Driver={…};Server=…"`);
         * a SQLAlchemy `URL` (as its URI), or `Engine`: the engine opens the
-          connections, with its pool, `creator` and `connect_args`. The session
-          settings the scan changes (Postgres, MySQL and Oracle: read-only
-          transactions, UTC, ...) are restored before a connection goes back to
-          the pool. An Engine with a `StaticPool`, `SingletonThreadPool` or
-          `AssertionPool` shares one DB-API connection: it is used as a live
-          connection (see below), so the scan sees uncommitted changes made on it;
-        * a zero-argument callable that returns a DB-API connection (a factory);
-        * a live connection object. It is used for one partition at a time, from
-          another thread: open a sqlite3 connection with `check_same_thread=False`.
+          connection, with its pool, `creator`, `connect_args` and checkout
+          listeners. A pooled connection carries the state of its session
+          (temporary tables, `search_path`, session variables), so each collect
+          checks out ONE connection (on the scan's own thread, in a copy of the
+          `contextvars` of the caller of `scan_database`, so checkout listeners run
+          for every collect) and reads on it. The scan sets the session up as
+          for a URI (read-only, UTC) and restores that before it gives the
+          connection back to the pool, at the end of the collect: nothing is held
+          between collects. Each Engine scan in a query (a `concat` or self-join of
+          scans) holds one pooled connection until the query ends, so the pool
+          (`pool_size` + `max_overflow`) must allow as many as the query has scans
+          of it. A transaction a checkout listener left open is
+          committed by that setup. An Engine without pooling (`NullPool`) is read
+          as a factory. `StaticPool`, `SingletonThreadPool` and `AssertionPool`
+          share one DB-API connection, per thread for `SingletonThreadPool`. The
+          scan usually reads that connection directly, including its uncommitted
+          changes, and returns any checkout without the pool's reset. For databases
+          other than BigQuery, pass an established SQLAlchemy Connection when a
+          statement-routing listener must run. An ORM `Session` over such an
+          Engine also reads the shared connection. A function
+          over a `SingletonThreadPool` or `AssertionPool` Engine (such as its
+          `connect` method, a `sessionmaker`, a lambda or a `partial`) also reads
+          directly when the Engine can be identified. A function that refers to
+          several such Engines, or opens a `SingletonThreadPool` connection
+          without an identifiable Engine, is refused. A function that returns
+          a shared connection whose session the scan must set up (MySQL, Oracle)
+          is also refused;
+        * a zero-argument callable that returns a DB-API connection (a factory),
+          called on the scan's own threads, in a copy of the `contextvars` of the
+          caller of `scan_database` (thread-locals are not carried over);
+        * a live connection object. It is used from another thread: open a
+          sqlite3 connection with `check_same_thread=False`.
           Its results are read whole, with client-side cursors: Polars may still
           read, or release, a scan after `collect()` returned, while the connection
           is the user's again. A transaction the scan opens on it is rolled back as
           soon as the query ran; one already open stays.
           On a MySQL connection whose cursors are unbuffered (e.g. PyMySQL's
           `SSCursor`), results are read with buffered cursors, as two scans can't
-          stream from one connection at once.
+          stream from one connection at once. A PyMySQL connection with an unread
+          unbuffered result is refused; its pending results of a multi-statement
+          query are not detected, and a scan discards them: read them first.
+          Other code must not use the connection while a scan reads from it (for
+          example inside a `collect_batches()` loop): with autocommit off, the
+          scan's rollback can discard writes made concurrently. A MySQLdb
+          connection to a MySQL server with autocommit off may keep the scan's
+          snapshot and locks open after the read: use a URI, a factory or
+          autocommit. A DuckDB connection with an unfinished result is read
+          through a separate cursor, which does not see that connection's
+          uncommitted writes or session settings.
     params
         Parameters of a query source, bound by the driver (its own placeholder style,
         e.g. `%s` for psycopg, `?` for sqlite3). They are never interpolated into the
@@ -431,27 +696,29 @@ def scan_database(
         read a column as another type, use `schema_overrides`.
     schema_overrides
         Dtypes that override the discovered schema for some columns. The values are
-        cast after reading; filters on these columns stay in Polars.
+        cast after reading; filters on these columns stay in Polars. A SQL Server
+        `datetime2` / `datetimeoffset` of more than 6 fractional digits is read as
+        nanoseconds, which fails for dates outside 1677 to 2262 (every current row of a
+        system-versioned table ends at `9999-12-31 23:59:59.9999999`): typed as
+        `pl.Datetime("us")` (or `"ms"`), it is read with the digits beyond the unit
+        cut (toward the earlier instant, never rounded).
     partition_on
-        `"auto"` partitions large tables on their integer or date primary key; a
-        column name partitions on that column (`pl.col("auto")` for a column named
-        "auto"); `None` reads with a single query.
+        Partitioning is not supported yet: this parameter is reserved. `"auto"` (the
+        default) and `None` read with a single query; a column raises an error.
     partition_num
-        The number of partitions, at most 65536. Without it: `max_connections`
-        partitions for a column, and for `"auto"` one per 256 MB of table, up to four
-        per connection (tables under 128 MB are read with one query).
+        Reserved for partitioning, which is not supported yet: passing it raises an
+        error.
     partition_range
-        `(low, high)` bounds of the partition column. They only set the stride: rows
-        outside them still land in the first or last partition.
+        Reserved for partitioning, which is not supported yet: passing it raises an
+        error.
     partition_predicates
-        One partition per SQL `WHERE` fragment. The fragments are inserted verbatim.
-        Not combined with `partition_on`, `partition_num` or `partition_range`.
+        Reserved for partitioning, which is not supported yet: passing it raises an
+        error.
     order_by
         Order rows by these columns. Without it, row order is unspecified.
     consistency : {'none', 'snapshot'}
-        `'snapshot'` requires every partition to see the same database state; it is
-        only supported with a single partition for now, so `partition_on="auto"`
-        reads with one query.
+        `'snapshot'` requires every partition of a read to see the same database
+        state. Every scan is read with one query for now, so it adds no check.
     max_connections
         The maximum number of concurrent connections. Defaults: 1 for SQLite and
         DuckDB and for a live connection, 8 for Snowflake, BigQuery, Databricks,
@@ -468,11 +735,27 @@ def scan_database(
     Notes
     -----
     A `LazyFrame` snapshots what the scan found when it was planned: the table's
-    columns and types, the partitioning and, for a view or query, whether it is
-    volatile. Collecting the same `LazyFrame` again reuses that plan, also after the
-    database changed (a column dropped, added or retyped, a table replaced by a view
-    or another table): the second collect can then read the wrong columns or fail.
+    columns and types and, for a view or query, whether it is volatile. Collecting
+    the same `LazyFrame` again reuses that plan, also after the database changed (a
+    column dropped, added or retyped, a table replaced by a view or another table):
+    the second collect can then read the wrong columns or fail.
     Call `scan_database` again after such a change.
+
+    With Google's BigQuery DB-API driver, NUMERIC columns are read as Polars
+    decimals. BIGNUMERIC columns are also read as decimals when the result schema
+    reports a precision of at most 38 digits. Wider or unparameterized BIGNUMERIC
+    columns are read as exact fixed-point strings, including in empty results.
+
+    BigQuery scans through a `StaticPool` Engine retain the SQLAlchemy execution
+    layer. Where a shared BigQuery pool is read through the DB-API connection,
+    the scan rejects factories that may configure the checkout and SQLAlchemy
+    parameters, options or listeners that it cannot preserve. Use an established
+    SQLAlchemy Connection to supply parameters or job settings in these cases.
+
+    BigQuery schema discovery executes a query. The scan rejects named BigQuery
+    destination tables and SQLAlchemy execution listeners that can change job
+    settings, including ORM `do_orm_execute` listeners. Pass an established
+    SQLAlchemy Connection to avoid a pool pre-ping during checkout.
 
     See Also
     --------
@@ -506,11 +789,6 @@ def scan_database(
     ):
         msg = f"order_by must be a column name or a sequence of column names, got {order_by!r}"
         raise TypeError(msg)
-    if isinstance(partition_predicates, str):
-        msg = "partition_predicates must be a sequence of SQL predicates, one per partition, not a str"
-        raise TypeError(msg)
-    partition_range = _materialize("partition_range", partition_range)
-    partition_predicates = _materialize("partition_predicates", partition_predicates)
     for name, options in (
         ("connect_options", connect_options),
         ("execute_options", execute_options),
@@ -533,72 +811,39 @@ def scan_database(
         if isinstance(params, Mapping):
             params = dict(params)
         params = _copy_containers(params)
-    _positive_int("partition_num", partition_num, _MAX_PARTITION_NUM)
     _positive_int("max_connections", max_connections)
     _positive_int("batch_size", batch_size)
 
-    # `"auto"` picks the column; `pl.col("auto")` names a column called "auto"
-    partition_auto = isinstance(partition_on, str) and partition_on == "auto"
-    if partition_on is not None and not isinstance(partition_on, str):
-        on: Any = partition_on  # (any object may be passed)
-        names = on.meta.root_names() if isinstance(on, Expr) else []
-        if len(names) != 1 or not on.meta.is_column():
-            msg = "partition_on must be a column name, `pl.col(name)`, 'auto' or None"
-            raise TypeError(msg)
-        partition_on = names[0]
-    if partition_predicates is not None:
-        if (
-            (partition_on is not None and not partition_auto)
-            or partition_num is not None
-            or partition_range
-        ):
-            msg = (
-                "partition_predicates define the partitions: don't combine them with "
-                "partition_on, partition_num or partition_range"
-            )
-            raise ValueError(msg)
-        if consistency == "snapshot" and len(partition_predicates) > 1:
-            msg = (
-                "consistency='snapshot' reads with one query: don't combine it with "
-                "partition_predicates"
-            )
-            raise ValueError(msg)
-    elif partition_on is None and (partition_num is not None or partition_range):
-        msg = (
-            "partition_num and partition_range need partitioning: partition_on is None"
+    if (
+        not (
+            partition_on is None
+            or (isinstance(partition_on, str) and partition_on == "auto")
         )
-        raise ValueError(msg)
-    elif partition_auto and partition_range:
-        msg = "partition_range needs partition_on=<column>"
-        raise ValueError(msg)
-    if not pushdown and (
-        partition_predicates is not None
-        or (partition_on is not None and not partition_auto)
         or partition_num is not None
-        or partition_range
+        or partition_range is not None
+        or partition_predicates is not None
     ):
         msg = (
-            "pushdown=False reads the source with a single query: don't combine it "
-            "with partition_on, partition_num, partition_range or partition_predicates"
+            "scan_database doesn't support partitioning yet: partition_on=<column>, "
+            "partition_num, partition_range and partition_predicates are reserved; pass "
+            "partition_on=None or 'auto' (both read with one query)"
         )
         raise ValueError(msg)
-    if partition_range is not None:
-        if len(partition_range) != 2:
-            msg = f"partition_range must be (low, high), got {partition_range!r}"
-            raise ValueError(msg)
-        lo, hi = partition_range
-        with contextlib.suppress(TypeError):
-            if lo > hi:
-                msg = f"partition_range must be (low, high), got {partition_range!r}"
-                raise ValueError(msg)
 
     for name, value in (("schema", schema), ("schema_overrides", schema_overrides)):
         if value is not None:
             _check_dtypes(name, value)
 
     engine = connection
-    connection_kind, connection = _connection_kind(connection)
-    if (
+    connection_kind, connection = _connection_kind(
+        connection, params=params, execute_options=execute_options
+    )
+    if connection_kind == "engine":
+        # a pooled Engine: one checkout per execution, partitions read one at a time
+        # (see `_connection_kind`)
+        connection_kind = "factory"
+        max_connections = 1
+    elif (
         connection_kind == "factory"
         and connection is not engine
         and (capacity := _engine_pool_capacity(engine)) is not None
@@ -635,7 +880,7 @@ def scan_database(
     if connection_kind == "live":
         _check_live_sqlite3(connection)
 
-    from polars import DataFrame, Series
+    from polars import DataFrame
 
     resolver = _plugin().scan_resolver(
         source=source,
@@ -660,14 +905,10 @@ def scan_database(
         if schema_overrides is not None
         else None,
         partition_on=partition_on,
-        partition_auto=partition_auto,
-        partition_num=partition_num,
-        partition_range=Series(list(partition_range), strict=False)
-        if partition_range is not None
-        else None,
-        partition_predicates=list(partition_predicates)
-        if partition_predicates is not None
-        else None,
+        partition_auto=partition_on is not None,
+        partition_num=None,
+        partition_range=None,
+        partition_predicates=None,
         order_by=list(order_by or []),
         consistency=consistency,
         max_connections=max_connections,
