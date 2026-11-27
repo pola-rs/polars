@@ -1,0 +1,6 @@
+﻿polars.SQLContext.unregister\_catalog
+=====================================
+
+.. currentmodule:: polars
+
+.. automethod:: SQLContext.unregister_catalog

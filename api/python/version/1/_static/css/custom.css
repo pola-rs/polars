@@ -1,0 +1,156 @@
+/* To have blue background of width of the block (instead of width of content) */
+dl.class>dt:first-of-type {
+    display: block !important;
+}
+
+/* Display long method names over multiple lines in navbar. */
+.bd-toc-item {
+    overflow-wrap: break-word;
+}
+
+/* Dark & light theme tweaks */
+html[data-theme="light"] {
+    --pst-color-on-background: #ecf4ff;
+    --pst-gradient-sidebar-left: #ffffff;
+    --pst-gradient-sidebar-right: #fbfbfb;
+    --pst-color-border: #cccccc;
+}
+
+html[data-theme="dark"] {
+    --pst-color-on-background: #333333;
+    --pst-gradient-sidebar-left: #121212;
+    --pst-gradient-sidebar-right: #181818;
+    --pst-color-sidebar-nav: #181818;
+    --pst-color-border: #444444;
+}
+
+/* add subtle gradients to sidebar and card elements */
+div.bd-sidebar-primary {
+    background-image: linear-gradient(90deg, var(--pst-gradient-sidebar-left) 0%, var(--pst-gradient-sidebar-right) 100%);
+}
+
+div.sd-card {
+    background-image: linear-gradient(0deg, var(--pst-gradient-sidebar-left) 0%, var(--pst-gradient-sidebar-right) 100%);
+}
+
+/* match docs footer colour to the header */
+footer.bd-footer {
+    background-color: var(--pst-color-on-background);
+}
+
+/*
+ we're not currently doing anything meaningful with the
+ right toc, so hide until there's something to put there
+ */
+div.bd-sidebar-secondary {
+    display: none;
+}
+
+label.sidebar-toggle.secondary-toggle {
+    display: none !important;
+}
+
+/* fix visited link colour */
+a:visited {
+    color: var(--pst-color-link);
+}
+
+/* fix ugly navbar scrollbar display */
+.sidebar-primary-items__end {
+    margin: 0 !important;
+}
+
+/* Polars Cloud announcement banner — hidden by default, shown by JS if not dismissed */
+.bd-header-announcement {
+    background-color: #0075ff;
+    color: #ffffff;
+    display: none;
+}
+
+.bd-header-announcement a {
+    color: #ffffff;
+}
+
+.bd-header-announcement__content a {
+    font-weight: 600;
+    text-decoration: underline;
+}
+
+
+/* give code examples the same faint drop-shadow as admonitions */
+pre {
+    box-shadow: 0 .2rem .5rem var(--pst-color-shadow), 0 0 .0625rem var(--pst-color-shadow) !important;
+}
+
+/* engine-support badges, set via the `.. engine-support::` directive */
+.engine-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.5rem 0 1rem;
+}
+
+.engine-tags-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--pst-color-text-muted);
+}
+
+.engine-tag {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #ffffff;
+}
+
+.engine-tag--in-memory {
+    background-color: #6b7280;
+}
+
+.engine-tag--streaming {
+    background-color: #0075ff;
+}
+
+.engine-tag--partially-streaming {
+    background-color: #38bdf8;
+}
+
+.engine-tag--distributed {
+    background-color: #8a4fff;
+}
+
+.engine-tag--partially-distributed {
+    background-color: #c084fc;
+}
+
+.engine-tag--gpu {
+    background-color: #16a34a;
+}
+
+html[data-theme="dark"] .engine-tag--in-memory {
+    background-color: #8b93a1;
+}
+
+html[data-theme="dark"] .engine-tag--streaming {
+    background-color: #3d94ff;
+}
+
+html[data-theme="dark"] .engine-tag--partially-streaming {
+    background-color: #67cbfa;
+}
+
+html[data-theme="dark"] .engine-tag--distributed {
+    background-color: #a877ff;
+}
+
+html[data-theme="dark"] .engine-tag--partially-distributed {
+    background-color: #d3a4fd;
+}
+
+html[data-theme="dark"] .engine-tag--gpu {
+    background-color: #34d066;
+}

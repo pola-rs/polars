@@ -1,0 +1,36 @@
+﻿polars.catalog.unity.CatalogInfo
+================================
+
+.. currentmodule:: polars.catalog.unity
+
+.. autoclass:: CatalogInfo
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~CatalogInfo.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~CatalogInfo.name
+      ~CatalogInfo.comment
+      ~CatalogInfo.properties
+      ~CatalogInfo.options
+      ~CatalogInfo.storage_location
+      ~CatalogInfo.created_at
+      ~CatalogInfo.created_by
+      ~CatalogInfo.updated_at
+      ~CatalogInfo.updated_by
+   
+   

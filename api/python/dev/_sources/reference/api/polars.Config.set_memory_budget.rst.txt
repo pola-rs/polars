@@ -1,0 +1,6 @@
+﻿polars.Config.set\_memory\_budget
+=================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_memory_budget

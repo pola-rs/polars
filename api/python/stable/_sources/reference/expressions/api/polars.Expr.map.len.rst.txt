@@ -1,0 +1,6 @@
+﻿polars.Expr.map.len
+===================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.map.len

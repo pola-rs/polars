@@ -1,0 +1,6 @@
+﻿polars.read\_database\_uri
+==========================
+
+.. currentmodule:: polars
+
+.. autofunction:: read_database_uri

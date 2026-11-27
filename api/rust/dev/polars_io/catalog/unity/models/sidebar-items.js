@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ColumnTypeJsonType","DataSourceFormat","TableCredentialsVariants","TableType"],"struct":["CatalogInfo","ColumnInfo","ColumnTypeJson","NamespaceInfo","TableCredentials","TableCredentialsAws","TableCredentialsAzure","TableCredentialsGcp","TableInfo"]};

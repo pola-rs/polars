@@ -1,0 +1,42 @@
+﻿polars.datatypes.Struct
+=======================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Struct
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Struct.__init__
+      ~Struct.base_type
+      ~Struct.from_python
+      ~Struct.is_
+      ~Struct.is_decimal
+      ~Struct.is_float
+      ~Struct.is_integer
+      ~Struct.is_nested
+      ~Struct.is_numeric
+      ~Struct.is_object
+      ~Struct.is_signed_integer
+      ~Struct.is_temporal
+      ~Struct.is_unsigned_integer
+      ~Struct.to_python
+      ~Struct.to_schema
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Struct.fields
+   
+   

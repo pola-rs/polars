@@ -1,0 +1,6 @@
+﻿polars.Series.arr.get
+=====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.arr.get

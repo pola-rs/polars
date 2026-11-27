@@ -1,0 +1,6 @@
+﻿polars.Expr.map.contains_key
+============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.map.contains_key

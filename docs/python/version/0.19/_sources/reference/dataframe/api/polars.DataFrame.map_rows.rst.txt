@@ -1,0 +1,6 @@
+﻿polars.DataFrame.map\_rows
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.map_rows

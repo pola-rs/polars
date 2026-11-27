@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.base_utc_offset
+==============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.base_utc_offset

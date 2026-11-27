@@ -1,0 +1,33 @@
+﻿polars.io.parquet.encryption.EncryptionConfiguration
+====================================================
+
+.. currentmodule:: polars.io.parquet.encryption
+
+.. autoclass:: EncryptionConfiguration
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~EncryptionConfiguration.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~EncryptionConfiguration.cache_lifetime
+      ~EncryptionConfiguration.column_keys
+      ~EncryptionConfiguration.double_wrapping
+      ~EncryptionConfiguration.footer_key
+      ~EncryptionConfiguration.plaintext_footer
+      ~EncryptionConfiguration.uniform_encryption
+   
+   

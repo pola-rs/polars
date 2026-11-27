@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["arg_sort_ascending","perfect_sort"]};

@@ -1,0 +1,32 @@
+﻿polars.io.parquet.encryption.KmsConnectionConfig
+================================================
+
+.. currentmodule:: polars.io.parquet.encryption
+
+.. autoclass:: KmsConnectionConfig
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~KmsConnectionConfig.__init__
+      ~KmsConnectionConfig.refresh_key_access_token
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~KmsConnectionConfig.custom_kms_conf
+      ~KmsConnectionConfig.key_access_token
+      ~KmsConnectionConfig.kms_instance_id
+      ~KmsConnectionConfig.kms_instance_url
+   
+   

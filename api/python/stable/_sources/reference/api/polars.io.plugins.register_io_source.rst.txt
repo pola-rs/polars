@@ -1,0 +1,6 @@
+﻿polars.io.plugins.register\_io\_source
+======================================
+
+.. currentmodule:: polars.io.plugins
+
+.. autofunction:: register_io_source

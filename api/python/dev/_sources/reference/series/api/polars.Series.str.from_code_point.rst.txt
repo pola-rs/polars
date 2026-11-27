@@ -1,0 +1,6 @@
+﻿polars.Series.str.from_code_point
+=================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.from_code_point

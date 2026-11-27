@@ -1,0 +1,6 @@
+﻿polars.testing.parametric.dtypes
+================================
+
+.. currentmodule:: polars.testing.parametric
+
+.. autofunction:: dtypes

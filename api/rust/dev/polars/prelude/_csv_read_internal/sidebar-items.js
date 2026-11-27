@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CommentPrefix","NullValuesCompiled"],"fn":["cast_columns","is_comment_line","prepare_csv_schema","read_chunk","validate_utf8"],"struct":["CountLines","SplitLines"]};

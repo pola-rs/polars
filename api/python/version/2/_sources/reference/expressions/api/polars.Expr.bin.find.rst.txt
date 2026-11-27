@@ -1,0 +1,6 @@
+﻿polars.Expr.bin.find
+====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.bin.find

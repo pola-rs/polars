@@ -1,0 +1,6 @@
+﻿polars.Expr.x\_log\_y
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.x_log_y

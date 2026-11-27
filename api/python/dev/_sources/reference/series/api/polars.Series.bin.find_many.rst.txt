@@ -1,0 +1,6 @@
+﻿polars.Series.bin.find_many
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.bin.find_many

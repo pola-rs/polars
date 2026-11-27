@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["ffi_err_to_polars","file_reader_v1","import_struct_schema","lazyframe_resolver_v1"],"struct":["ArrowSchema","FfiError","FfiErrorKind"]};

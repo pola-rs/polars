@@ -1,0 +1,6 @@
+﻿polars.lazyframe.groupby.LazyGroupBy.sum
+========================================
+
+.. currentmodule:: polars.lazyframe.groupby
+
+.. automethod:: LazyGroupBy.sum

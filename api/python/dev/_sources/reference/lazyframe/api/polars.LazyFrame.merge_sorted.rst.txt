@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.merge\_sorted
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.merge_sorted

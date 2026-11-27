@@ -1,0 +1,6 @@
+﻿polars.Expr.approx\_quantile
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.approx_quantile

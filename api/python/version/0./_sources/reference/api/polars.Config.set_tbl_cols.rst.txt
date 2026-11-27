@@ -1,0 +1,6 @@
+﻿polars.Config.set\_tbl\_cols
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_tbl_cols

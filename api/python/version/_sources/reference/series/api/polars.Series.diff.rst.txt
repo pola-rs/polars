@@ -1,0 +1,6 @@
+﻿polars.Series.diff
+==================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.diff

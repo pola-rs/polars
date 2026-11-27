@@ -1,0 +1,6 @@
+﻿polars.reduce
+=============
+
+.. currentmodule:: polars
+
+.. autofunction:: reduce

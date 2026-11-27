@@ -1,0 +1,28 @@
+[
+  {
+    "name": "dev",
+    "version": "dev",
+    "url": "https://docs.pola.rs/api/python/dev/"
+  },
+  {
+    "name": "1 (stable)",
+    "version": "1",
+    "url": "https://docs.pola.rs/api/python/stable/",
+    "preferred": true
+  },
+  {
+    "name": "0.20",
+    "version": "0.20",
+    "url": "https://docs.pola.rs/api/python/version/0.20/"
+  },
+  {
+    "name": "0.19",
+    "version": "0.19",
+    "url": "https://docs.pola.rs/api/python/version/0.19/"
+  },
+  {
+    "name": "0.18",
+    "version": "0.18",
+    "url": "https://docs.pola.rs/api/python/version/0.18/"
+  }
+]

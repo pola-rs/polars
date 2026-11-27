@@ -1,0 +1,6 @@
+﻿polars.Series.map.len
+=====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.map.len

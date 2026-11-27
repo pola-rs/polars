@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DeletionFilesList","IcebergDeletes"],"static":["DELTA_DV_PROVIDER_VTABLE"],"struct":["DeltaDeletionVectorProvider","DeltaDeletionVectorProviderVTable"]};

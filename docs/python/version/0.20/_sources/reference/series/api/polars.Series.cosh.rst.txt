@@ -1,0 +1,6 @@
+﻿polars.Series.cosh
+==================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.cosh

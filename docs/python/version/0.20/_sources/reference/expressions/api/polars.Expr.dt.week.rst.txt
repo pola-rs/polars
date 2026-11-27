@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.week
+===================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.week

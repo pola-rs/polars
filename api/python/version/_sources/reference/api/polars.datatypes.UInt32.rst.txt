@@ -1,0 +1,37 @@
+﻿polars.datatypes.UInt32
+=======================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: UInt32
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~UInt32.__init__
+      ~UInt32.base_type
+      ~UInt32.from_python
+      ~UInt32.is_
+      ~UInt32.is_decimal
+      ~UInt32.is_float
+      ~UInt32.is_integer
+      ~UInt32.is_nested
+      ~UInt32.is_numeric
+      ~UInt32.is_object
+      ~UInt32.is_signed_integer
+      ~UInt32.is_temporal
+      ~UInt32.is_unsigned_integer
+      ~UInt32.max
+      ~UInt32.min
+      ~UInt32.to_python
+   
+   
+
+   
+   
+   

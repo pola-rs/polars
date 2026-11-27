@@ -1,0 +1,6 @@
+﻿polars.DataFrame.fold
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.fold

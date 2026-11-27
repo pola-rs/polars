@@ -1,0 +1,6 @@
+﻿polars.Expr.meta.write_json
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.meta.write_json

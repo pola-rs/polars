@@ -1,0 +1,6 @@
+﻿polars.Expr.is\_finite
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.is_finite

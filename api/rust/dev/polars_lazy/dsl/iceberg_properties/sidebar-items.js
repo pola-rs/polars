@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_DEPTH"],"enum":["IcebergProperties"],"struct":["JsonProperties","PythonProperties"]};

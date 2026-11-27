@@ -1,0 +1,6 @@
+﻿polars.date\_diff
+=================
+
+.. currentmodule:: polars
+
+.. autofunction:: date_diff

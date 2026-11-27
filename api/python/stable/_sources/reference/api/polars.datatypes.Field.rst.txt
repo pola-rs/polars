@@ -1,0 +1,29 @@
+﻿polars.datatypes.Field
+======================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Field
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Field.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Field.name
+      ~Field.dtype
+   
+   

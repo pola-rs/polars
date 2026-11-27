@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.show
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.show

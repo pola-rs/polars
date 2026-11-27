@@ -1,0 +1,25 @@
+﻿polars.io.external\_reader.FileReaderBuilder
+============================================
+
+.. currentmodule:: polars.io.external_reader
+
+.. autoclass:: FileReaderBuilder
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~FileReaderBuilder.__init__
+      ~FileReaderBuilder.build_file_reader
+      ~FileReaderBuilder.explain_properties
+      ~FileReaderBuilder.reader_capabilities
+   
+   
+
+   
+   
+   

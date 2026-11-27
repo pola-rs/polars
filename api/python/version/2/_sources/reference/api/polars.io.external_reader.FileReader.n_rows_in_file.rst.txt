@@ -1,0 +1,6 @@
+﻿polars.io.external\_reader.FileReader.n\_rows\_in\_file
+=======================================================
+
+.. currentmodule:: polars.io.external_reader
+
+.. automethod:: FileReader.n_rows_in_file

@@ -1,0 +1,6 @@
+﻿polars.io.external\_reader.FileReader.collect\_batches
+======================================================
+
+.. currentmodule:: polars.io.external_reader
+
+.. automethod:: FileReader.collect_batches

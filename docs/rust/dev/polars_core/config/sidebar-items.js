@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["force_async","get_file_prefetch_size","get_rg_prefetch_size","verbose"]};

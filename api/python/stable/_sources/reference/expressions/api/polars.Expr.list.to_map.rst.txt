@@ -1,0 +1,6 @@
+﻿polars.Expr.list.to_map
+=======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.list.to_map

@@ -1,0 +1,6 @@
+﻿polars.Expr.extend\_constant
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.extend_constant

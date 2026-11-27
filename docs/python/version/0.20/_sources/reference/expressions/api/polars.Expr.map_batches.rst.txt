@@ -1,0 +1,6 @@
+﻿polars.Expr.map\_batches
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.map_batches

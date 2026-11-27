@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Column"],"fn":["dictionary_codes_enabled"],"struct":["DictionaryColumn","ScalarColumn","SharedDictionary"],"trait":["IntoColumn"]};

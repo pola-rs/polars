@@ -1,0 +1,6 @@
+﻿polars.Series.str.replace_many
+==============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.replace_many

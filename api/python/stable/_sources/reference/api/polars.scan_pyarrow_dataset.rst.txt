@@ -1,0 +1,6 @@
+﻿polars.scan\_pyarrow\_dataset
+=============================
+
+.. currentmodule:: polars
+
+.. autofunction:: scan_pyarrow_dataset

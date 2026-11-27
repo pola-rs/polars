@@ -1,0 +1,6 @@
+﻿polars.Expr.cast
+================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.cast

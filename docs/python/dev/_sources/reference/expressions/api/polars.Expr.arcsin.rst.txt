@@ -1,0 +1,6 @@
+﻿polars.Expr.arcsin
+==================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.arcsin

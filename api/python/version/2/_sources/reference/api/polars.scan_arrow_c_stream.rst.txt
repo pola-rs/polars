@@ -1,0 +1,6 @@
+﻿polars.scan\_arrow\_c\_stream
+=============================
+
+.. currentmodule:: polars
+
+.. autofunction:: scan_arrow_c_stream

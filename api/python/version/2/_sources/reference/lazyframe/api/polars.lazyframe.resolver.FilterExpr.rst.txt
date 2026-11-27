@@ -1,0 +1,30 @@
+﻿polars.lazyframe.resolver.FilterExpr
+====================================
+
+.. currentmodule:: polars.lazyframe.resolver
+
+.. autoclass:: FilterExpr
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~FilterExpr.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~FilterExpr.pyarrow_expr
+      ~FilterExpr.expr
+      ~FilterExpr.pyarrow_str
+   
+   

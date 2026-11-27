@@ -1,0 +1,6 @@
+﻿polars.exceptions.CategoricalRemappingWarning
+=============================================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: CategoricalRemappingWarning

@@ -1,0 +1,6 @@
+﻿polars.DataFrame.match\_to\_schema
+==================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.match_to_schema

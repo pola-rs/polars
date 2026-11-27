@@ -1,0 +1,6 @@
+﻿polars.io.external\_reader.FileReader.fetch\_metadata
+=====================================================
+
+.. currentmodule:: polars.io.external_reader
+
+.. automethod:: FileReader.fetch_metadata

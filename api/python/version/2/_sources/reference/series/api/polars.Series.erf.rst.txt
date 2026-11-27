@@ -1,0 +1,6 @@
+﻿polars.Series.erf
+=================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.erf

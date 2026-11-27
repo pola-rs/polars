@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.sink\_iceberg
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.sink_iceberg

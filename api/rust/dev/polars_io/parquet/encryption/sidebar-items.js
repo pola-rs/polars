@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["file_decryption_properties"],"mod":["kms"],"struct":["EncryptionSharing","ParquetDecryption","ParquetEncryption"],"trait":["DecryptionPropertiesFactory","EncryptionPropertiesFactory"]};

@@ -1,0 +1,22 @@
+﻿polars.io.parquet.encryption.ParquetDecryptionConfig
+====================================================
+
+.. currentmodule:: polars.io.parquet.encryption
+
+.. autoclass:: ParquetDecryptionConfig
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~ParquetDecryptionConfig.__init__
+   
+   
+
+   
+   
+   

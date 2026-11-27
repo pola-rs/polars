@@ -1,0 +1,6 @@
+﻿polars.scan\_database
+=====================
+
+.. currentmodule:: polars
+
+.. autofunction:: scan_database

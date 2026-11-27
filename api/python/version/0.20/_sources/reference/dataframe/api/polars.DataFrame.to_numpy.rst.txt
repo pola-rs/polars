@@ -1,0 +1,6 @@
+﻿polars.DataFrame.to\_numpy
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.to_numpy

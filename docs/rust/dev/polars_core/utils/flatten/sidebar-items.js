@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["cap_and_offsets","flatten_df_iter","flatten_nullable","flatten_par","flatten_series"]};

@@ -1,0 +1,6 @@
+﻿polars.DataFrame.drop\_nans
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.drop_nans
