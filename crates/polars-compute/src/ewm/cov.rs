@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::ops::{AddAssign, DivAssign, MulAssign};
 
 use num_traits::Float;
@@ -23,6 +24,19 @@ pub struct EwmCovState<T> {
     ignore_nulls: bool,
 }
 
+/// The running state of an [`EwmCovState`] that has seen a non-null pair.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EwmCovCarry<T> {
+    pub weight: T,
+    pub mean_x: T,
+    pub mean_y: T,
+    pub cov: T,
+    pub weight_sum: T,
+    /// Sum of `w_i * w_j` over all pairs `i < j` of observation weights.
+    pub weight_pair_sum: T,
+    pub non_null_count: NonZeroUsize,
+}
+
 impl<T> EwmCovState<T>
 where
     T: num_traits::Float,
@@ -42,6 +56,43 @@ where
             min_samples: min_samples.max(1),
             ignore_nulls,
         }
+    }
+
+    /// Continue from `carry`, the [`Self::carry`] of a state with the same options.
+    pub fn with_carry(self, carry: Option<EwmCovCarry<T>>) -> Self {
+        match carry {
+            Some(c) => Self {
+                weight: c.weight,
+                mean_x: c.mean_x,
+                mean_y: c.mean_y,
+                cov: c.cov,
+                weight_sum: c.weight_sum,
+                weight_pair_sum: c.weight_pair_sum,
+                non_null_count: c.non_null_count.get(),
+                ..self
+            },
+            None => Self::new(
+                self.alpha,
+                self.adjust,
+                self.bias,
+                self.min_samples,
+                self.ignore_nulls,
+            ),
+        }
+    }
+
+    /// The running state, `None` until the first non-null pair.
+    pub fn carry(&self) -> Option<EwmCovCarry<T>> {
+        let non_null_count = NonZeroUsize::new(self.non_null_count)?;
+        Some(EwmCovCarry {
+            weight: self.weight,
+            mean_x: self.mean_x,
+            mean_y: self.mean_y,
+            cov: self.cov,
+            weight_sum: self.weight_sum,
+            weight_pair_sum: self.weight_pair_sum,
+            non_null_count,
+        })
     }
 }
 
@@ -135,6 +186,14 @@ impl<T> EwmVarState<T> {
     pub fn new(cov_state: EwmCovState<T>) -> Self {
         Self(cov_state)
     }
+
+    /// The running state of the wrapped [`EwmCovState`].
+    pub fn carry(&self) -> Option<EwmCovCarry<T>>
+    where
+        T: num_traits::Float,
+    {
+        self.0.carry()
+    }
 }
 
 impl<T> EwmStateUpdate for EwmVarState<T>
@@ -162,6 +221,14 @@ pub struct EwmStdState<T>(EwmCovState<T>);
 impl<T> EwmStdState<T> {
     pub fn new(cov_state: EwmCovState<T>) -> Self {
         Self(cov_state)
+    }
+
+    /// The running state of the wrapped [`EwmCovState`].
+    pub fn carry(&self) -> Option<EwmCovCarry<T>>
+    where
+        T: num_traits::Float,
+    {
+        self.0.carry()
     }
 }
 
@@ -581,6 +648,33 @@ mod test {
             ]),
             EPS
         );
+    }
+
+    #[test]
+    fn test_ewm_cov_continue_from_carry() {
+        let xys: Vec<_> = XS.into_iter().zip(YS).map(|(x, y)| x.zip(y)).collect();
+        let bits =
+            |out: &[Option<f64>]| out.iter().map(|x| x.map(f64::to_bits)).collect::<Vec<_>>();
+
+        for adjust in [false, true] {
+            for bias in [false, true] {
+                for ignore_nulls in [false, true] {
+                    for min_samples in [1, 3] {
+                        let new = || EwmCovState::new(0.3, adjust, bias, min_samples, ignore_nulls);
+                        let whole: Vec<_> = new().update_iter(xys.iter().copied()).collect();
+
+                        for split in 0..=xys.len() {
+                            let (head, tail) = xys.split_at(split);
+                            let mut state = new();
+                            let mut out: Vec<_> = state.update_iter(head.iter().copied()).collect();
+                            let mut state = new().with_carry(state.carry());
+                            out.extend(state.update_iter(tail.iter().copied()));
+                            assert_eq!(bits(&out), bits(&whole));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

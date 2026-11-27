@@ -2,11 +2,11 @@ pub mod cov;
 pub mod mean;
 pub mod options;
 pub mod sum;
-pub use cov::{EwmCovState, EwmStdState, EwmVarState, ewm_std, ewm_var};
-pub use mean::{EwmMeanState, ewm_mean};
+pub use cov::{EwmCovCarry, EwmCovState, EwmStdState, EwmVarState, ewm_std, ewm_var};
+pub use mean::{EwmMeanCarry, EwmMeanState, ewm_mean};
 pub use options::EWMOptions;
 use polars_arrow::array::Array;
-pub use sum::{EwmSumState, ewm_sum};
+pub use sum::{EwmSumCarry, EwmSumState, ewm_sum};
 
 pub trait EwmStateUpdate {
     fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array>;

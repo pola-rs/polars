@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import hypothesis.strategies as st
 import numpy as np
@@ -11,6 +11,9 @@ import polars as pl
 from polars.expr.expr import _prepare_alpha
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_ewm_mean() -> None:
@@ -190,6 +193,43 @@ def test_ewm_mean_min_samples() -> None:
                 2.4285714285714284,
             ]
         ),
+    )
+
+
+def test_ewm_mean_finite_overflow() -> None:
+    s = pl.Series([1.1e308, -1.1e308])
+    expected = pl.Series([1.1e308, -1.1e308 / 3])
+    assert_series_equal(s.ewm_mean(alpha=0.5), expected)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "big", "rel_tol"),
+    [
+        (pl.Float16, 40000.0, 1e-2),
+        (pl.Float32, 2e38, 1e-5),
+        (pl.Float64, 1.1e308, 1e-12),
+    ],
+)
+@pytest.mark.parametrize("adjust", [False, True])
+@pytest.mark.parametrize("ignore_nulls", [False, True])
+def test_ewm_mean_finite_overflow_matches_scaled_input(
+    dtype: PolarsDataType, big: float, rel_tol: float, adjust: bool, ignore_nulls: bool
+) -> None:
+    lf = pl.LazyFrame(
+        {"a": pl.Series([big, None, -big, big, 1.0, None, -big, big], dtype=dtype)}
+    )
+
+    def ewm_mean(e: pl.Expr) -> pl.Expr:
+        return e.ewm_mean(alpha=0.25, adjust=adjust, ignore_nulls=ignore_nulls)
+
+    # Scaling by a power of two is exact, and a quarter of the values doesn't overflow.
+    scale = pl.lit(4, dtype=dtype)
+    out = lf.select(
+        result=ewm_mean(pl.col("a")),
+        expected=ewm_mean(pl.col("a") / scale) * scale,
+    ).collect()
+    assert_series_equal(
+        out["result"], out["expected"], check_names=False, rel_tol=rel_tol
     )
 
 
