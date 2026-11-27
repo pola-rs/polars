@@ -325,10 +325,6 @@ impl<'a> NodeVisitor for CachedLengthPreservingVisitor<'a> {
         use ControlFlow as CF;
 
         if let Some(length_preserving) = self.cache.get(&key) {
-            // TODO: `post_visit` still runs after this skip and recomputes the height from the
-            // skipped inputs' `Unknown` edges, overwriting this edge and the memo entry. A memoized
-            // node whose height comes from its inputs (`col("a") + col("b")`) thus turns `false`
-            // on its next query, as does a parent queried after it.
             edges.outputs()[0] = if *length_preserving {
                 ExprProjectionHeight::Column
             } else {
@@ -347,6 +343,12 @@ impl<'a> NodeVisitor for CachedLengthPreservingVisitor<'a> {
         storage: &mut Self::Storage,
         edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
+        // `post_visit` also runs for the memoized nodes that `pre_visit` skipped, whose output
+        // edge `pre_visit` already set.
+        if self.cache.contains_key(&key) {
+            return ControlFlow::Continue(());
+        }
+
         let control_flow = self.height_resolver.post_visit(key, storage, edges);
 
         let length_preserving = matches!(edges.outputs()[0], ExprProjectionHeight::Column);
