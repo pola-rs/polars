@@ -407,8 +407,10 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
                 .map(|e| e.field(ctx.schema, ctx.arena))
                 .collect::<PolarsResult<Vec<_>>>()?;
 
-            let function = function.clone().materialize()?;
-            let out = function.get_field(ctx.schema, &fields)?;
+            let (function, out) = function
+                .clone()
+                .materialize()?
+                .resolve(ctx.schema, &fields)?;
             let output_dtype = out.dtype();
 
             assert!(

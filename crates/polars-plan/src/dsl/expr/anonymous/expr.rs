@@ -12,13 +12,20 @@ use crate::dsl::LazySerde;
 
 pub trait AnonymousColumnsUdf: ColumnsUdf {
     fn as_column_udf(self: Arc<Self>) -> Arc<dyn ColumnsUdf>;
-    fn deep_clone(self: Arc<Self>) -> Arc<dyn AnonymousColumnsUdf>;
 
     fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
         polars_bail!(ComputeError: "serialization not supported for this 'opaque' function")
     }
 
     fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field>;
+
+    /// Returns the function to use for these inputs and its output field. This can be another
+    /// instance if the function caches the output field of other inputs.
+    fn resolve(
+        self: Arc<Self>,
+        input_schema: &Schema,
+        fields: &[Field],
+    ) -> PolarsResult<(Arc<dyn AnonymousColumnsUdf>, Field)>;
 }
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
@@ -61,8 +68,9 @@ impl<T> SpecialEq<T> {
 }
 
 impl SpecialEq<Arc<dyn AnonymousColumnsUdf>> {
-    pub fn deep_clone(self) -> Self {
-        SpecialEq(self.0.deep_clone())
+    pub fn resolve(self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<(Self, Field)> {
+        let (function, field) = self.0.resolve(input_schema, fields)?;
+        Ok((SpecialEq(function), field))
     }
 }
 
@@ -129,12 +137,17 @@ where
     fn as_column_udf(self: Arc<Self>) -> Arc<dyn ColumnsUdf> {
         self as _
     }
-    fn deep_clone(self: Arc<Self>) -> Arc<dyn AnonymousColumnsUdf> {
-        self
-    }
-
     fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field> {
         (self.dt)(input_schema, fields)
+    }
+
+    fn resolve(
+        self: Arc<Self>,
+        input_schema: &Schema,
+        fields: &[Field],
+    ) -> PolarsResult<(Arc<dyn AnonymousColumnsUdf>, Field)> {
+        let field = self.get_field(input_schema, fields)?;
+        Ok((self, field))
     }
 }
 
