@@ -141,7 +141,7 @@ individually, and then you can use any Polars expression on the element:
 Another alternative would be to use a regular expression to check if a measurement starts with a
 letter:
 
-{{code_block('user-guide/expressions/lists', 'element-wise-regex', ['element'])}}
+{{code_block('user-guide/expressions/lists', 'element-wise-regex', ['element-regex'])}}
 
 ```python exec="on" result="text" session="expressions/lists"
 --8<-- "python/user-guide/expressions/lists.py:element-wise-regex"
