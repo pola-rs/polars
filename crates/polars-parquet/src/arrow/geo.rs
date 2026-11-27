@@ -69,15 +69,12 @@ impl std::fmt::Display for GeoParquetVersion {
 /// The geoparquet spec states that something that has no `crs` key should be considered "OGC: CRS84".
 const DEFAULT_CRS: &str = "OGC:CRS84";
 
-const BOX_EXTENSION_NAME: &str = "geoarrow.box";
+pub(crate) const BOX_EXTENSION_NAME: &str = "geoarrow.box";
 
-// TODO: accept other kinds of bbox too.
-// These are a little more complicated than just struct relabelling, and would require stuff like:
-// - float32 -> Float64 widening
-// - data re-ordering after decoding
+// TODO: accept Float32 bbox coverings too (requires float32 -> Float64 widening).
 
-/// The field layouts of a `geoarrow.box`.
-/// GeoParquet also allows a covering's fields in another order or as FLOAT, but those can't be read as a box.
+/// The canonical field layouts of a `geoarrow.box`.
+/// GeoParquet also allows a covering's fields as FLOAT, which cannot be read as a box yet.
 const BOX_LAYOUTS: [&[&str]; 2] = [
     &["xmin", "ymin", "xmax", "ymax"],
     &["xmin", "ymin", "zmin", "xmax", "ymax", "zmax"],
@@ -163,6 +160,10 @@ pub fn apply_geo_metadata(metadata: &Metadata, schema: &mut ArrowSchema) {
     if std::env::var("POLARS_GEOPARQUET_READ").as_deref() != Ok("1") {
         return;
     }
+    apply_geo_metadata_inner(metadata, schema);
+}
+
+fn apply_geo_metadata_inner(metadata: &Metadata, schema: &mut ArrowSchema) {
     let Some(geo) = metadata.get(GEO_KEY) else {
         return;
     };
@@ -284,19 +285,19 @@ fn apply_bbox_covering(
         ArrowDataType::Extension(ext) => &ext.inner,
         dtype => dtype,
     };
-    if box_layout(storage) != Some(layout) {
+    let Some(canonical_storage) = canonical_box_storage(storage, layout) else {
         polars_warn!(
-            "ignoring GeoParquet covering of '{}': type {:?} of column '{}' is not a struct of Float64 fields xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order, as a 'geoarrow.box' needs",
+            "ignoring GeoParquet covering of '{}': type {:?} of column '{}' is not a struct of Float64 fields xmin, ymin, [zmin,] xmax, ymax, [zmax]",
             geometry,
             storage,
             box_name
         );
         return;
-    }
+    };
 
     field.dtype = ArrowDataType::Extension(Box::new(ExtensionType {
         name: BOX_EXTENSION_NAME.into(),
-        inner: storage.clone(),
+        inner: canonical_storage,
         metadata,
     }));
     covering_columns.push(box_name.to_string());
@@ -313,6 +314,27 @@ fn parse_bbox_paths(bbox: &Value) -> Option<(&str, &'static [&'static str])> {
                 .all(|key| bbox.get(*key) == Some(&json!([box_name, key])))
     })?;
     Some((box_name, layout))
+}
+
+/// Returns `dtype` with its fields reordered into canonical `layout` order if it is a
+/// `Struct` of `Float64` fields matching `layout` in any order.
+fn canonical_box_storage(dtype: &ArrowDataType, layout: &[&str]) -> Option<ArrowDataType> {
+    let ArrowDataType::Struct(fields) = dtype else {
+        return None;
+    };
+    if fields.len() != layout.len() {
+        return None;
+    }
+    let reordered = layout
+        .iter()
+        .map(|name| {
+            fields
+                .iter()
+                .find(|f| f.name == *name && f.dtype == ArrowDataType::Float64)
+                .cloned()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(ArrowDataType::Struct(reordered))
 }
 
 /// Returns the layout of `dtype` if it is a valid `geoarrow.box` storage type.
@@ -661,4 +683,313 @@ fn is_crs84(projjson: &Map<String, Value>) -> bool {
     projjson
         .get("id")
         .is_some_and(|id| id["authority"] == "OGC" && id["code"] == "CRS84")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+    use std::sync::Arc;
+
+    use polars_arrow::array::{BinaryViewArray, Float64Array, StructArray};
+    use polars_arrow::bitmap::Bitmap;
+    use polars_arrow::record_batch::RecordBatch;
+    use polars_buffer::Buffer;
+
+    use super::*;
+    use crate::arrow::read::schema::{
+        SchemaInferenceOptions, parquet_to_arrow_schema_with_options,
+    };
+    use crate::arrow::read::{BasicDecompressor, PageReader, column_iter_to_arrays, read_metadata};
+    use crate::arrow::write::{
+        CompressionOptions, Encoding as ParquetEncoding, FileWriter, StatisticsOptions, Version,
+        WriteOptions, row_group_iter,
+    };
+
+    fn make_geo_metadata(covering: Value) -> Metadata {
+        let geo = json!({
+            "version": "1.1.0",
+            "primary_column": "geometry",
+            "columns": {
+                "geometry": {
+                    "encoding": "WKB",
+                    "geometry_types": [],
+                    "covering": covering,
+                }
+            }
+        });
+        Metadata::from([(PlSmallStr::from_static(GEO_KEY), geo.to_string().into())])
+    }
+
+    fn base_schema(bbox_fields: Vec<Field>) -> ArrowSchema {
+        ArrowSchema::from_iter([
+            Field::new("geometry".into(), ArrowDataType::BinaryView, true),
+            Field::new("bbox".into(), ArrowDataType::Struct(bbox_fields), true),
+        ])
+    }
+
+    #[test]
+    fn test_out_of_order_bbox_schema_canonicalized() {
+        for (order, expected) in [
+            (
+                vec!["xmax", "xmin", "ymax", "ymin"],
+                vec!["xmin", "ymin", "xmax", "ymax"],
+            ),
+            (
+                vec!["zmax", "ymax", "xmax", "zmin", "ymin", "xmin"],
+                vec!["xmin", "ymin", "zmin", "xmax", "ymax", "zmax"],
+            ),
+        ] {
+            let fields = order
+                .iter()
+                .map(|n| Field::new((*n).into(), ArrowDataType::Float64, false))
+                .collect();
+            let covering = json!({
+                "bbox": order.iter().map(|n| ((*n).to_string(), json!(["bbox", n]))).collect::<Map<_, _>>()
+            });
+            let metadata = make_geo_metadata(covering);
+            let mut schema = base_schema(fields);
+            apply_geo_metadata_inner(&metadata, &mut schema);
+
+            let ArrowDataType::Extension(ext) = &schema.get("bbox").unwrap().dtype else {
+                panic!("expected bbox to become geoarrow.box extension");
+            };
+            assert_eq!(ext.name, BOX_EXTENSION_NAME);
+            let ArrowDataType::Struct(out_fields) = &ext.inner else {
+                panic!("expected Struct inner type");
+            };
+            let names: Vec<_> = out_fields.iter().map(|f| f.name.as_str()).collect();
+            assert_eq!(names, expected);
+        }
+    }
+
+    #[test]
+    fn test_invalid_bbox_schemas_ignored() {
+        // Float32 field should not be promoted.
+        let mut schema = base_schema(vec![
+            Field::new("xmax".into(), ArrowDataType::Float32, false),
+            Field::new("xmin".into(), ArrowDataType::Float64, false),
+            Field::new("ymax".into(), ArrowDataType::Float64, false),
+            Field::new("ymin".into(), ArrowDataType::Float64, false),
+        ]);
+        let covering = json!({
+            "bbox": {
+                "xmin": ["bbox", "xmin"],
+                "ymin": ["bbox", "ymin"],
+                "xmax": ["bbox", "xmax"],
+                "ymax": ["bbox", "ymax"],
+            }
+        });
+        apply_geo_metadata_inner(&make_geo_metadata(covering.clone()), &mut schema);
+        assert!(matches!(
+            schema.get("bbox").unwrap().dtype,
+            ArrowDataType::Struct(_)
+        ));
+
+        // Extra field should not be promoted.
+        let mut schema_extra = base_schema(vec![
+            Field::new("xmax".into(), ArrowDataType::Float64, false),
+            Field::new("xmin".into(), ArrowDataType::Float64, false),
+            Field::new("ymax".into(), ArrowDataType::Float64, false),
+            Field::new("ymin".into(), ArrowDataType::Float64, false),
+            Field::new("extra".into(), ArrowDataType::Float64, false),
+        ]);
+        apply_geo_metadata_inner(&make_geo_metadata(covering.clone()), &mut schema_extra);
+        assert!(matches!(
+            schema_extra.get("bbox").unwrap().dtype,
+            ArrowDataType::Struct(_)
+        ));
+
+        // Duplicate field name should not be promoted.
+        let mut schema_dup = base_schema(vec![
+            Field::new("xmax".into(), ArrowDataType::Float64, false),
+            Field::new("xmax".into(), ArrowDataType::Float64, false),
+            Field::new("ymax".into(), ArrowDataType::Float64, false),
+            Field::new("ymin".into(), ArrowDataType::Float64, false),
+        ]);
+        apply_geo_metadata_inner(&make_geo_metadata(covering), &mut schema_dup);
+        assert!(matches!(
+            schema_dup.get("bbox").unwrap().dtype,
+            ArrowDataType::Struct(_)
+        ));
+    }
+
+    #[test]
+    fn test_read_out_of_order_bbox_roundtrip_decode() {
+        // Store fields in GeoParquet `example.parquet` order: xmax, xmin, ymax, ymin.
+        let disk_order = ["xmax", "xmin", "ymax", "ymin"];
+        let bbox_fields: Vec<Field> = disk_order
+            .iter()
+            .map(|n| Field::new((*n).into(), ArrowDataType::Float64, true))
+            .collect();
+        let write_schema = base_schema(bbox_fields.clone());
+
+        let make_batch = |offset: f64, with_null: bool| {
+            let geom = BinaryViewArray::from_slice([Some(b"pt1".as_slice()), Some(b"pt2")]);
+            let xmax = Float64Array::from_slice([10.0 + offset, 20.0 + offset]).boxed();
+            let xmin = Float64Array::from_slice([1.0 + offset, 2.0 + offset]).boxed();
+            let ymax = Float64Array::from_slice([30.0 + offset, 40.0 + offset]).boxed();
+            let ymin = Float64Array::from_slice([3.0 + offset, 4.0 + offset]).boxed();
+            let validity = with_null.then(|| Bitmap::from([true, false]));
+            let bbox = StructArray::new(
+                ArrowDataType::Struct(bbox_fields.clone()),
+                2,
+                vec![xmax, xmin, ymax, ymin],
+                validity,
+            );
+            RecordBatch::try_new(
+                2,
+                Arc::new(write_schema.clone()),
+                vec![geom.boxed(), bbox.boxed()],
+            )
+            .unwrap()
+        };
+
+        let batches = [make_batch(0.0, true), make_batch(100.0, false)];
+
+        let options = WriteOptions {
+            statistics: StatisticsOptions::default(),
+            version: Version::V2,
+            compression: CompressionOptions::Uncompressed,
+            data_page_size: None,
+        };
+        let encodings: Buffer<Vec<ParquetEncoding>> = write_schema
+            .iter_values()
+            .map(|f| match f.dtype() {
+                ArrowDataType::Struct(children) => {
+                    vec![ParquetEncoding::Plain; children.len()]
+                },
+                _ => vec![ParquetEncoding::Plain],
+            })
+            .collect();
+
+        let mut buf = Vec::new();
+        let mut writer =
+            FileWriter::try_new(&mut buf, write_schema.clone(), options, None).unwrap();
+        let fields = writer.parquet_schema().fields().to_vec();
+        for batch in batches {
+            let num_rows = batch.height() as u64;
+            let row_group = row_group_iter(batch, encodings.clone(), fields.clone(), options);
+            writer.write(num_rows, row_group).unwrap();
+        }
+        let covering = json!({
+            "bbox": {
+                "xmax": ["bbox", "xmax"],
+                "xmin": ["bbox", "xmin"],
+                "ymax": ["bbox", "ymax"],
+                "ymin": ["bbox", "ymin"],
+            }
+        });
+        let geo_kv = KeyValue {
+            key: GEO_KEY.to_string(),
+            value: Some(
+                json!({
+                    "version": "1.1.0",
+                    "primary_column": "geometry",
+                    "columns": {
+                        "geometry": {
+                            "encoding": "WKB",
+                            "geometry_types": [],
+                            "covering": covering,
+                        }
+                    }
+                })
+                .to_string(),
+            ),
+        };
+        writer.end(Some(vec![geo_kv])).unwrap();
+
+        let buf = Buffer::from_vec(buf);
+        let mut reader = Cursor::new(buf.as_slice());
+        let file_md = read_metadata(&mut reader).unwrap();
+        let kv_md: Metadata = file_md
+            .key_value_metadata()
+            .iter()
+            .flatten()
+            .filter_map(|kv| {
+                kv.value
+                    .as_ref()
+                    .map(|v| (kv.key.as_str().into(), v.as_str().into()))
+            })
+            .collect();
+        let mut arrow_schema = parquet_to_arrow_schema_with_options(
+            file_md.schema().fields(),
+            &SchemaInferenceOptions::default(),
+            None,
+        )
+        .unwrap();
+        apply_geo_metadata_inner(&kv_md, &mut arrow_schema);
+
+        let bbox_field = arrow_schema.get("bbox").unwrap().clone();
+        let ArrowDataType::Extension(ext) = bbox_field.dtype() else {
+            panic!("expected Extension");
+        };
+        assert_eq!(ext.name, BOX_EXTENSION_NAME);
+        let ArrowDataType::Struct(canonical_fields) = &ext.inner else {
+            panic!("expected Struct");
+        };
+        let canonical_names: Vec<_> = canonical_fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(canonical_names, vec!["xmin", "ymin", "xmax", "ymax"]);
+
+        // Decode both row groups using the canonical schema field.
+        for (rg_idx, expected_offset) in [(0, 0.0), (1, 100.0)] {
+            let rg = &file_md.row_groups[rg_idx];
+            let leaf_types: Vec<_> = rg
+                .columns_under_root_iter("bbox")
+                .unwrap()
+                .map(|c| &c.descriptor().descriptor.primitive_type)
+                .collect();
+            let decompressors: Vec<_> = rg
+                .columns_under_root_iter("bbox")
+                .unwrap()
+                .map(|col_md| {
+                    let range = col_md.byte_range().unwrap();
+                    let chunk = buf.clone().sliced(range.start as usize..range.end as usize);
+                    let pages =
+                        PageReader::new(Cursor::new(chunk), col_md, vec![], usize::MAX).unwrap();
+                    BasicDecompressor::new(pages, vec![])
+                })
+                .collect();
+            let (arrays, _) =
+                column_iter_to_arrays(decompressors, leaf_types, bbox_field.clone(), None).unwrap();
+            assert_eq!(arrays.len(), 1);
+            assert_eq!(arrays[0].dtype(), bbox_field.dtype());
+            let struct_arr = arrays[0].as_any().downcast_ref::<StructArray>().unwrap();
+            assert_eq!(struct_arr.len(), 2);
+            if rg_idx == 0 {
+                assert_eq!(struct_arr.validity(), Some(&Bitmap::from([true, false])));
+            } else {
+                assert_eq!(struct_arr.validity(), None);
+            }
+            let vals = |i: usize| {
+                let arr = struct_arr.values()[i]
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .unwrap();
+                if rg_idx == 0 {
+                    // Row 1 has null struct validity; row 0 holds the valid bbox.
+                    vec![arr.value(0)]
+                } else {
+                    arr.values().as_slice().to_vec()
+                }
+            };
+            // Canonical order: [xmin, ymin, xmax, ymax]
+            if rg_idx == 0 {
+                assert_eq!(vals(0), vec![1.0]);
+                assert_eq!(vals(1), vec![3.0]);
+                assert_eq!(vals(2), vec![10.0]);
+                assert_eq!(vals(3), vec![30.0]);
+            } else {
+                assert_eq!(vals(0), vec![1.0 + expected_offset, 2.0 + expected_offset]);
+                assert_eq!(vals(1), vec![3.0 + expected_offset, 4.0 + expected_offset]);
+                assert_eq!(
+                    vals(2),
+                    vec![10.0 + expected_offset, 20.0 + expected_offset]
+                );
+                assert_eq!(
+                    vals(3),
+                    vec![30.0 + expected_offset, 40.0 + expected_offset]
+                );
+            }
+        }
+    }
 }
