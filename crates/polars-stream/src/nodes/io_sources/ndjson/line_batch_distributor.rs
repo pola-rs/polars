@@ -332,7 +332,7 @@ impl RowSkipper {
     /// lines that have not yet been skipped.
     ///
     /// `chunk` is expected in the form "line_a\nline_b\nline_c(\n)?" regardless of `reverse`. The
-    /// returned bytes are whole lines with their `\n`.
+    /// returned bytes are the remaining whole lines.
     fn skip_rows(&mut self, chunk: Buffer<u8>) -> Buffer<u8> {
         if self.n_rows_skipped >= self.cfg_n_rows_to_skip || chunk.is_empty() {
             return chunk;
@@ -356,7 +356,7 @@ impl RowSkipper {
                 self.n_rows_skipped += 1;
 
                 if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
-                    return chunk.sliced(cmp::min(end + 1, len)..len);
+                    return chunk.sliced(cmp::min(end + 1, len)..);
                 }
             }
             start = end + 1;
