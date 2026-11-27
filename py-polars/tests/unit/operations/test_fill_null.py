@@ -15,8 +15,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from polars._typing import EngineType
 
 
@@ -49,28 +47,20 @@ def test_fill_null_enum_values() -> None:
         assert_series_equal(s.fill_null(fill), pl.Series("s", expected, dtype=dtype))
 
 
-@pytest.mark.parametrize(
-    "make_categories",
-    [
-        pytest.param(pl.Categories.random, id="own"),
-        pytest.param(lambda: pl.Categories(f"named-{uuid4()}"), id="named"),
-        pytest.param(pl.Categories, id="global"),
-        pytest.param(lambda: pl.Categories.random(physical=pl.UInt8), id="uint8"),
-    ],
-)
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 def test_fill_null_categorical_adds_only_used_values(
-    make_categories: Callable[[], pl.Categories], engine: EngineType
+    category_mapping: pl.Categories, engine: EngineType
 ) -> None:
-    cats = make_categories()
+    cats = category_mapping
     dtype = pl.Categorical(cats)
     lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": dtype})
     lf_null = pl.LazyFrame({"s": ["a", None]}, schema={"s": dtype})
     unused, used, other = (f"{name}-{uuid4()}" for name in ("unused", "used", "other"))
 
+    source = lf.collect(engine=engine)
     result = lf.select(pl.col("s").fill_null(unused)).collect(engine=engine)
-    assert_frame_equal(result, lf.collect())
-    assert_series_equal(lf.collect()["s"].fill_null(unused), lf.collect()["s"])
+    assert_frame_equal(result, source)
+    assert_series_equal(source["s"].fill_null(unused), source["s"])
     assert unused not in cats
 
     # Values in the output are added.

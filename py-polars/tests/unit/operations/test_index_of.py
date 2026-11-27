@@ -16,8 +16,6 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from polars._typing import EngineType, IntoExpr, PolarsDataType
     from polars.datatypes import IntegerType
 
@@ -367,20 +365,11 @@ def test_categorical(convert_to_literal: bool) -> None:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
 
 
-@pytest.mark.parametrize(
-    "make_categories",
-    [
-        pytest.param(pl.Categories.random, id="own"),
-        pytest.param(lambda: pl.Categories(f"named-{uuid4()}"), id="named"),
-        pytest.param(pl.Categories, id="global"),
-        pytest.param(lambda: pl.Categories.random(physical=pl.UInt8), id="uint8"),
-    ],
-)
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 def test_index_of_categorical_absent_adds_no_categories(
-    make_categories: Callable[[], pl.Categories], engine: EngineType
+    category_mapping: pl.Categories, engine: EngineType
 ) -> None:
-    cats = make_categories()
+    cats = category_mapping
     s = pl.Series("s", ["b", None, "a"], dtype=pl.Categorical(cats))
     absent = f"absent-{uuid4()}"
     lf = s.to_frame().with_columns(needle=pl.lit(absent)).lazy()
