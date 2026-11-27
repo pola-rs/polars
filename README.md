@@ -61,7 +61,7 @@ fast, easy to use and expressive. Key features are:
   data sharing
 
 To learn more, read the [user guide](https://docs.pola.rs/) or install this
-[skill](https://github.com/polars-inc/skills/tree/main/polars) in your coding agent.
+[skill](https://github.com/polars-inc/skills/tree/main/skills/polars) in your coding agent.
 
 ## Polars in action
 
