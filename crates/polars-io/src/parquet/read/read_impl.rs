@@ -60,13 +60,20 @@ fn should_copy_sortedness(dtype: &DataType) -> bool {
     )
 }
 
+/// The sorted flag a column of `dtype` read from column chunk `col_idx` gets from `sorting_map`.
+pub fn sorted_flag_to_copy(
+    dtype: &DataType,
+    col_idx: usize,
+    sorting_map: &[(usize, IsSorted)],
+) -> Option<IsSorted> {
+    let (sorted_col, is_sorted) = sorting_map.first()?;
+    (*sorted_col == col_idx && should_copy_sortedness(dtype)).then_some(*is_sorted)
+}
+
 pub fn try_set_sorted_flag(series: &mut Series, col_idx: usize, sorting_map: &[(usize, IsSorted)]) {
-    let Some((sorted_col, is_sorted)) = sorting_map.first() else {
+    let Some(is_sorted) = sorted_flag_to_copy(series.dtype(), col_idx, sorting_map) else {
         return;
     };
-    if *sorted_col != col_idx || !should_copy_sortedness(series.dtype()) {
-        return;
-    }
     if config::verbose() {
         eprintln!(
             "Parquet conserved SortingColumn for column chunk of '{}' to {is_sorted:?}",
@@ -74,7 +81,7 @@ pub fn try_set_sorted_flag(series: &mut Series, col_idx: usize, sorting_map: &[(
         );
     }
 
-    series.set_sorted_flag(*is_sorted);
+    series.set_sorted_flag(is_sorted);
 }
 
 pub fn create_sorting_map(md: &RowGroupMetadata) -> Vec<(usize, IsSorted)> {

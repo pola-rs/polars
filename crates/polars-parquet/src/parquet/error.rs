@@ -33,6 +33,9 @@ pub enum ParquetError {
     WouldOverAllocate,
     /// An error related to Parquet modular encryption, e.g. an invalid key or failed decryption
     Encryption(String),
+    /// A data page of a column chunk decoded as dictionary codes is not dictionary-encoded.
+    /// The chunk has to be decoded as values instead.
+    NotDictionaryEncoded,
 }
 
 impl ParquetError {
@@ -72,6 +75,9 @@ impl std::fmt::Display for ParquetError {
             },
             ParquetError::Encryption(message) => {
                 write!(fmt, "Encryption error: {message}")
+            },
+            ParquetError::NotDictionaryEncoded => {
+                write!(fmt, "A data page is not dictionary-encoded")
             },
         }
     }

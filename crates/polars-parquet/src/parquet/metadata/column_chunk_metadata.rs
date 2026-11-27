@@ -192,6 +192,12 @@ impl ColumnChunkMetadata {
         Ok(self.compact_metadata()?.dictionary_fallback)
     }
 
+    /// Whether the page encoding stats have an entry for data pages; without one,
+    /// [`Self::dictionary_fallback`] being `Some(false)` says nothing about them.
+    pub fn has_data_page_encoding_stats(&self) -> ParquetResult<bool> {
+        Ok(self.compact_metadata()?.has_data_page_encoding_stats)
+    }
+
     /// Combined length in bytes of all byte array values (strings, binary) in this
     /// chunk, before encoding. Every occurrence counts, but nulls and the 4-byte
     /// length prefixes don't. Returns `None` for columns that aren't byte arrays,

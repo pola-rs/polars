@@ -4,6 +4,7 @@ mod binary;
 mod binview;
 mod boolean;
 mod categorical;
+mod codes;
 mod dictionary_encoded;
 mod fixed_size_binary;
 mod nested;
@@ -21,7 +22,7 @@ pub(crate) use primitive::convert_i128;
 use simple::page_iter_to_array;
 pub(crate) use simple::unify_timestamp_unit;
 
-pub use self::categorical::decode_dictionary_codes;
+pub use self::codes::{decode_dictionary_codes, dictionary_codes_supported};
 pub use self::nested_utils::{InitNested, NestedState, init_nested};
 pub use self::utils::filter::{Filter, PredicateFilter};
 use self::utils::freeze_validity;

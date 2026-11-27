@@ -6,8 +6,8 @@ use polars_arrow::datatypes::Field;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
-    BasicDecompressor, ColumnChunkMetadata, Filter, PageReader, PhysicalType,
-    column_iter_to_arrays, decode_dictionary_codes,
+    BasicDecompressor, ColumnChunkMetadata, Filter, PageReader, ParquetError, PhysicalType,
+    column_iter_to_arrays, decode_dictionary_codes, dictionary_codes_supported,
 };
 use polars_utils::mem::prefetch::prefetch_l2;
 
@@ -75,42 +75,66 @@ pub fn to_deserializer(
     column_iter_to_arrays(columns, types, field, filter)
 }
 
-/// Decodes a flat String column chunk as codes into its dictionary, if it has a dictionary page,
-/// every data page is dictionary-encoded and `accept(num_rows, dict_len, dict_bytes)` holds for
-/// the number of rows the filter keeps (all of the chunk's for a predicate, whose result isn't
-/// known yet) and the number and uncompressed size of the dictionary values.
-/// Returns `None` otherwise, without decoding anything.
+/// Decodes a flat column chunk of `field` as codes into its dictionary, if its type is supported
+/// (see `dictionary_codes_supported`), it has a dictionary page, every data page is
+/// dictionary-encoded and `accept(num_rows, dict_len, value_bytes)` holds for the number of rows
+/// the filter keeps (all of the chunk's for a predicate, whose result isn't known yet), and the
+/// number and uncompressed size of the dictionary values (without the length prefixes of byte
+/// arrays). Returns `None` otherwise, without decoding anything.
 pub fn to_dictionary_codes(
     column_meta: &ColumnChunkMetadata,
     chunk: Buffer<u8>,
-    field_name: &str,
+    field: &Field,
     filter: Option<Filter>,
     accept: impl FnOnce(usize, usize, usize) -> bool,
 ) -> PolarsResult<Option<(Vec<DictionaryArray<u32>>, Bitmap)>> {
-    // Only a BYTE_ARRAY column's dictionary holds length-prefixed strings.
-    if column_meta
-        .descriptor()
-        .descriptor
-        .primitive_type
-        .physical_type
-        != PhysicalType::ByteArray
-    {
+    let primitive_type = &column_meta.descriptor().descriptor.primitive_type;
+    if !dictionary_codes_supported(primitive_type, &field.dtype) {
         return Ok(None);
     }
-    let pages = PageReader::new(Cursor::new(chunk.clone()), column_meta, vec![], usize::MAX)?;
+    let mut pages = PageReader::new(Cursor::new(chunk.clone()), column_meta, vec![], usize::MAX)?;
     let num_rows = match &filter {
         Some(Filter::Range(range)) => range.len().min(pages.total_num_values()),
         Some(Filter::Mask(mask)) => mask.set_bits(),
         Some(Filter::Predicate(_)) | None => pages.total_num_values(),
     };
-    match pages.dictionary_only_len()? {
-        Some((dict_len, dict_bytes)) if accept(num_rows, dict_len, dict_bytes) => {},
-        _ => return Ok(None),
+    // Only the dictionary page's header is read before `accept`, so that a few rows (or a large
+    // dictionary) don't pay for the walk over the data pages' headers.
+    let Some((dict_len, dict_bytes)) = pages.dictionary_page_len()? else {
+        return Ok(None);
+    };
+    // A BYTE_ARRAY column's dictionary holds length-prefixed values.
+    let value_bytes = if primitive_type.physical_type == PhysicalType::ByteArray {
+        dict_bytes.saturating_sub(4 * dict_len)
+    } else {
+        dict_bytes
+    };
+    if !accept(num_rows, dict_len, value_bytes) {
+        return Ok(None);
+    }
+    // The page encoding stats answer whether every data page is dictionary-encoded, if present.
+    // If they lie, the decoders report a page that is not dictionary-encoded, and the chunk is
+    // decoded as values.
+    // Stats without a data page entry say nothing.
+    let stats_say_dictionary = match column_meta.dictionary_fallback()? {
+        Some(false) => column_meta.has_data_page_encoding_stats()?,
+        Some(true) => return Ok(None),
+        None => false,
+    };
+    if !stats_say_dictionary && !pages.data_pages_all_dictionary()? {
+        return Ok(None);
     }
 
     prefetch_l2(&chunk);
     let pages = PageReader::new(Cursor::new(chunk), column_meta, vec![], usize::MAX)?;
-    let decoded =
-        decode_dictionary_codes(field_name, BasicDecompressor::new(pages, vec![]), filter)?;
-    Ok(Some(decoded))
+    match decode_dictionary_codes(
+        field,
+        primitive_type,
+        BasicDecompressor::new(pages, vec![]),
+        filter,
+    ) {
+        Ok(decoded) => Ok(Some(decoded)),
+        Err(ParquetError::NotDictionaryEncoded) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
 }

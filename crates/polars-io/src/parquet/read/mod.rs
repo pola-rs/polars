@@ -35,7 +35,7 @@ pub use options::{ParallelStrategy, ParquetOptions};
 use polars_error::{ErrString, PolarsError};
 pub use polars_parquet::arrow::read::infer_schema;
 pub use polars_parquet::read::FileMetadata;
-pub use read_impl::{create_sorting_map, try_set_sorted_flag};
+pub use read_impl::{create_sorting_map, sorted_flag_to_copy, try_set_sorted_flag};
 pub use reader::ParquetReader;
 pub use utils::materialize_empty_df;
 

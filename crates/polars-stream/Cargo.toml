@@ -59,6 +59,7 @@ polars-utils = { workspace = true, features = ["async-utils"] }
 
 [dev-dependencies]
 libc = { workspace = true }
+polars-ooc = { workspace = true, features = ["test-support"] }
 tempfile = "3"
 
 [build-dependencies]

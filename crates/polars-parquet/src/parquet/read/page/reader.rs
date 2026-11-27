@@ -156,51 +156,56 @@ impl PageReader {
     }
 
     /// The number of values and the uncompressed size in bytes of the dictionary page, if the
-    /// column chunk has one and every data page is dictionary-encoded; `None` otherwise, and for
-    /// encrypted columns. Reads only the page headers.
-    pub fn dictionary_only_len(mut self) -> ParquetResult<Option<(usize, usize)>> {
-        use crate::parquet::page::FormatEncoding;
-
-        if self.crypto_context.is_some() {
+    /// column chunk starts with one; `None` otherwise, and for encrypted columns. Reads only the
+    /// first page header and leaves the reader after the dictionary page, for
+    /// [`Self::data_pages_all_dictionary`].
+    pub fn dictionary_page_len(&mut self) -> ParquetResult<Option<(usize, usize)>> {
+        if self.crypto_context.is_some() || self.seen_num_values >= self.total_num_values {
             return Ok(None);
         }
+        let header = self.read_page_header()?;
+        let size: u64 = header.compressed_page_size.try_into()?;
+        self.reader.set_position(self.reader.position() + size);
+        if !matches!(header.type_.try_into()?, PageType::DictionaryPage) {
+            return Ok(None);
+        }
+        let Some(h) = header.dictionary_page_header.as_ref() else {
+            return Ok(None);
+        };
+        Ok(Some((
+            h.num_values.try_into()?,
+            header.uncompressed_page_size.try_into()?,
+        )))
+    }
+
+    /// Whether every data page after the dictionary page (see [`Self::dictionary_page_len`]) is
+    /// dictionary-encoded. Reads only the page headers.
+    pub fn data_pages_all_dictionary(mut self) -> ParquetResult<bool> {
+        use crate::parquet::page::FormatEncoding;
+
         let is_dict = |e: FormatEncoding| {
             matches!(
                 e,
                 FormatEncoding::RLE_DICTIONARY | FormatEncoding::PLAIN_DICTIONARY
             )
         };
-
-        let mut dict_len = None;
         while self.seen_num_values < self.total_num_values {
             let header = self.read_page_header()?;
             let size: u64 = header.compressed_page_size.try_into()?;
             self.reader.set_position(self.reader.position() + size);
             match header.type_.try_into()? {
-                PageType::DictionaryPage => {
-                    let Some(h) = header.dictionary_page_header.as_ref() else {
-                        return Ok(None);
-                    };
-                    dict_len = Some((
-                        h.num_values.try_into()?,
-                        header.uncompressed_page_size.try_into()?,
-                    ));
-                },
+                PageType::DictionaryPage => return Ok(false),
                 PageType::DataPage => match header.data_page_header.as_ref() {
                     Some(h) if is_dict(h.encoding) => self.seen_num_values += h.num_values as i64,
-                    _ => return Ok(None),
+                    _ => return Ok(false),
                 },
                 PageType::DataPageV2 => match header.data_page_header_v2.as_ref() {
                     Some(h) if is_dict(h.encoding) => self.seen_num_values += h.num_values as i64,
-                    _ => return Ok(None),
+                    _ => return Ok(false),
                 },
             }
-            if dict_len.is_none() {
-                // The dictionary page comes first.
-                return Ok(None);
-            }
         }
-        Ok(dict_len)
+        Ok(true)
     }
 
     pub fn read_dict(&mut self) -> ParquetResult<Option<CompressedDictPage>> {

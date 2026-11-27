@@ -436,6 +436,7 @@ fn read_column_meta_data(
     let mut bloom_filter_offset: Option<i64> = None;
     let mut bloom_filter_length: Option<i32> = None;
     let mut dictionary_fallback: Option<bool> = None;
+    let mut has_data_page_encoding_stats = false;
     let mut unencoded_byte_array_data_bytes: Option<i64> = None;
 
     // Inlined skips at ids 1/2/3 (type_, encodings, path_in_schema): universally
@@ -455,7 +456,11 @@ fn read_column_meta_data(
         10 => index_page_offset = Some(prot.read_i64()?),
         11 => dictionary_page_offset = Some(prot.read_i64()?),
         12 => statistics = Some(read_statistics(prot, origin_ptr)?),
-        13 => dictionary_fallback = Some(read_dictionary_fallback(prot)?),
+        13 => {
+            let (fallback, has_data) = read_dictionary_fallback(prot)?;
+            dictionary_fallback = Some(fallback);
+            has_data_page_encoding_stats = has_data;
+        },
         14 => bloom_filter_offset = Some(prot.read_i64()?),
         15 => bloom_filter_length = Some(prot.read_i32()?),
         16 => unencoded_byte_array_data_bytes = read_unencoded_byte_array_data_bytes(prot)?,
@@ -478,6 +483,7 @@ fn read_column_meta_data(
         bloom_filter_offset,
         bloom_filter_length,
         dictionary_fallback,
+        has_data_page_encoding_stats,
         unencoded_byte_array_data_bytes,
     })
 }
@@ -497,11 +503,17 @@ fn read_unencoded_byte_array_data_bytes(
 /// Decode a list of `PageEncodingStats` into whether some data pages with
 /// rows are not dictionary-encoded. Writers such as Arrow and parquet-mr
 /// switch to plain encoding once the dictionary grows too large.
-fn read_dictionary_fallback(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<bool> {
+///
+/// Also returns whether the list has an entry for data pages, as without one it says nothing
+/// about their encoding.
+fn read_dictionary_fallback(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<(bool, bool)> {
     use polars_parquet_format::{Encoding, PageType};
 
     let list = prot.read_list_begin()?;
     let mut fallback = false;
+    let mut has_data = false;
     for _ in 0..list.size {
         let mut page_type: Option<i32> = None;
         let mut encoding: Option<i32> = None;
@@ -518,9 +530,11 @@ fn read_dictionary_fallback(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetR
             encoding,
             Encoding::PLAIN_DICTIONARY | Encoding::RLE_DICTIONARY
         );
-        fallback |= is_data && !is_dictionary && count.require("PageEncodingStats.count")? > 0;
+        let count = count.require("PageEncodingStats.count")?;
+        has_data |= is_data && count > 0;
+        fallback |= is_data && !is_dictionary && count > 0;
     }
-    Ok(fallback)
+    Ok((fallback, has_data))
 }
 
 /// Decode a `Statistics` into a [`CompactStatistics`].
@@ -815,6 +829,10 @@ mod tests {
     }
 
     fn decode_dictionary_fallback(bytes: &[u8]) -> ParquetResult<bool> {
+        Ok(decode_dictionary_stats(bytes)?.0)
+    }
+
+    fn decode_dictionary_stats(bytes: &[u8]) -> ParquetResult<(bool, bool)> {
         let mut prot = ThriftSliceInputProtocol::new(bytes);
         read_dictionary_fallback(&mut prot)
     }
@@ -853,6 +871,14 @@ mod tests {
     fn dictionary_data_no_fallback() {
         let bytes = [&[0x2C][..], &DICTIONARY_PAGE, &RLE_DICTIONARY_DATA].concat();
         assert!(!decode_dictionary_fallback(&bytes).unwrap());
+    }
+
+    #[test]
+    fn dictionary_page_only_has_no_data_entry() {
+        let bytes = [&[0x1C][..], &DICTIONARY_PAGE].concat();
+        assert_eq!(decode_dictionary_stats(&bytes).unwrap(), (false, false));
+        let bytes = [&[0x2C][..], &DICTIONARY_PAGE, &RLE_DICTIONARY_DATA].concat();
+        assert_eq!(decode_dictionary_stats(&bytes).unwrap(), (false, true));
     }
 
     #[test]

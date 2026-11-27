@@ -26,6 +26,10 @@ pub struct ApplyExpr {
     is_fallible: bool,
     /// Per-group scalar inputs may be broadcast, see `inputs_are_row_wise` in the planner.
     row_wise_inputs: bool,
+    /// Whether the function is not inherently non-deterministic, see
+    /// `is_inherently_nondeterministic_top_level`: only then may it be evaluated once per distinct
+    /// value of a dictionary column and the result shared by the rows of that value.
+    deterministic: bool,
 
     /// Output field of the expression excluding potential aggregation.
     output_field: Field,
@@ -45,6 +49,7 @@ impl ApplyExpr {
         function_operates_on_scalar: bool,
         is_fallible: bool,
         row_wise_inputs: bool,
+        deterministic: bool,
     ) -> Self {
         debug_assert!(
             !options.is_length_preserving()
@@ -65,6 +70,7 @@ impl ApplyExpr {
             output_field: non_aggregated_output_field,
             is_fallible,
             row_wise_inputs,
+            deterministic,
         }
     }
 
@@ -537,10 +543,11 @@ impl PhysicalExpr for ApplyExpr {
         }
 
         // An elementwise function of a dictionary-coded column (and constants) is evaluated once
-        // per dictionary value the rows use. User functions (including plugins) may depend on
+        // per dictionary value the rows use, so a random one (`list.sample`) must not. User functions (including plugins) may depend on
         // row order or count, and `set_sorted` describes the order of the rows.
         if constant_len.is_none()
             && self.flags.is_elementwise()
+            && self.deterministic
             && can_evaluate_on_dictionary(&self.expr)
             && first_input_is_dictionary(&inputs)
         {
