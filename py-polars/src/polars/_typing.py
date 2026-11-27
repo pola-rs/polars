@@ -469,7 +469,8 @@ MultiColSelector: TypeAlias = MultiIndexSelector | MultiNameSelector | BooleanMa
 
 # LazyFrame engine selection
 EngineTypeName: TypeAlias = Literal["auto", "in-memory", "streaming", "gpu"]
-EngineType: TypeAlias = Union[EngineTypeName, "Engine"]
+# A `str` is the name of an engine registered in the `polars.engines` entry point group.
+EngineType: TypeAlias = Union[EngineTypeName, str, "Engine"]
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
 

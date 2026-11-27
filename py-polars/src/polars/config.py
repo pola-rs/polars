@@ -20,6 +20,7 @@ from polars.lazyframe.engine import Engine
 from polars.lazyframe.engine_config import (
     SUPPORTED_ENGINE_NAMES,
     get_engine_affinity_override,
+    registered_engine,
     set_engine_affinity_override,
 )
 
@@ -1588,6 +1589,10 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
             objects are process-local and omitted from :meth:`Config.save`; loading
             a state containing `POLARS_ENGINE_AFFINITY` replaces the object affinity.
 
+            The name of an engine that an installed package registers in the
+            `polars.engines` entry point group is accepted too, and is applied as
+            that engine's object.
+
         Examples
         --------
         >>> pl.Config.set_engine_affinity("streaming")  # doctest: +SKIP
@@ -1634,6 +1639,8 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
             return cls
 
         if engine not in {*SUPPORTED_ENGINE_NAMES, None}:
+            if (registered := registered_engine(engine)) is not None:
+                return cls.set_engine_affinity(registered)
             msg = "invalid engine"
             raise ValueError(msg)
         if engine is None:
