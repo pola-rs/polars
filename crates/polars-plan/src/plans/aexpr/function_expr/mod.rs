@@ -1281,9 +1281,8 @@ impl IRFunctionExpr {
             #[cfg(feature = "arg_where")]
             F::ArgWhere => FunctionOptions::groupwise(),
             #[cfg(feature = "index_of")]
-            F::IndexOf => {
-                FunctionOptions::aggregation().with_casting_rules(CastingRules::FirstArgLossless)
-            },
+            F::IndexOf => FunctionOptions::aggregation()
+                .with_casting_rules(CastingRules::FirstArgLosslessKeepString),
             #[cfg(feature = "search_sorted")]
             F::SearchSorted { .. } => FunctionOptions::groupwise().with_supertyping(
                 (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),

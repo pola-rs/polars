@@ -759,7 +759,7 @@ impl OptimizationRule for TypeCoercionRule {
                                 }
                             }
                         },
-                        CastingRules::FirstArgLossless => {
+                        CastingRules::FirstArgLosslessKeepString => {
                             for other in &input[1..] {
                                 let other = other.dtype(schema, expr_arena)?;
                                 can_cast_to_lossless(&super_type, other)?;
@@ -798,16 +798,12 @@ impl OptimizationRule for TypeCoercionRule {
                     } else {
                         CastOptions::NonStrict
                     };
-                    // Casting strings to a Categorical adds them to its categories, so
-                    // these kernels take a string argument as is: `index_of` looks it
-                    // up, and `fill_null` casts it only if there are nulls to fill.
                     let keep_strings = super_type.is_categorical()
-                        && match function {
-                            #[cfg(feature = "index_of")]
-                            IRFunctionExpr::IndexOf => true,
-                            IRFunctionExpr::FillNull => true,
-                            _ => false,
-                        };
+                        && matches!(
+                            casting_rules,
+                            CastingRules::FirstArgLosslessKeepString
+                                | CastingRules::FirstArgLosslessOrSupertypeWithWarning
+                        );
                     for (i, (e, dtype)) in input.iter_mut().zip(dtypes).enumerate() {
                         let to_dtype = if keep_strings && i > 0 && dtype.is_string() {
                             &DataType::String
