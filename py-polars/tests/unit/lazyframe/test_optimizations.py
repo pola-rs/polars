@@ -680,7 +680,10 @@ def test_slice_pushdown_expr_25473() -> None:
         pl.lit(pl.Series([0, 1, 2, 3, 4])).is_in(pl.Series([[3], [1]])).slice(-2, 1)
     )
 
-    with pytest.raises(pl.exceptions.ShapeError, match=r"lengths.*5 != 2"):
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"(lengths.*5 != 2)|(zip node received non-equal length inputs)",
+    ):
         q.collect()
 
 

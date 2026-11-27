@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -12,6 +12,9 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsIntegerType
 
 
 def test_int_range() -> None:
@@ -345,3 +348,78 @@ def test_int_range_len_count() -> None:
         q.collect().to_series(),
         pl.Series("r", [0, 1, 2, 3], pl.get_index_type()),
     )
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        pl.LazyFrame({"a": [3, 1, 5]}).select(
+            pl.int_range(pl.col.a.min(), pl.col.a.max())
+        ),
+        pl.LazyFrame().select(pl.int_range(0, 10, 3)),
+    ],
+)
+def test_int_range_streaming_node(q: pl.LazyFrame) -> None:
+    plan = q.show_graph(raw_output=True, plan_stage="physical", engine="streaming")
+    assert "int-range" in plan
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "step", "dtype"),
+    [
+        (0, 1000, 1, pl.Int64),
+        (5, 1000, 3, pl.Int64),
+        (1000, -3, -2, pl.Int64),
+        (7, 7, 1, pl.Int64),
+        (7, 3, 1, pl.Int64),
+        (3, 7, -1, pl.Int64),
+        (-128, 127, 2, pl.Int8),
+        (255, 0, -1, pl.UInt8),
+        (0, 255, 7, pl.UInt8),
+        (2**63 - 100, 2**63 - 1, 3, pl.Int64),
+        (-(2**63), -(2**63) + 100, 9, pl.Int64),
+        (2**64 - 1, 2**64 - 100, -4, pl.UInt64),
+    ],
+)
+def test_int_range_streaming_values(
+    start: int, end: int, step: int, dtype: PolarsIntegerType
+) -> None:
+    expected = pl.Series("start", list(range(start, end, step)), dtype)
+    lf = pl.LazyFrame(
+        {"start": [start], "end": [end]}, schema={"start": dtype, "end": dtype}
+    )
+    with pl.Config(streaming_chunk_size=7):
+        computed = lf.select(
+            pl.int_range(pl.col.start.first(), pl.col.end.last(), step, dtype=dtype)
+        ).collect()
+        literal = (
+            pl.LazyFrame()
+            .select(
+                pl.int_range(
+                    pl.lit(start, dtype).alias("start"), end, step, dtype=dtype
+                )
+            )
+            .collect()
+        )
+    assert_series_equal(computed.to_series(), expected)
+    assert_series_equal(literal.to_series(), expected)
+
+
+def test_int_range_streaming_with_columns() -> None:
+    lf = pl.LazyFrame({"a": range(100)})
+    with pl.Config(streaming_chunk_size=7):
+        out = lf.with_columns(r=pl.int_range(pl.len(), 0, -1)).collect()
+    assert out["r"].to_list() == list(range(100, 0, -1))
+
+
+def test_int_range_streaming_early_stop() -> None:
+    out = pl.LazyFrame().select(pl.int_range(0, 10**7)).head(3).collect()
+    assert out.to_series().to_list() == [0, 1, 2]
+
+
+def test_int_range_streaming_errors() -> None:
+    lf = pl.LazyFrame({"a": [1, 2]})
+    with pytest.raises(ComputeError, match="invalid null input for `int_range`"):
+        lf.select(pl.int_range(pl.col.a.first(), pl.lit(None, pl.Int64))).collect()
+    with pytest.raises(InvalidOperationError, match="step must not be zero"):
+        lf.select(pl.int_range(pl.col.a.first(), 10, 0)).collect()

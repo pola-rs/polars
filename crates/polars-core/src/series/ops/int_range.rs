@@ -10,16 +10,18 @@ pub fn new_int_range<T>(
 where
     T: PolarsIntegerType,
     std::ops::Range<T::Native>: DoubleEndedIterator<Item = T::Native>,
+    std::ops::RangeInclusive<T::Native>: DoubleEndedIterator<Item = T::Native>,
 {
     let mut ca = match step {
         0 => polars_bail!(InvalidOperation: "step must not be zero"),
         1 => ChunkedArray::<T>::from_iter_values(name, start..end),
         2.. => ChunkedArray::<T>::from_iter_values(name, (start..end).step_by(step as usize)),
+        _ if end >= start => ChunkedArray::<T>::from_iter_values(name, std::iter::empty()),
         _ => ChunkedArray::<T>::from_iter_values(
             name,
-            (end..start)
-                .step_by(step.unsigned_abs() as usize)
-                .map(|x| start - (x - end)),
+            ((end + num_traits::One::one())..=start)
+                .rev()
+                .step_by(step.unsigned_abs() as usize),
         ),
     };
 

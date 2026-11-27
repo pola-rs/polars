@@ -11,18 +11,29 @@ pub(super) fn int_range(s: &[Column], step: i64, dtype: DataType) -> PolarsResul
     let end = &s[1];
     let name = start.name();
 
-    ensure_items_contain_exactly_one_value(&[start, end], &["start", "end"])?;
-
     // Done by type coercion
     assert!(dtype.is_integer());
     assert_eq!(start.dtype(), &dtype);
     assert_eq!(end.dtype(), &dtype);
 
     with_match_physical_integer_polars_type!(dtype, |$T| {
-        let start_v = get_first_series_value::<$T>(start)?;
-        let end_v = get_first_series_value::<$T>(end)?;
+        let (start_v, end_v) = int_range_bounds::<$T>(start, end)?;
         new_int_range::<$T>(start_v, end_v, step, name.clone()).map(Column::from)
     })
+}
+
+/// Return the values of the `start` and `end` columns of `int_range`.
+///
+/// Fail if either does not contain exactly one non-null value.
+pub fn int_range_bounds<T>(start: &Column, end: &Column) -> PolarsResult<(T::Native, T::Native)>
+where
+    T: PolarsIntegerType,
+{
+    ensure_items_contain_exactly_one_value(&[start, end], &["start", "end"])?;
+    Ok((
+        get_first_series_value::<T>(start)?,
+        get_first_series_value::<T>(end)?,
+    ))
 }
 
 fn get_first_series_value<T>(s: &Column) -> PolarsResult<T::Native>

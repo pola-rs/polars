@@ -388,6 +388,19 @@ pub fn phys_props(
             PhysicalPropsDescription::Repeat,
             vec![value.node, repeats.node],
         ),
+        #[cfg(feature = "range")]
+        PhysNodeKind::IntRange {
+            start,
+            end,
+            step,
+            dtype,
+        } => (
+            PhysicalPropsDescription::IntRange {
+                step: *step,
+                dtype: dtype.to_string(),
+            },
+            vec![start.node, end.node],
+        ),
         PhysNodeKind::GatherEvery {
             input, n, offset, ..
         } => (

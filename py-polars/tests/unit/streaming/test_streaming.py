@@ -506,7 +506,7 @@ def test_streaming_int_range_over_length(
     # cast of the row index would, so that one keeps evaluating `int_range`.
     is_row_index = dtype != pl.Int32
     assert ("with-row-index" in plan) == is_row_index
-    assert ("columnar-function" in plan) != is_row_index
+    assert ("int-range" in plan) != is_row_index
 
     expected = pl.DataFrame({"literal": range(height)}, schema={"literal": dtype})
     assert_frame_equal(q.collect(), expected)
@@ -555,4 +555,15 @@ def test_streaming_with_row_index_then_projection(
     lf = pl.LazyFrame({"a": range(10), "b": range(10, 20), "c": range(20, 30)})
     assert_frame_equal(
         build(lf).collect(engine="streaming"), build(lf).collect(engine="in-memory")
+    )
+
+
+def test_streaming_input_independent_fallback_skips_input() -> None:
+    lf = pl.LazyFrame({"a": range(10)})
+    s = pl.Series("s", range(5))
+    for q in [lf.select(pl.lit(s).median()), lf.with_columns(m=pl.lit(s).median())]:
+        plan = q.show_graph(raw_output=True, plan_stage="physical", engine="streaming")
+        assert "in-memory-map" not in plan
+    assert_frame_equal(
+        lf.select(pl.lit(s).median()).collect(), pl.DataFrame({"s": [2.0]})
     )

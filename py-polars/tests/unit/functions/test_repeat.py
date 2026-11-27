@@ -91,6 +91,12 @@ def test_repeat_n_negative() -> None:
         pl.repeat(1, n=-1, eager=True)
 
 
+def test_repeat_n_negative_lazy() -> None:
+    q = pl.LazyFrame().select(pl.repeat(1, n=-1))
+    with pytest.raises(ComputeError, match="could not parse value '-1' as a size"):
+        q.collect()
+
+
 @pytest.mark.parametrize(
     ("n", "value", "dtype"),
     [

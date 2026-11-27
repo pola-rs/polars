@@ -365,6 +365,14 @@ pub enum PhysNodeKind {
         repeats: PhysStream,
     },
 
+    #[cfg(feature = "range")]
+    IntRange {
+        start: PhysStream,
+        end: PhysStream,
+        step: i64,
+        dtype: DataType,
+    },
+
     #[cfg(feature = "cum_agg")]
     CumAgg {
         input: PhysStream,
@@ -885,6 +893,14 @@ fn _visit_nodes_impl(
                     rec!(input.node);
                     visit_input(input);
                 }
+            },
+
+            #[cfg(feature = "range")]
+            PhysNodeKind::IntRange { start, end, .. } => {
+                rec!(start.node);
+                rec!(end.node);
+                visit_input(start);
+                visit_input(end);
             },
 
             PhysNodeKind::GroupBy { inputs, .. }

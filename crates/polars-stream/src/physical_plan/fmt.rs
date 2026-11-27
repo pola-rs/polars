@@ -532,6 +532,16 @@ fn visualize_plan_rec(
             )
         },
         PhysNodeKind::Repeat { value, repeats } => ("repeat".to_owned(), &[*value, *repeats][..]),
+        #[cfg(feature = "range")]
+        PhysNodeKind::IntRange {
+            start,
+            end,
+            step,
+            dtype,
+        } => (
+            format!("int-range\\nstep: {step}\\ndtype: {dtype}"),
+            &[*start, *end][..],
+        ),
         #[cfg(feature = "cum_agg")]
         PhysNodeKind::CumAgg { input, kind } => {
             use crate::nodes::cum_agg::CumAggKind;
