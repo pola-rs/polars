@@ -48,11 +48,11 @@ impl Scalar {
         use crate::chunked_array::logical::MapChunked;
         use crate::series::IntoSeries;
 
-        let dtype = entries.dtype().map_from_named_entries_dtype()?;
+        let dtype = crate::datatypes::MapDtype::try_from_named_entries(entries.dtype())?;
         let storage = entries.implode()?.into_series();
-        let map = MapChunked::try_from_storage(dtype.clone(), storage)?;
+        let map = MapChunked::try_from_storage(dtype, storage)?;
         let value = map.get_any_value(0)?.into_static();
-        Ok(Scalar::new(dtype, value))
+        Ok(Scalar::new(map.dtype().clone(), value))
     }
 
     #[cfg(feature = "dtype-array")]

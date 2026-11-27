@@ -451,7 +451,7 @@ impl Debug for Series {
                 )
             },
             #[cfg(feature = "dtype-map")]
-            DataType::Map(_, _) => {
+            DataType::Map(_) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.map().unwrap(), &dt, self.name(), "Series")
             },

@@ -98,10 +98,10 @@ impl IcebergColumnType {
                 })
             },
             Map(key, value) => feature_gated!("dtype-map", {
-                DataType::Map(
-                    Box::new(key.type_.to_polars_dtype()?),
-                    Box::new(value.type_.to_polars_dtype()?),
-                )
+                DataType::Map(crate::datatypes::MapDtype::try_new(
+                    key.type_.to_polars_dtype()?,
+                    value.type_.to_polars_dtype()?,
+                )?)
             }),
             Struct(fields) => feature_gated!("dtype-struct", {
                 DataType::Struct(crate::datatypes::StructFields::try_new(

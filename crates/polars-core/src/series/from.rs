@@ -43,8 +43,6 @@ impl Series {
             !dtype.contains_unknown(),
             InvalidOperation: "cannot create a series of type '{dtype}' from an arrow chunk"
         );
-        #[cfg(feature = "dtype-map")]
-        dtype.ensure_valid_map_dtypes()?;
 
         let physical = dtype.to_physical();
         if &physical.to_arrow(CompatLevel::newest()) != chunk.dtype() {
@@ -142,13 +140,10 @@ impl Series {
             )
             .into_series(),
             #[cfg(feature = "dtype-map")]
-            Map(_, _) => {
-                let storage = Series::from_chunks_and_dtype_unchecked(
-                    name,
-                    chunks,
-                    &dtype.map_storage_dtype().unwrap(),
-                );
-                MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series()
+            Map(map) => {
+                let storage =
+                    Series::from_chunks_and_dtype_unchecked(name, chunks, &map.storage_dtype());
+                MapChunked::from_storage_unchecked(map.clone(), storage).into_series()
             },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
@@ -536,9 +531,9 @@ impl Series {
                     to_physical_and_dtype(struct_arrays, field.metadata.as_deref())?;
 
                 #[cfg(feature = "dtype-map")]
-                let map_dtype = entries_dtype.map_from_positional_entries_dtype();
+                let map_dtype = MapDtype::from_positional_entries(&entries_dtype);
                 #[cfg(not(feature = "dtype-map"))]
-                let map_dtype: Option<DataType> = None;
+                let map_dtype: Option<std::convert::Infallible> = None;
 
                 #[cfg(feature = "dtype-map")]
                 let phys_struct_arrays: Vec<ArrayRef> = if map_dtype.is_some() {
@@ -555,7 +550,7 @@ impl Series {
 
                 let storage_dtype = match &map_dtype {
                     #[cfg(feature = "dtype-map")]
-                    Some(dtype) => dtype.map_storage_dtype().unwrap(),
+                    Some(map) => map.storage_dtype(),
                     _ => DataType::List(Box::new(entries_dtype)),
                 };
 
@@ -584,7 +579,7 @@ impl Series {
 
                 match map_dtype {
                     #[cfg(feature = "dtype-map")]
-                    Some(dtype) => {
+                    Some(map) => {
                         use crate::chunked_array::logical::ensure_live_entries_non_null;
 
                         // Entries a null row spans are left where the producer put them, so
@@ -592,10 +587,8 @@ impl Series {
                         ensure_live_entries_non_null(storage.list().unwrap())?;
                         // SAFETY: dtype and imported children are valid; live rows own no
                         // null entries or keys.
-                        Ok(
-                            unsafe { MapChunked::from_storage_unchecked(dtype, storage) }
-                                .into_series(),
-                        )
+                        Ok(unsafe { MapChunked::from_storage_unchecked(map, storage) }
+                            .into_series())
                     },
                     _ => Ok(storage),
                 }

@@ -164,7 +164,7 @@ impl PySeries {
                 DataType::BinaryOffset => {
                     unreachable!()
                 },
-                DataType::Map(_, _) => {
+                DataType::Map(_) => {
                     let ca = series.map().map_err(PyPolarsErr::from)?;
                     PyList::new(py, ca.any_value_iter().map(Wrap))?
                 },

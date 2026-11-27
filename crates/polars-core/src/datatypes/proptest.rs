@@ -286,7 +286,11 @@ fn dtype_map_strategy(
     key: impl Strategy<Value = DataType>,
     value: impl Strategy<Value = DataType>,
 ) -> impl Strategy<Value = DataType> {
-    (key, value).prop_map(|(key, value)| DataType::Map(Box::new(key), Box::new(value)))
+    (key, value).prop_filter_map("invalid Map key or value dtype", |(key, value)| {
+        crate::datatypes::MapDtype::try_new(key, value)
+            .ok()
+            .map(DataType::Map)
+    })
 }
 
 // AnyValue Strategies

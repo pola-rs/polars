@@ -50,10 +50,10 @@ unsafe fn try_from_physical_rec(series: &Series, dtype: &DataType) -> PolarsResu
     // SAFETY: every recursive call descends into both the physical Series and `dtype`.
     match dtype {
         #[cfg(feature = "dtype-map")]
-        D::Map(_, _) => {
-            let storage_dtype = dtype.map_storage_dtype().unwrap();
+        D::Map(map) => {
+            let storage_dtype = map.storage_dtype();
             let storage = unsafe { try_from_physical_rec(series, &storage_dtype)? };
-            Ok(MapChunked::try_from_storage(dtype.clone(), storage)?.into_series())
+            Ok(MapChunked::try_from_storage(map.clone(), storage)?.into_series())
         },
         D::List(inner) => {
             let ca = series.list().unwrap();

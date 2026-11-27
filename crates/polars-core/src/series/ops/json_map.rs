@@ -17,7 +17,8 @@ impl DataType {
         }
         self.try_visit_with(|_dtype| {
             #[cfg(feature = "dtype-map")]
-            if let DataType::Map(key, _) = _dtype {
+            if let DataType::Map(map) = _dtype {
+                let key = map.key();
                 polars_ensure!(
                     is_json_map_key(key),
                     ComputeError:
@@ -37,9 +38,9 @@ impl DataType {
         use DataType as D;
         match self {
             #[cfg(feature = "dtype-map")]
-            D::Map(_, value) => D::Map(Box::new(D::String), Box::new(value.json_decode_dtype()))
-                .map_storage_dtype()
-                .unwrap(),
+            D::Map(map) => MapDtype::try_new(D::String, map.value().json_decode_dtype())
+                .expect("a String key and a decoded valid value form a valid Map")
+                .storage_dtype(),
             D::List(inner) => D::List(Box::new(inner.json_decode_dtype())),
             #[cfg(feature = "dtype-array")]
             D::Array(inner, _) if inner.contains_map() => {
@@ -107,7 +108,8 @@ fn from_json_decoded_rec(
     ignore_errors: bool,
 ) -> PolarsResult<Series> {
     match target {
-        DataType::Map(key_dtype, value_dtype) => {
+        DataType::Map(map) => {
+            let (key_dtype, value_dtype) = (map.key(), map.value());
             let mut ok_keys: Option<Bitmap> = None;
             let storage = try_apply_map_entries(series.list()?, |key, value| {
                 // JSON object keys are never null, so a null marks an unknown Enum label.
@@ -134,7 +136,7 @@ fn from_json_decoded_rec(
                 },
                 None => storage,
             };
-            Ok(MapChunked::try_from_storage(target.clone(), storage)?.into_series())
+            Ok(MapChunked::try_from_storage(map.clone(), storage)?.into_series())
         },
         DataType::List(inner) if inner.contains_map() => {
             let ca = series.list()?;

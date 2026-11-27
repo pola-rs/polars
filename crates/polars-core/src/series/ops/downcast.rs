@@ -201,7 +201,7 @@ impl Series {
     /// Unpack to [`MapChunked`] of dtype [`DataType::Map`].
     #[cfg(feature = "dtype-map")]
     pub fn try_map(&self) -> Option<&MapChunked> {
-        try_unpack_chunked!(self, DataType::Map(_, _) => MapChunked)
+        try_unpack_chunked!(self, DataType::Map(_) => MapChunked)
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Struct`]

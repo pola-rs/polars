@@ -1162,7 +1162,7 @@ impl CastColumnsPolicy {
 
         if let DataType::List(target_inner) = target_dtype {
             #[cfg(feature = "dtype-map")]
-            if let Some(incoming_entries) = incoming_dtype.map_entries_dtype() {
+            if let Some(incoming_entries) = incoming_dtype.as_map().map(MapDtype::entries_dtype) {
                 self.should_cast_column(column_name, target_inner, &incoming_entries)?;
                 return Ok(true);
             }
@@ -1188,16 +1188,18 @@ impl CastColumnsPolicy {
         }
 
         #[cfg(feature = "dtype-map")]
-        if let DataType::Map(target_key, target_value) = target_dtype {
+        if let DataType::Map(target) = target_dtype {
+            let (target_key, target_value) = (target.key(), target.value());
             if let DataType::List(incoming_inner) = incoming_dtype {
-                let target_entries = target_dtype.map_entries_dtype().unwrap();
+                let target_entries = target.entries_dtype();
                 self.should_cast_column(column_name, &target_entries, incoming_inner)?;
                 return Ok(true);
             }
 
-            let DataType::Map(incoming_key, incoming_value) = incoming_dtype else {
+            let DataType::Map(incoming) = incoming_dtype else {
                 return mismatch_err("");
             };
+            let (incoming_key, incoming_value) = (incoming.key(), incoming.value());
 
             let Ok(cast_key) = incoming_key.matches_schema_type(target_key) else {
                 return mismatch_err("Map key types are not castable");

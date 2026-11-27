@@ -15,6 +15,8 @@ mod dtype;
 pub mod extension;
 mod field;
 mod into_scalar;
+#[cfg(feature = "dtype-map")]
+mod map_dtype;
 #[cfg(feature = "object")]
 mod static_array_collect;
 #[cfg(feature = "dtype-struct")]
@@ -37,6 +39,8 @@ use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 pub use into_scalar::*;
+#[cfg(feature = "dtype-map")]
+pub use map_dtype::MapDtype;
 use num_traits::{AsPrimitive, Bounded, FromPrimitive, Num, NumCast, One, Zero};
 pub use polars_arrow::array::{
     ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray,

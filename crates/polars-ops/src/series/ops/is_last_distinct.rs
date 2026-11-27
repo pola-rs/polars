@@ -20,7 +20,7 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // A Map groups on its row-encoded entries, so it must not reach the `List` arm below,
     // which sees the nested `List(Struct)` storage.
     #[cfg(feature = "dtype-map")]
-    if matches!(s.dtype(), DataType::Map(_, _)) {
+    if matches!(s.dtype(), DataType::Map(_)) {
         return is_last_distinct_by_groups(s);
     }
 
