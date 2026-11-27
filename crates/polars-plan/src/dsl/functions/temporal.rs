@@ -336,7 +336,7 @@ impl DurationArgs {
     impl_unit_setter!(with_nanoseconds(nanoseconds));
 
     #[cfg(feature = "dtype-duration")]
-    fn as_literal(&self) -> Option<Expr> {
+    fn as_literal(input: &[Expr; 8], time_unit: TimeUnit) -> Option<Expr> {
         // Fold by evaluating the function expr on the literals, cast as type coercion casts
         // them (other dtypes, nulls, and integers that do not fit into i64 are not folded)
         let to_column = |e: &Expr| {
@@ -356,49 +356,32 @@ impl DurationArgs {
             ))
         };
 
-        let fields = [
-            &self.weeks,
-            &self.days,
-            &self.hours,
-            &self.minutes,
-            &self.seconds,
-            &self.milliseconds,
-            &self.microseconds,
-            &self.nanoseconds,
-        ];
-        let inputs = fields
-            .into_iter()
-            .map(to_column)
-            .collect::<Option<Vec<_>>>()?;
-        let d = impl_duration(&inputs, self.time_unit).ok()?;
+        let inputs = input.iter().map(to_column).collect::<Option<Vec<_>>>()?;
+        let d = impl_duration(&inputs, time_unit).ok()?;
 
-        Some(
-            Expr::Literal(LiteralValue::Scalar(Scalar::new(
-                DataType::Duration(self.time_unit),
-                d.get(0).ok()?.into_static(),
-            )))
-            .alias(PlSmallStr::from_static("duration")),
-        )
+        let scalar = Scalar::new(DataType::Duration(time_unit), d.get(0).ok()?.into_static());
+        Some(lit(scalar).alias(PlSmallStr::from_static("duration")))
     }
 }
 
 /// Construct a column of [`Duration`] from the provided [`DurationArgs`]
 #[cfg(feature = "dtype-duration")]
 pub fn duration(args: DurationArgs) -> Expr {
-    if let Some(e) = args.as_literal() {
+    let input = [
+        args.weeks,
+        args.days,
+        args.hours,
+        args.minutes,
+        args.seconds,
+        args.milliseconds,
+        args.microseconds,
+        args.nanoseconds,
+    ];
+    if let Some(e) = DurationArgs::as_literal(&input, args.time_unit) {
         return e;
     }
     Expr::Function {
-        input: vec![
-            args.weeks,
-            args.days,
-            args.hours,
-            args.minutes,
-            args.seconds,
-            args.milliseconds,
-            args.microseconds,
-            args.nanoseconds,
-        ],
+        input: input.into(),
         function: FunctionExpr::TemporalExpr(TemporalFunction::Duration(args.time_unit)),
     }
 }

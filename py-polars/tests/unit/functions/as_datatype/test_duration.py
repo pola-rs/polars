@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import functools
 import math
-import operator
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from fractions import Fraction
@@ -234,6 +232,12 @@ def test_duration_overflow() -> None:
     expected = [17_280_000_000_500_000, 17_280_000_001_500_000]
     assert result.to_series().to_physical().to_list() == expected
 
+    # A wide scalar integer subtotal is broadcast before the final float addition.
+    result = pl.DataFrame({"hours": [-4_800_000.0, -4_799_999.0]}).select(
+        pl.duration(days=200_000, hours="hours", time_unit="ns")
+    )
+    assert result.to_series().to_physical().to_list() == [0, 3_600_000_000_000]
+
     # (masked values do not matter)
     masked = pl.when(pl.col("days") < 1_000).then("days")
     for days, hours in ((pl.col("days"), pl.col("hours")), (masked, pl.lit(1))):
@@ -293,20 +297,13 @@ def _expected_duration(kwargs: dict[str, float], unit_ns: int) -> int | None:
     # integers are summed exactly and truncated (towards zero), then the floats are
     # added (in component order) with float precision; null if out of range
     ints = sum(v * NANOSECONDS_PER[k] for k, v in kwargs.items() if isinstance(v, int))
-    total = int(Fraction(ints, unit_ns))
-    if not -(2**63) <= total < 2**63:
-        return None
-    terms = [
-        v * (ns // unit_ns) if ns >= unit_ns else v / (unit_ns // ns)
-        for k, ns in NANOSECONDS_PER.items()
-        if isinstance(v := kwargs.get(k), float)
-    ]
-    if not terms:
-        return total
-    f = functools.reduce(operator.add, terms)
-    if any(isinstance(v, int) for v in kwargs.values()):
-        f = float(total) + f
-    return int(f) if math.isfinite(f) and -(2**63) <= f < 2**63 else None
+    integer = int(Fraction(ints, unit_ns))
+    floats = 0.0
+    for k, ns in NANOSECONDS_PER.items():
+        if isinstance(v := kwargs.get(k), float):
+            floats += v * (ns // unit_ns) if ns >= unit_ns else v / (unit_ns // ns)
+    total = integer + floats if floats else integer
+    return int(total) if math.isfinite(total) and -(2**63) <= total < 2**63 else None
 
 
 @pytest.mark.parametrize("time_unit", ["ns", "us", "ms"])
@@ -332,6 +329,8 @@ def _expected_duration(kwargs: dict[str, float], unit_ns: int) -> int | None:
         {"days": 300 * 365, "nanoseconds": 1},
         # (integers are truncated exactly before floats are added)
         {"days": 200, "nanoseconds": 1, "seconds": 0.0},
+        {"seconds": 10**10, "nanoseconds": 1_000, "microseconds": 0.0},
+        {"days": 200_000, "hours": -4_800_000.0},
         {"nanoseconds": 1_700_000_000_000_000_999, "seconds": 0.5},
         {"nanoseconds": -1_700_000_000_000_000_999, "seconds": -0.5},
         {"nanoseconds": 999, "microseconds": 0.9995},
@@ -350,20 +349,24 @@ def _expected_duration(kwargs: dict[str, float], unit_ns: int) -> int | None:
 def test_duration_combines_components(
     kwargs: dict[str, float], time_unit: TimeUnit
 ) -> None:
-    # (the same for columns and for literals, which are constant-folded; zero float
-    # literals are skipped, so they do not make the integers float)
+    # The same result for columns and for literals, including zero float columns.
     unit_ns = {"ns": 1, "us": 1_000, "ms": 1_000_000}[time_unit]
-    df = pl.DataFrame({k: [v, v] for k, v in kwargs.items()})
-    evaluated = df.select(
-        pl.duration(**{k: pl.col(k) for k in kwargs}, time_unit=time_unit)  # type: ignore[arg-type]
-    )
+    other = {k: type(v)(1) for k, v in kwargs.items()}
+    df = pl.DataFrame({k: [v, other[k]] for k, v in kwargs.items()})
+    expr = pl.duration(
+        **{k: pl.col(k) for k in kwargs},
+        time_unit=time_unit,  # type: ignore[arg-type]
+    ).to_physical()
+    evaluated = df.select(expr)
     expected = _expected_duration(kwargs, unit_ns)
-    assert evaluated.to_series().to_physical().to_list() == [expected] * 2
+    assert evaluated.to_series().to_list() == [
+        expected,
+        _expected_duration(other, unit_ns),
+    ]
+    assert df.head(1).select(expr).to_series().item() == expected
 
     folded = pl.select(pl.duration(**kwargs, time_unit=time_unit))  # type: ignore[arg-type]
     assert folded.columns == ["duration"]  # (folded into a literal)
-    nonzero = {k: v for k, v in kwargs.items() if v != 0}
-    expected = _expected_duration(nonzero, unit_ns)
     assert folded.to_series().to_physical().item() == expected
 
 

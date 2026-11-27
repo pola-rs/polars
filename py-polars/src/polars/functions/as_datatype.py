@@ -334,7 +334,7 @@ def duration(
     please use :meth:`polars.Expr.dt.offset_by` instead.
 
     Integer components are combined exactly and truncated (towards zero) to
-    `time_unit`, and float components are then added with float precision. Totals
+    `time_unit`. A nonzero float subtotal is then added with float precision. Totals
     that do not fit into `time_unit`, or are not finite, are null (integer inputs that
     do not fit into Int64 raise an error).
 
