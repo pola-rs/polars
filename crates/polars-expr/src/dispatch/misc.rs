@@ -484,13 +484,17 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         needle_s.len()
     );
     let needle_s = &match (series.dtype(), needle_s.dtype()) {
-        // Type coercion leaves a string needle of a Categorical as is, to be looked up here:
-        // casting it would add it to the categories.
+        // Type coercion leaves a string needle of a Categorical or Enum as is, to be looked up
+        // here: casting adds it to a Categorical's categories, and fails or gives null for one
+        // an Enum lacks.
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(_, mapping), DataType::String) => {
+        (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping), DataType::String) => {
             let av = match needle_s.str()?.get(0) {
                 None => AnyValue::Null,
                 Some(v) => match mapping.get_cat(v) {
+                    Some(cat) if series.dtype().is_enum() => {
+                        AnyValue::EnumOwned(cat, mapping.clone())
+                    },
                     Some(cat) => AnyValue::CategoricalOwned(cat, mapping.clone()),
                     None => return Ok(Column::full_null(series.name().clone(), 1, &IDX_DTYPE)),
                 },

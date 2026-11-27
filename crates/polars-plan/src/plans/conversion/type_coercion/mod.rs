@@ -798,12 +798,15 @@ impl OptimizationRule for TypeCoercionRule {
                     } else {
                         CastOptions::NonStrict
                     };
-                    let keep_strings = super_type.is_categorical()
-                        && matches!(
-                            casting_rules,
-                            CastingRules::FirstArgLosslessKeepString
-                                | CastingRules::FirstArgLosslessOrSupertypeWithWarning
-                        );
+                    let keep_strings = match casting_rules {
+                        CastingRules::FirstArgLosslessKeepString => {
+                            super_type.is_categorical() || super_type.is_enum()
+                        },
+                        CastingRules::FirstArgLosslessOrSupertypeWithWarning => {
+                            super_type.is_categorical()
+                        },
+                        CastingRules::Supertype(_) => false,
+                    };
                     for (i, (e, dtype)) in input.iter_mut().zip(dtypes).enumerate() {
                         let to_dtype = if keep_strings && i > 0 && dtype.is_string() {
                             &DataType::String

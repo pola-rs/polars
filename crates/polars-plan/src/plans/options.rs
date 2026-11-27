@@ -194,11 +194,13 @@ pub enum CastingRules {
     /// whereas int to int is considered lossless.
     /// Overflowing is not considered in this flag, that's handled in `strict` casting.
     ///
-    /// String arguments of a `Categorical` first argument are not cast, as that would add them
-    /// to its categories: the function must look them up.
+    /// String arguments of a `Categorical` or `Enum` first argument are not cast (which adds them
+    /// to a `Categorical`'s categories, and fails or gives null for those an `Enum` lacks): the
+    /// function must look them up.
     FirstArgLosslessKeepString,
-    /// Like `FirstArgLosslessKeepString`, but falls back to the deprecated supertype casting.
-    // @3.0: Replace by `FirstArgLosslessKeepString`.
+    /// Like `FirstArgLosslessKeepString`, but only keeps strings for a `Categorical`, and falls
+    /// back to the deprecated supertype casting.
+    // @3.0: Drop the supertype fallback.
     FirstArgLosslessOrSupertypeWithWarning,
     Supertype(SuperTypeOptions),
 }

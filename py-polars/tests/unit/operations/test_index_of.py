@@ -399,10 +399,20 @@ def test_index_of_categorical_absent_adds_no_categories(
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 def test_index_of_enum_absent(engine: EngineType) -> None:
-    lf = pl.LazyFrame({"s": ["b", "a"]}, schema={"s": pl.Enum(["a", "b", "c"])})
-    for needle in ["absent", "c"]:
+    s = pl.Series("s", ["b", None, "a"], dtype=pl.Enum(["a", "b", "c"]))
+    lf = s.to_frame().with_columns(needle=pl.lit("absent")).lazy()
+    cases: list[tuple[IntoExpr, int | None]] = [
+        ("absent", None),
+        ("c", None),
+        (pl.col("needle").first(), None),
+        ("a", 2),
+        (pl.lit(None, dtype=pl.String), 1),
+    ]
+    for needle, expected in cases:
         result = lf.select(pl.col("s").index_of(needle)).collect(engine=engine)
-        assert result.item() is None
+        assert result.item() == expected
+    assert s.index_of("absent") is None
+    assert s.sort().index_of("absent") is None
 
 
 @pytest.mark.parametrize("value", [0, 0.1])
