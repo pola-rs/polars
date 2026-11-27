@@ -157,6 +157,26 @@ def test_replace_strict_str_to_cat() -> None:
     assert_series_equal(result, expected, categorical_as_str=True)
 
 
+def test_replace_strict_extension_keys_to_categorical() -> None:
+    s = pl.Series(["a", "b"], dtype=pl.Extension("test.replace.key", pl.String))
+    result = s.replace_strict(
+        {"a": "x", "b": "y"}, default=None, return_dtype=pl.Categorical
+    )
+    assert_series_equal(
+        result, pl.Series(["x", "y"], dtype=pl.Categorical), categorical_as_str=True
+    )
+
+
+def test_replace_strict_join_result_name_collision() -> None:
+    s = pl.Series("__POLARS_REPLACE_RESULT", ["a", "b"])
+    result = s.replace_strict({"a": "x", "b": "y"}, return_dtype=pl.Categorical)
+    assert_series_equal(
+        result,
+        pl.Series("__POLARS_REPLACE_RESULT", ["x", "y"], dtype=pl.Categorical),
+        categorical_as_str=True,
+    )
+
+
 @pytest.mark.parametrize("with_default", [False, True])
 def test_replace_strict_only_adds_used_output_categories(
     with_default: bool,
@@ -262,6 +282,76 @@ def test_replace_strict_categorical_absent_old_adds_no_categories(
     with pytest.raises(InvalidOperationError, match="incomplete mapping"):
         lf.select(pl.col("s").replace_strict({"x": "1"})).collect(engine=engine)
     assert cats.to_series().to_list() == ["a", "b"]
+
+
+@pytest.mark.parametrize("new_dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 1)])
+def test_replace_strict_categorical_nested_value_after_key_filter(
+    new_dtype: PolarsDataType,
+) -> None:
+    s = pl.Series(["a", None], dtype=pl.Categorical(pl.Categories.random()))
+    new = pl.Series([[1], [2]], dtype=new_dtype)
+    result = s.replace_strict(["a", "absent"], pl.lit(new).implode())
+    assert_series_equal(result, pl.Series([[1], None], dtype=new_dtype))
+
+
+@pytest.mark.parametrize("register_keys", [False, True])
+@pytest.mark.parametrize("with_default", [False, True])
+def test_replace_strict_all_null_categorical_resolves_list_dtype(
+    register_keys: bool,
+    with_default: bool,
+) -> None:
+    dtype = pl.Categorical(pl.Categories.random())
+    s = pl.Series([None, None], dtype=dtype)
+    if register_keys:
+        pl.Series(["x", "y"], dtype=dtype)
+
+    if with_default:
+        result = s.replace_strict(
+            {"x": [1], "y": [2]}, default=None, return_dtype=pl.List
+        )
+    else:
+        result = s.replace_strict({"x": [1], "y": [2]}, return_dtype=pl.List)
+    assert_series_equal(result, pl.Series([None, None], dtype=pl.List(pl.Int64)))
+
+
+@pytest.mark.parametrize("with_default", [False, True])
+def test_replace_strict_all_null_categorical_resolves_struct_list_dtype(
+    with_default: bool,
+) -> None:
+    s = pl.Series([None], dtype=pl.Categorical(pl.Categories.random()))
+    categories = pl.Categories.random()
+    dtype = pl.Struct({"xs": pl.List, "label": pl.Categorical(categories)})
+    new = pl.Series([{"xs": [1], "label": "a"}, {"xs": [2], "label": "b"}])
+
+    values = pl.lit(new).implode()
+    if with_default:
+        result = s.replace_strict(["x", "y"], values, default=None, return_dtype=dtype)
+    else:
+        result = s.replace_strict(["x", "y"], values, return_dtype=dtype)
+
+    expected_dtype = pl.Struct(
+        {"xs": pl.List(pl.Int64), "label": pl.Categorical(categories)}
+    )
+    assert_series_equal(result, pl.Series([None], dtype=expected_dtype))
+
+
+@pytest.mark.parametrize(
+    ("values", "expected", "dtype"),
+    [
+        (["a", "b"], [[1], [2]], pl.List(pl.Int64)),
+        (["a", "z"], [["1"], ["s"]], pl.List(pl.String)),
+    ],
+)
+def test_replace_strict_only_coerces_used_default(
+    values: list[str],
+    expected: list[list[int] | list[str]],
+    dtype: PolarsDataType,
+) -> None:
+    s = pl.Series(values, dtype=pl.Categorical(pl.Categories.random()))
+    result = s.replace_strict(
+        {"a": [1], "b": [2]}, default=pl.lit(["s"]), return_dtype=pl.List
+    )
+    assert_series_equal(result, pl.Series(expected, dtype=dtype))
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
