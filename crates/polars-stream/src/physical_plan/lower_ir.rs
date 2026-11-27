@@ -1377,6 +1377,7 @@ fn lower_ir_inner(
             let args = options.args.clone();
             let runtime_filters = options.runtime_filters.clone();
             let estimated_rows = options.estimated_rows;
+            let pass_through_above = options.pass_through_above;
             let options = options.options.clone();
             // Only the hash equi join evaluates a fused predicate natively; other strategies get
             // a `Filter` on top, and the in-memory fallback applies it from `options`.
@@ -1728,6 +1729,7 @@ fn lower_ir_inner(
                             estimated_rows,
                             key_ranges: key_ranges.clone(),
                             pre_drop_schema: None,
+                            pass_through_above,
                         },
                     )),
                     _ if args.how.is_equi() => {
