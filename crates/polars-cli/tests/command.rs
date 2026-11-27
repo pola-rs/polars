@@ -437,11 +437,23 @@ fn unreadable_script() {
 
 #[test]
 fn version() {
+    let version = match option_env!("POLARS_BUILD_COMMIT") {
+        Some(commit) => format!(
+            "{} ({})",
+            env!("CARGO_PKG_VERSION"),
+            commit.get(..10).unwrap_or(commit)
+        ),
+        None => env!("CARGO_PKG_VERSION").to_string(),
+    };
     assert_eq!(
         run(&["--version"]),
+        (0, format!("polars {version}\n"), String::new())
+    );
+    assert_eq!(
+        run(&["--format", "csv", "-c", "SELECT version()"]),
         (
             0,
-            format!("polars {}\n", env!("CARGO_PKG_VERSION")),
+            format!("version\n{}\n", env!("CARGO_PKG_VERSION")),
             String::new()
         )
     );

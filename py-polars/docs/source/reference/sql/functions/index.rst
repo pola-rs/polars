@@ -80,6 +80,16 @@ Functions
 
     .. grid-item-card::
 
+        **System**
+        ^^^^^^^^^^
+
+        .. toctree::
+           :maxdepth: 2
+
+           system
+
+    .. grid-item-card::
+
         **Temporal**
         ^^^^^^^^^^^^
 
@@ -98,6 +108,8 @@ Functions
 
            trigonometry
 
+.. grid::
+
     .. grid-item-card::
 
         **Types**
@@ -108,8 +120,6 @@ Functions
 
            types
 
-.. grid::
-
     .. grid-item-card::
 
         **Window**
@@ -119,9 +129,6 @@ Functions
            :maxdepth: 2
 
            window
-
-    .. grid-item-card::
-        :class-card: invisible-card
 
     .. grid-item-card::
         :class-card: invisible-card
