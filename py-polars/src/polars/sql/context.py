@@ -626,8 +626,7 @@ class SQLContext(Generic[FrameType]):
         Reads of one table share its loaded metadata, so a statement sees one state of
         it within a process. `target` is the table a `MERGE` loaded.
         """
-        from polars.io.iceberg._time_travel import resolve_version
-        from polars.io.iceberg.functions import scan_iceberg
+        from polars.io.iceberg.functions import _scan_loaded_table
 
         tables: dict[tuple[str, ...], IcebergTableWrap] = {}
         scans = []
@@ -636,14 +635,8 @@ class SQLContext(Generic[FrameType]):
             identifier: list[str] = read.identifier
             if target is not None and [catalog_name, *identifier] == target[0]:
                 # every reference to a MERGE target reads the table loaded for it
-                table = target[1]
-                snapshot_id = (
-                    None if version is None else resolve_version(table, version)
-                )
-                lf = scan_iceberg(
-                    table,
-                    snapshot_id=snapshot_id,
-                    storage_options=self._catalogs[catalog_name][2],
+                lf = _scan_loaded_table(
+                    target[1], self._catalogs[catalog_name][2], version
                 )
             else:
                 lf = self._scan_catalog_relation(

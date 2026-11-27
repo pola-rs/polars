@@ -137,6 +137,7 @@ def _scan_pyarrow_dataset_impl(
     snapshot_id: int | None = None,
     from_snapshot_id_exclusive: int | None = None,
     to_snapshot_id_inclusive: int | None = None,
+    read_schema: pyiceberg.schema.Schema | None = None,
     **kwargs: Any,  # noqa: ARG001
 ) -> tuple[Iterable[DataFrame], bool]:
     """
@@ -158,6 +159,8 @@ def _scan_pyarrow_dataset_impl(
         The exclusive start of an incremental append scan.
     to_snapshot_id_inclusive
         The inclusive end of an incremental append scan.
+    read_schema
+        The schema to read with instead of the snapshot's (a branch's: the table's).
     batch_size
         The maximum row count for scanned pyarrow record batches.
     kwargs:
@@ -200,20 +203,41 @@ def _scan_pyarrow_dataset_impl(
 
             return (gen(), False)
 
-        scan = scan.select(*with_columns)
+        if read_schema is None:
+            scan = scan.select(*with_columns)
+        else:
+            read_schema = read_schema.select(*with_columns)
+
+    def batch_reader(scan: Any) -> Iterable[Any]:
+        if read_schema is None:
+            return scan.to_arrow_batch_reader()  # type: ignore[no-any-return]
+        import pyarrow as pa
+        from pyiceberg.io.pyarrow import ArrowScan, schema_to_pyarrow
+
+        # As `to_arrow_batch_reader`, which reads with the snapshot's schema.
+        target = schema_to_pyarrow(read_schema)
+        batches = ArrowScan(
+            scan.table_metadata,
+            scan.io,
+            read_schema,
+            scan.row_filter,
+            scan.case_sensitive,
+            scan.limit,
+        ).to_record_batches(scan.plan_files())
+        return pa.RecordBatchReader.from_batches(target, batches).cast(target)
 
     try:
-        batches = (
+        batches = batch_reader(
             scan.filter(iceberg_table_filter)
             if iceberg_table_filter is not None
             else scan
-        ).to_arrow_batch_reader()
+        )
     except TypeError:
         if iceberg_table_filter is None:
             raise
         # PyIceberg's residual evaluator compares null partition values (e.g. `x > 1`
         # under an `Or`), and fails. Polars applies the predicate itself.
-        batches = scan.to_arrow_batch_reader()
+        batches = batch_reader(scan)
 
     return ((pl.DataFrame(batch) for batch in batches), False)
 
