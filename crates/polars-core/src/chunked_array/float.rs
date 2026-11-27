@@ -1,6 +1,7 @@
 use num_traits::Float;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::legacy::kernels::set::set_at_nulls;
+use polars_compute::finite::{is_finite, is_infinite};
 use polars_compute::nan::{is_nan, is_not_nan};
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
@@ -27,10 +28,17 @@ where
         })
     }
     pub fn is_finite(&self) -> BooleanChunked {
-        unary_elementwise_values(self, |x| x.is_finite())
+        unary_kernel(self, |arr| {
+            let out =
+                is_finite(arr.values()).unwrap_or_else(|| Bitmap::new_with_value(true, arr.len()));
+            BooleanArray::from(out).with_validity(arr.validity().cloned())
+        })
     }
     pub fn is_infinite(&self) -> BooleanChunked {
-        unary_elementwise_values(self, |x| x.is_infinite())
+        unary_kernel(self, |arr| {
+            let out = is_infinite(arr.values()).unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
+            BooleanArray::from(out).with_validity(arr.validity().cloned())
+        })
     }
 
     #[must_use]
