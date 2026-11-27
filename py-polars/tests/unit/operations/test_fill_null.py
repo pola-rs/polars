@@ -82,6 +82,19 @@ def test_fill_null_categorical_adds_only_used_values(
     assert_frame_equal(result, pl.DataFrame({"s": ["a", other]}, schema={"s": dtype}))
     assert other in cats
 
+    # Of a fill column, only the values at the nulls are output.
+    unused_col, used_col = (f"{name}-{uuid4()}" for name in ("unused", "used"))
+    lf_fill = pl.LazyFrame(
+        {"s": ["a", None], "f": [unused_col, used_col]},
+        schema={"s": dtype, "f": pl.String},
+    )
+    result = lf_fill.select(pl.col("s").fill_null(pl.col("f"))).collect(engine=engine)
+    assert_frame_equal(
+        result, pl.DataFrame({"s": ["a", used_col]}, schema={"s": dtype})
+    )
+    assert used_col in cats
+    assert unused_col not in cats
+
 
 def test_fill_null_categorical_scalar_with_string_series() -> None:
     dtype = pl.Categorical(pl.Categories.random())

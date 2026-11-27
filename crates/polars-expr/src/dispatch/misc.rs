@@ -609,14 +609,18 @@ pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
 }
 
 pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
-    // Type coercion leaves a string fill value of a Categorical as is (casting
-    // adds it to the categories); that is only done here, when it fills nulls.
+    // Type coercion leaves a string fill value of a Categorical as is, as casting adds
+    // it to the categories: it is only cast here, where it fills a null.
     let fill_value = || {
-        if s[0].dtype().is_categorical() && s[1].dtype().is_string() {
-            s[1].cast(s[0].dtype())
-        } else {
-            Ok(s[1].clone())
+        if !(s[0].dtype().is_categorical() && s[1].dtype().is_string()) {
+            return Ok(s[1].clone());
         }
+        let mut fill_value = s[1].clone();
+        if fill_value.len() == s[0].len() {
+            let nulls = Column::full_null(PlSmallStr::EMPTY, fill_value.len(), &DataType::String);
+            fill_value = fill_value.zip_with_same_type(&s[0].is_null(), &nulls)?;
+        }
+        fill_value.cast(s[0].dtype())
     };
     match (s[0].len(), s[1].len()) {
         (a, b) if a == b || b == 1 => {
