@@ -18,6 +18,7 @@ def lazified_read_lines(*a: Any, **kw: Any) -> pl.LazyFrame:
     return pl.read_lines(*a, **kw).lazy()
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("patch_scan_lines", [True, False])
 @pytest.mark.parametrize("force_unit_chunk_size", [True, False])
 @pytest.mark.parametrize("carriage_return", [True, False])

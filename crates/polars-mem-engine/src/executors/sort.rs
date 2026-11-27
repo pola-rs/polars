@@ -5,7 +5,7 @@ use super::*;
 pub(crate) struct SortExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) by_column: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) slice: Option<(i64, usize)>,
+    pub(crate) slice: Option<Slice>,
     pub(crate) sort_options: SortMultipleOptions,
 }
 

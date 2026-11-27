@@ -1,0 +1,963 @@
+"""
+`scan_database` against a Databricks SQL warehouse.
+
+These run when `POLARS_TEST_DATABRICKS_URI` is set (see `_databricks.py`, which also
+seeds the tables). Every query goes over the internet to a metered warehouse and takes
+seconds, so each test reads a handful of small tables. The generic matrix (every
+row, the predicate corpus, types) is in `test_scan_servers.py`; here are the
+checks that only Databricks needs: its `TIMESTAMP` is a local-time-zone type
+(`TIMESTAMP_NTZ` is the naive one), `TIME`, collations in column types, views, and
+string literals.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import re
+from datetime import UTC, date, datetime, time
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
+
+import pytest
+
+import polars as pl
+from polars.testing import assert_frame_equal
+from tests.unit.io.database._databricks import CHAR_VALUES, ENV, ensure_seeded
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
+pytest.importorskip("polars_database")
+pytest.importorskip("sqlglot")
+
+URI = os.environ.get(ENV)
+
+pytestmark = [
+    pytest.mark.skipif(URI is None, reason=f"{ENV} is not set"),
+]
+
+
+def _uri(**params: str) -> str:
+    assert URI is not None
+    ensure_seeded(URI)
+    sep = "&" if "?" in URI else "?"
+    return URI + "".join(
+        f"{sep if i == 0 else '&'}{k}={v}" for i, (k, v) in enumerate(params.items())
+    )
+
+
+def _connection(**kwargs: Any) -> Callable[[], Any]:
+    from tests.unit.io.database._databricks import connect
+
+    assert URI is not None
+    ensure_seeded(URI)
+    return lambda: connect(URI, **kwargs)
+
+
+def _scan(source: str, how: str = "adbc", **kwargs: Any) -> pl.LazyFrame:
+    """
+    Scan `source` on the test workspace.
+
+    `how`: `adbc`, `databricks.sql` (from the URI), `factory` (a connection) or `engine`
+    (a SQLAlchemy Engine).
+    """
+    if how == "factory":
+        return pl.scan_database(source, _connection(), **kwargs)
+    if how == "engine":
+        return pl.scan_database(source, _engine(), **kwargs)
+    return pl.scan_database(source, _uri(), driver=how, **kwargs)
+
+
+def _filters(lf: pl.LazyFrame) -> tuple[int, int, int]:
+    """(pushed, total, exact) filters of the plan."""
+    m = re.search(r"filters (\d+)/(\d+) \((\d+) exact\)", lf.explain())
+    assert m is not None, lf.explain()
+    return int(m[1]), int(m[2]), int(m[3])
+
+
+def _ids(df: pl.DataFrame) -> list[int]:
+    return sorted(df["id"].to_list())
+
+
+def _check(
+    lf: pl.LazyFrame, reference: pl.DataFrame, predicates: dict[str, pl.Expr]
+) -> None:
+    """Every predicate, pushed, must return the rows Polars selects from the table."""
+    failures = []
+    for name, p in predicates.items():
+        try:
+            got = _ids(lf.filter(p).select("id").collect())
+        except Exception as e:
+            got = [f"{type(e).__name__}: {e}"]  # type: ignore[list-item]
+        expected = _ids(reference.filter(p))
+        if got != expected:
+            failures.append(f"{name}: got {got}, expected {expected}")
+    assert not failures, "\n".join(failures)
+
+
+# --- TIME ----------------------------------------------------------------------------
+
+
+def test_time_filters_are_pushed_as_time_literals() -> None:
+    # sqlglot writes a Spark `TIME` as `TIMESTAMP`, which a `TIME` column can't be
+    # compared with
+    lf = _scan("edge_types")
+    reference = _scan("edge_types", pushdown=False).collect()
+    assert reference.schema["t"] == pl.Time
+    predicates = {
+        "==": pl.col("t") == time(13, 45, 30, 123456),
+        "!=": pl.col("t") != time(13, 45, 30, 123456),
+        "<": pl.col("t") < time(13, 45, 30, 123457),
+        ">": pl.col("t") > time(0, 0),
+        ">=": pl.col("t") >= time(0, 0),
+        "between": pl.col("t").is_between(time(1), time(23)),
+        "is_null": pl.col("t").is_null(),
+    }
+    _check(lf, reference, predicates)
+    assert _filters(lf.filter(predicates["=="])) == (1, 1, 1)
+    sql = lf.filter(predicates["=="]).explain()
+    assert "`t` = TIME '13:45:30.123456'" in sql
+
+
+# --- time zones ----------------------------------------------------------------------
+
+# 2024-03-10 02:30 doesn't exist in Los Angeles (the clocks jump from 02:00 to 03:00),
+# 2024-11-03 01:30 happens twice; Kolkata is +05:30 all year
+ZONES = ["America/Los_Angeles", "Asia/Kolkata"]
+
+
+def _zone_predicates(zone: str) -> dict[str, pl.Expr]:
+    tz = ZoneInfo(zone)
+    ntz, ltz = pl.col("ntz"), pl.col("ltz")
+    return {
+        "ntz == gap 02:30": ntz == datetime(2024, 3, 10, 2, 30),
+        "ntz == 03:30": ntz == datetime(2024, 3, 10, 3, 30),
+        "ntz == summer noon": ntz == datetime(2024, 7, 1, 12),
+        "ntz >= ambiguous 01:30": ntz >= datetime(2024, 11, 3, 1, 30),
+        "ntz < winter noon": ntz < datetime(2024, 1, 1, 12),
+        "ltz == 03:30 local": ltz == datetime(2024, 3, 10, 3, 30, tzinfo=tz),
+        "ltz == summer noon local": ltz == datetime(2024, 7, 1, 12, tzinfo=tz),
+        "ltz >= 11-03 01:30 UTC": ltz.dt.convert_time_zone("UTC")
+        >= datetime(2024, 11, 3, 1, 30, tzinfo=UTC),
+        "ltz is_null": ltz.is_null(),
+    }
+
+
+@pytest.mark.parametrize("zone", ZONES)
+@pytest.mark.parametrize("how", ["adbc", "factory"])
+def test_timestamps_in_another_session_time_zone(zone: str, how: str) -> None:
+    """
+    Naive literals are `TIMESTAMP_NTZ`.
+
+    `TIMESTAMP` would convert them in the session's zone, so the skipped 02:30 matched
+    03:30 as well.
+    """
+    if how == "adbc":
+        make: Callable[..., pl.LazyFrame] = lambda **kw: pl.scan_database(  # noqa: E731
+            "edge_zones", _uri(timezone=zone), **kw
+        )
+    else:
+        factory = _connection(session_configuration={"timezone": zone})
+        make = lambda **kw: pl.scan_database("edge_zones", factory, **kw)  # noqa: E731
+    lf = make()
+    reference = make(pushdown=False).collect()
+    # the zone-aware column is in the session's zone; its instants don't change
+    assert reference.schema["ltz"] == pl.Datetime("us", zone)
+    assert reference.schema["ntz"] == pl.Datetime("us")
+    utc = reference.select(pl.col("ltz").dt.convert_time_zone("UTC"))["ltz"].to_list()
+    assert utc[1] == datetime(2024, 3, 10, 10, 30, tzinfo=UTC)
+    _check(lf, reference, _zone_predicates(zone))
+    # the pushed SQL is explicit about both kinds
+    assert _filters(lf.filter(pl.col("ntz") == datetime(2024, 3, 10, 2, 30))) == (
+        1,
+        1,
+        1,
+    )
+
+
+def test_naive_literal_on_a_column_of_unknown_kind_is_not_pushed() -> None:
+    # a user who types a `TIMESTAMP` (zone-aware) column as naive: its kind is not NTZ
+    schema_overrides = {"ltz": pl.Datetime("us")}
+    lf = _scan("edge_zones", schema_overrides=schema_overrides)
+    reference = _scan(
+        "edge_zones", pushdown=False, schema_overrides=schema_overrides
+    ).collect()
+    p = pl.col("ltz") == datetime(2024, 3, 10, 10, 30)
+    assert _filters(lf.filter(p))[0] == 0
+    _check(lf, reference, {"ltz == naive": p})
+
+
+def test_query_timestamp_columns_are_classified_by_the_result_type() -> None:
+    lf = _scan("SELECT id, ntz, ltz FROM edge_zones")
+    reference = _scan("SELECT id, ntz, ltz FROM edge_zones", pushdown=False).collect()
+    assert _filters(lf.filter(pl.col("ntz") == datetime(2024, 3, 10, 2, 30))) == (
+        1,
+        1,
+        1,
+    )
+    _check(lf, reference, _zone_predicates("UTC"))
+
+
+# --- views ---------------------------------------------------------------------------
+
+
+def test_views_are_read_with_one_query() -> None:
+    for source in ("rand_view", "SELECT * FROM rand_view"):
+        lf = _scan(source)
+        assert "partitions: 1" in lf.explain()
+        assert lf.collect().height == 100
+    out = _scan("plain_view").collect().sort("id")
+    assert out["id"].to_list() == list(range(1, 101))
+    assert out["twice"].to_list() == list(range(2, 201, 2))
+
+
+def test_nested_view_resolves_in_its_creation_namespace() -> None:
+    # `nested_plain_view` reads `plain_view` unqualified, as of the schema it was
+    # created in: from a session in another schema it is still found (the view's own
+    # namespace is the context of its names, not the session's)
+    from tests.unit.io.database._databricks import connect, parts
+
+    assert URI is not None
+    ensure_seeded(URI)
+    other = parts(URI)["catalog"]
+
+    def factory() -> Any:
+        return connect(URI, catalog=other, schema="information_schema")
+
+    p = parts(URI)
+    qualified = f"{p['catalog']}.{p['schema']}"
+    lf = pl.scan_database(f"{qualified}.nested_plain_view", factory)
+    assert lf.collect().height == 100
+
+
+def test_temporary_views_shadow_tables() -> None:
+    from tests.unit.io.database._databricks import connect, execute
+
+    assert URI is not None
+    ensure_seeded(URI)
+    conn = connect(URI)
+    try:
+        # a temporary view hides the table `orders` of its name on this connection
+        execute(
+            conn,
+            "CREATE OR REPLACE TEMP VIEW orders AS "
+            "SELECT id, rand() AS r FROM range(1, 101) AS t(id)",
+        )
+        # the shadowing view is what is read
+        assert pl.scan_database("orders", conn).collect_schema().names() == ["id", "r"]
+    finally:
+        conn.close()
+    # another connection sees the table
+    assert _scan("orders").collect_schema().names()[:2] == ["id", "customer"]
+
+
+def test_view_with_schema_evolution_has_the_current_collation() -> None:
+    # the stored schema of a `WITH SCHEMA EVOLUTION` view is stale until something reads
+    # it; the server compares by the base column's current collation
+    from tests.unit.io.database._databricks import connect, execute
+
+    assert URI is not None
+    ensure_seeded(URI)
+    conn = connect(URI)
+    try:
+        for stmt in [
+            "DROP VIEW IF EXISTS collation_v",
+            "DROP TABLE IF EXISTS collation_t",
+            "CREATE TABLE collation_t (id INT, s STRING)",
+            "INSERT INTO collation_t VALUES (1,'abc'),(2,'ABC'),(3,'Abc'),(4,'abd'),(5,NULL)",
+            "CREATE VIEW collation_v WITH SCHEMA EVOLUTION AS SELECT * FROM collation_t",
+            "ALTER TABLE collation_t ALTER COLUMN s TYPE STRING COLLATE UTF8_LCASE",
+        ]:
+            execute(conn, stmt)
+        # the first scan, before anything reads the view
+        lf = pl.scan_database("collation_v", conn)
+        assert _ids(lf.filter(pl.col("s") == "abc").collect()) == [1]
+    finally:
+        for stmt in [
+            "DROP VIEW IF EXISTS collation_v",
+            "DROP TABLE IF EXISTS collation_t",
+        ]:
+            execute(conn, stmt)
+        conn.close()
+
+
+# --- strings -------------------------------------------------------------------------
+
+
+def _pushable(v: str) -> bool:
+    return not any(ord(c) < 32 and c not in "\t\n\r" for c in v)
+
+
+def test_string_literals_with_control_characters() -> None:
+    """Control characters other than tab, newline and carriage return aren't pushed."""
+    lf = _scan("edge_chars")
+    reference = _scan("edge_chars", pushdown=False).collect()
+    assert reference.height == len(CHAR_VALUES) + 1
+    failures = []
+    for v in CHAR_VALUES:
+        p = pl.col("s") == v
+        got = _ids(lf.filter(p).select("id").collect())
+        expected = _ids(reference.filter(p))
+        if got != expected or len(expected) != 1:
+            failures.append(f"{v!r}: got {got}, expected {expected}")
+        pushed = _filters(lf.filter(p))[0] == 1
+        if pushed != _pushable(v):
+            failures.append(f"{v!r}: pushed={pushed}")
+    assert not failures, "\n".join(failures)
+
+
+def test_string_predicates_with_special_characters() -> None:
+    lf = _scan("edge_chars")
+    reference = _scan("edge_chars", pushdown=False).collect()
+    s = pl.col("s")
+    _check(
+        lf,
+        reference,
+        {
+            "contains tab": s.str.contains("\t", literal=True),
+            "contains backslash": s.str.contains("\\", literal=True),
+            "contains quote": s.str.contains("'", literal=True),
+            "contains percent": s.str.contains("%", literal=True),
+            "contains underscore": s.str.contains("_", literal=True),
+            "starts_with bell": s.str.starts_with("a\x07"),
+            "ends_with newline": s.str.ends_with("\n"),
+            "is_in": s.is_in(["é", "😀", "it's", "a\x00b", ""]),
+            "<": s < "b",
+            ">=": s >= "é",
+            "!=": s != "plain",
+            "~==": ~(s == "tab\there"),
+        },
+    )
+
+
+# collation: `edge_collations` columns, which of them compare like Polars, and a table
+# whose default collation applies to a column declared without one
+COLLATED = {"s": True, "lc": False, "ci": False, "ai": False, "u": False}
+
+
+def test_collations_are_classified_and_never_lose_rows() -> None:
+    reference = _scan("edge_collations", pushdown=False).collect()
+    lf = _scan("edge_collations")
+    failures = []
+    for col, exact in COLLATED.items():
+        c = pl.col(col)
+        predicates = {
+            "==": c == "abc",
+            "!=": c != "abc",
+            "<": c < "b",
+            ">=": c >= "B",
+            "is_in": c.is_in(["abc", "É"]),
+            "starts_with": c.str.starts_with("a"),
+            "~==": ~(c == "ABC"),
+            "ends_with": c.str.ends_with("c"),
+            "eq é": c == "é",
+        }
+        try:
+            _check(lf, reference, predicates)
+        except AssertionError as e:
+            failures.append(f"{col}: {e}")
+        # only the binary collation's comparison is pushed as exact
+        _, _, n_exact = _filters(lf.filter(c == "abc"))
+        if (n_exact == 1) != exact:
+            failures.append(f"{col}: exact={n_exact}")
+    assert not failures, "\n".join(failures)
+
+
+def test_default_collation_of_a_table_applies_to_its_columns() -> None:
+    reference = _scan("edge_default_collation", pushdown=False).collect()
+    lf = _scan("edge_default_collation")
+    # `s` takes the table's `UTF8_LCASE`: the database equates 'abc' and 'ABC'
+    for col, exact in (("s", False), ("b", True)):
+        c = pl.col(col)
+        _check(
+            lf,
+            reference,
+            {"==": c == "abc", "!=": c != "abc", "~==": ~(c == "ABC"), "<": c < "b"},
+        )
+        assert (_filters(lf.filter(c == "abc"))[2] == 1) == exact, col
+    # through a query: the result type tells
+    q = _scan("SELECT id, s, concat(s, 'x') AS c FROM edge_default_collation")
+    qref = _scan(
+        "SELECT id, s, concat(s, 'x') AS c FROM edge_default_collation", pushdown=False
+    ).collect()
+    _check(
+        q,
+        qref,
+        {
+            "s !=": pl.col("s") != "abc",
+            "c ==": pl.col("c") == "abcx",
+            "c <": pl.col("c") < "b",
+        },
+    )
+    assert _filters(q.filter(pl.col("s") == "abc"))[2] == 0
+
+
+def test_char_columns_compare_like_polars() -> None:
+    # blank-padded types are classified as not exact; whatever the database does with
+    # trailing spaces, the rows are the ones Polars selects
+    source = "SELECT 1 AS id, CAST('ab' AS CHAR(5)) AS c, CAST('ab' AS VARCHAR(5)) AS v"
+    lf = _scan(source)
+    reference = _scan(source, pushdown=False).collect()
+    c, v = pl.col("c"), pl.col("v")
+    _check(
+        lf,
+        reference,
+        {
+            "c == ab": c == "ab",
+            "c == padded": c == "ab   ",
+            "v == ab": v == "ab",
+            "c !=": c != "ab",
+        },
+    )
+
+
+def test_narrow_and_unusual_types() -> None:
+    schemas = {
+        how: dict(_scan("edge_small", how).collect_schema())
+        for how in ("adbc", "databricks.sql")
+    }
+    assert schemas["adbc"] == schemas["databricks.sql"]
+    assert schemas["adbc"]["ty"] == pl.Int8
+    # a single-precision float keeps its value: a double literal doesn't match it
+    assert schemas["adbc"]["fl"] == pl.Float32
+    # intervals read as the text Databricks writes
+    assert schemas["adbc"]["iv"] == pl.String
+    lf = _scan("edge_small")
+    reference = _scan("edge_small", pushdown=False).collect()
+    assert reference["iv"].to_list()[0] == "1 02:03:04.500000000"
+    assert reference["ym"].to_list()[:2] == ["1-2", "-0-1"]
+    fl, ty = pl.col("fl"), pl.col("ty")
+    ch, vc = pl.col("ch"), pl.col("vc")
+    _check(
+        lf,
+        reference,
+        {
+            "fl == 1.1": fl == 1.1,
+            "fl > 1.1": fl > 1.1,
+            "fl <= 0.1": fl <= 0.1,
+            "fl == 2**24 + 1": fl == 16777217.0,
+            "fl in": fl.is_in([0.1, 1.1]),
+            "ty == min": ty == -128,
+            "ty < 200": ty < 200,
+            "ty == 200": ty == 200,
+            "ch == ab": ch == "ab",
+            "ch == padded": ch == "ab   ",
+            "ch == empty": ch == "",
+            "vc == x": vc == "x",
+            "vc == 'x '": vc == "x ",
+            # Databricks casts the literal to an interval, which matches row 1
+            "iv == text": pl.col("iv") == "1 2:3:4.5",
+            "iv == written": pl.col("iv") == "1 02:03:04.500000000",
+            "ym == text": pl.col("ym") == "1-2",
+        },
+    )
+    # a non-text type read as text is never compared in the database
+    for col, text in (("iv", "1 2:3:4.5"), ("ym", "1-2")):
+        assert _filters(lf.filter(pl.col(col) == text))[0] == 0
+    # text types still are
+    assert _filters(lf.filter(pl.col("vc") == "x"))[0] == 1
+
+
+# --- decimals ------------------------------------------------------------------------
+
+WIDE = "12345678901234567890123456.1234567890"  # DECIMAL(38, 10)
+
+
+@pytest.mark.parametrize("how", ["adbc", "databricks.sql", "factory"])
+def test_wide_decimals_are_exact(how: str) -> None:
+    lf = _scan(
+        f"SELECT 1 AS id, CAST('{WIDE}' AS DECIMAL(38,10)) AS x, "
+        "CAST('-99999999999999999999999999999999999999' AS DECIMAL(38,0)) AS y",
+        how,
+    )
+    out = lf.collect()
+    assert out["x"].item() == Decimal(WIDE)
+    assert out["y"].item() == Decimal("-99999999999999999999999999999999999999")
+    assert lf.filter(pl.col("x") == Decimal(WIDE)).collect().height == 1
+    assert lf.filter(pl.col("x") > Decimal(WIDE)).collect().height == 0
+
+
+@pytest.mark.parametrize("how", ["adbc", "databricks.sql", "factory"])
+def test_invalid_utf8_text_is_an_error_not_a_string(how: str) -> None:
+    """A STRING of other bytes would be a String that fails Arrow validation."""
+    sql = "SELECT CAST(unhex('FF') AS STRING) AS s"
+    if how == "adbc":
+        with pytest.raises(Exception, match=r"(?i)utf-?8"):
+            _scan(sql, how).collect().to_arrow().validate(full=True)
+    else:
+        # the connector's text is checked as it is read, also inside a map
+        for source in [sql, "SELECT map(1, CAST(unhex('FF') AS STRING)) AS m"]:
+            with pytest.raises(Exception, match="isn't valid UTF-8"):
+                _scan(source, how).collect()
+    # a BINARY of the same byte, and valid text, read
+    ok = _scan(
+        "SELECT unhex('FF') AS b, CAST(unhex('EFBFBD') AS STRING) AS s", how
+    ).collect()
+    assert ok["b"].to_list() == [b"\xff"]
+    assert ok["s"].to_list() == ["\ufffd"]
+
+
+_BAD_TEXT = "CAST(unhex('80') AS STRING)"
+_BAD_MAPS = {
+    "key": f"map({_BAD_TEXT}, 'v')",
+    "value": f"map('k', {_BAD_TEXT})",
+    "in_list": f"array(map('k', {_BAD_TEXT}))",
+    "in_struct": f"named_struct('a', 1, 'm', map({_BAD_TEXT}, 'v'))",
+    "map_of_maps": f"map('k', map({_BAD_TEXT}, 'v'))",
+}
+
+
+@pytest.mark.parametrize("how", ["adbc", "databricks.sql", "factory", "engine"])
+@pytest.mark.parametrize("shape", list(_BAD_MAPS))
+def test_invalid_utf8_in_a_map_is_an_error_not_a_string(how: str, shape: str) -> None:
+    # a MAP<STRING, STRING> of other bytes read as a Map(String, String), and a string
+    # operation on it aborted the process
+    sql = f"SELECT 1 AS id, {_BAD_MAPS[shape]} AS m"
+    with pytest.raises(Exception, match=r"(?i)utf-?8"):
+        _scan(sql, how).collect()
+
+
+@pytest.mark.parametrize("how", ["adbc", "databricks.sql", "factory", "engine"])
+def test_invalid_utf8_in_a_map_of_a_table_is_an_error(how: str) -> None:
+    from tests.unit.io.database._databricks import execute
+
+    table = f"polars_test_utf8_map_{how.replace('.', '_')}"
+    assert URI is not None
+    conn = _connection()()
+    try:
+        execute(
+            conn,
+            f"CREATE OR REPLACE TABLE {table} AS SELECT 1 AS id, "
+            f"map({_BAD_TEXT}, 'v') AS m, 'ok' AS s",
+        )
+        with pytest.raises(Exception, match=r"(?i)utf-?8"):
+            _scan(table, how, partition_on=None).collect()
+        # without the column, the rows read
+        out = _scan(table, how, partition_on=None).select("id", "s").collect()
+        assert out.rows() == [(1, "ok")]
+    finally:
+        execute(conn, f"DROP TABLE IF EXISTS {table}")
+        conn.close()
+
+
+def _read_database_forms(sql: str, **kwargs: Any) -> dict[str, Any]:
+    """`read_database` of a query through each connection form: a callable each."""
+    from tests.unit.io.database._databricks import connect
+
+    assert URI is not None
+    engine = _engine()
+    forms: dict[str, Any] = {
+        "engine": lambda: pl.read_database(sql, engine, **kwargs),
+        "engine_batches": lambda: pl.concat(
+            pl.read_database(sql, engine, iter_batches=True, batch_size=10, **kwargs)
+        ),
+    }
+
+    def alchemy_connection() -> Any:
+        with engine.connect() as conn:
+            return pl.read_database(sql, conn, **kwargs)
+
+    def databricks_connection() -> Any:
+        with contextlib.closing(connect(URI)) as conn:
+            return pl.read_database(sql, conn, **kwargs)
+
+    def databricks_batches() -> Any:
+        with contextlib.closing(connect(URI)) as conn:
+            return pl.concat(
+                pl.read_database(sql, conn, iter_batches=True, batch_size=10, **kwargs)
+            )
+
+    forms["connection"] = alchemy_connection
+    forms["databricks_connection"] = databricks_connection
+    forms["databricks_batches"] = databricks_batches
+    return forms
+
+
+_BAD_TEXT_QUERIES = {
+    "top": f"SELECT 1 AS id, {_BAD_TEXT} AS s",
+    "top_ff61": "SELECT 1 AS id, CAST(unhex('FF61') AS STRING) AS s",
+    "list": f"SELECT 1 AS id, array({_BAD_TEXT}) AS s",
+    "struct": f"SELECT 1 AS id, named_struct('a', 'x', 'b', {_BAD_TEXT}) AS s",
+    "map_key": f"SELECT 1 AS id, map({_BAD_TEXT}, 'v') AS s",
+    "map_value": f"SELECT 1 AS id, map('k', {_BAD_TEXT}) AS s",
+}
+
+
+@pytest.mark.parametrize("shape", list(_BAD_TEXT_QUERIES))
+def test_read_database_invalid_utf8_is_an_error_not_a_string(shape: str) -> None:
+    # every form read the String as it came: a column that breaks Polars' contract
+    for form, read in _read_database_forms(_BAD_TEXT_QUERIES[shape]).items():
+        with pytest.raises(Exception, match=r"(?i)utf-?8"):
+            read()
+        # (the failure names the form on the way)
+        assert form
+
+
+def test_read_database_valid_text_and_binary_are_read() -> None:
+    sql = (
+        "SELECT unhex('FF') AS b, CAST(unhex('EFBFBD') AS STRING) AS s, "
+        "map('k', CAST(unhex('EFBFBD') AS STRING)) AS m"
+    )
+    for read in _read_database_forms(sql).values():
+        out = read()
+        assert out["b"].to_list() == [b"\xff"]
+        assert out["s"].to_list() == ["\ufffd"]
+        assert out["m"].to_list() == [{"k": "\ufffd"}]
+
+
+def test_read_database_adbc_connection_invalid_utf8_is_an_error() -> None:
+    adbc = pytest.importorskip("adbc_driver_manager.dbapi")
+    import polars_database
+
+    found = polars_database.find_adbc_driver("databricks")
+    if found is None:
+        pytest.skip("no ADBC Databricks driver")
+    driver, entrypoint = found
+    kwargs: dict[str, Any] = {
+        "driver": driver,
+        "db_kwargs": {"uri": _uri()},
+        "autocommit": True,
+    }
+    if entrypoint:
+        kwargs["entrypoint"] = entrypoint
+    for sql in _BAD_TEXT_QUERIES.values():
+        with (
+            contextlib.closing(adbc.connect(**kwargs)) as conn,
+            pytest.raises(Exception, match=r"(?i)utf-?8"),
+        ):
+            pl.read_database(sql, conn)
+    with contextlib.closing(adbc.connect(**kwargs)) as conn:
+        ok = pl.read_database("SELECT unhex('FF') AS b, 'x' AS s", conn)
+        assert ok["b"].to_list() == [b"\xff"]
+
+
+def test_decimal_predicates_on_a_table() -> None:
+    lf = _scan("edge_types")
+    reference = _scan("edge_types", pushdown=False).collect()
+    max38 = Decimal("99999999999999999999999999999999999999")
+    _check(
+        lf,
+        reference,
+        {
+            "d38 > 0": pl.col("d38") > Decimal(0),
+            "d38 == max": pl.col("d38") == max38,
+            "d38 == -max": pl.col("d38") == Decimal("-" + str(max38)),
+            "nu < 0": pl.col("nu") < Decimal(0),
+            "nu == 123.456789012345": pl.col("nu") == Decimal("123.456789012345"),
+            "nu == finer": pl.col("nu") == Decimal("123.4567890123450001"),
+        },
+    )
+
+
+# --- reads ---------------------------------------------------------------------------
+
+
+def _orders_sums() -> tuple[int, int]:
+    from tests.unit.io.database._databricks import connect, execute
+
+    assert URI is not None
+    conn = connect(URI)
+    try:
+        count, total = execute(conn, "SELECT count(*), sum(id) FROM orders")[0]
+    finally:
+        conn.close()
+    return int(count), int(total)
+
+
+@pytest.mark.parametrize("how", ["adbc", "databricks.sql"])
+@pytest.mark.parametrize("source", ["orders", "SELECT * FROM orders"])
+def test_every_row_is_read_once(how: str, source: str) -> None:
+    # the counts are the server's own; only the checksums cross the link
+    count, total = _orders_sums()
+    out = (
+        _scan(source, how)
+        .select(
+            pl.len().alias("n"),
+            pl.col("id").n_unique().alias("u"),
+            pl.col("id").sum().alias("s"),
+        )
+        .collect()
+    )
+    assert out.row(0) == (count, count, total)
+
+
+def test_filter_on_the_null_customers() -> None:
+    lf = _scan("orders").filter(pl.col("customer").is_null())
+    nulls = lf.select(pl.len()).collect().item()
+    assert nulls == len([i for i in range(1, 5001) if i % 7 == 0])
+
+
+def test_dates_and_timestamps_of_orders_round_trip() -> None:
+    lf = _scan("orders", partition_on=None).filter(pl.col("id").is_in([1, 365, 5000]))
+    out = lf.collect().sort("id")
+    assert out["ordered_on"].to_list() == [
+        date(2024, 1, 2),
+        date(2024, 1, 1),
+        date(2024, 9, 12),
+    ]
+    assert out["created_at"].to_list() == [
+        datetime(2024, 1, 1, 0, 0, 1),
+        datetime(2024, 1, 1, 0, 6, 5),
+        datetime(2024, 1, 1, 1, 23, 20),
+    ]
+
+
+# --- parameters and connection forms -------------------------------------------------
+
+
+def test_adbc_params_are_refused_with_a_hint() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="binds parameters"):
+        _scan("SELECT id FROM edge WHERE id < ?", params=[30]).collect()
+
+
+@pytest.mark.parametrize(
+    ("sql", "params"),
+    [
+        ("SELECT id FROM edge WHERE id < ?", [30]),
+        ("SELECT id FROM edge WHERE id < :n", {"n": 30}),
+        ("SELECT id FROM edge WHERE id < %(n)s", {"n": 30}),
+    ],
+)
+def test_params_with_the_python_driver(sql: str, params: Any) -> None:
+    lf = _scan(sql, "databricks.sql", params=params, partition_on=None)
+    assert _ids(lf.collect()) == list(range(30))
+
+
+def test_every_connection_form_reads_the_same_frame() -> None:
+    frames = [
+        _scan("edge_types", how).collect().sort("id")
+        for how in ("adbc", "databricks.sql", "factory")
+    ]
+    for other in frames[1:]:
+        assert_frame_equal(frames[0], other)
+
+
+def test_the_token_is_not_in_the_plan() -> None:
+    assert URI is not None
+    token = re.search(r"token:([^@]+)@", URI)
+    assert token is not None
+    assert token[1] not in _scan("edge").explain()
+
+
+# --- a SQLAlchemy Engine ------------------------------------------------------------
+
+
+def _engine(zone: str | None = None) -> Any:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("databricks.sqlalchemy")
+    from tests.unit.io.database._databricks import parts
+
+    assert URI is not None
+    ensure_seeded(URI)
+    p = parts(URI)
+    connect_args: dict[str, Any] = {}
+    if zone is not None:
+        connect_args["session_configuration"] = {"timezone": zone}
+    engine = sqlalchemy.create_engine(
+        f"databricks://token:{p['token']}@{p['host']}?http_path={p['http_path']}"
+        f"&catalog={p['catalog']}&schema={p['schema']}",
+        connect_args=connect_args,
+    )
+    _ENGINES.append(engine)
+    return engine
+
+
+_ENGINES: list[Any] = []
+
+
+@pytest.fixture(autouse=True)
+def _dispose_engines() -> Iterator[None]:
+    # (a pooled connection left open is a ResourceWarning, an error in these tests)
+    yield
+    while _ENGINES:
+        _ENGINES.pop().dispose()
+
+
+_TYPES = """
+SELECT 1 AS id,
+  CAST('NaN' AS DOUBLE) AS nan,
+  array(CAST('NaN' AS DOUBLE), CAST('Infinity' AS DOUBLE)) AS anan,
+  TIMESTAMP '2024-07-01 12:00:00+00:00' AS ltz,
+  array(TIMESTAMP '2024-07-01 12:00:00+00:00') AS ats,
+  map('k', CAST(1 AS BIGINT), 'l', NULL) AS m,
+  map(1, 'a', 2, 'b') AS mi,
+  map('k', array(CAST('1.50' AS DECIMAL(10,2)))) AS md,
+  array(named_struct('a', CAST('1.50' AS DECIMAL(10,2)), 'b', X'01ff',
+                     'c', DATE '2024-01-02')) AS nested
+"""
+
+
+@pytest.mark.parametrize("zone", [None, "UTC", "America/Los_Angeles"])
+def test_engine_reads_what_the_other_readers_read(zone: str | None) -> None:
+    # the Engine read through SQLAlchemy's rows: NaN as NULL, a TIMESTAMP as naive time,
+    # a MAP as a list of lists mixing keys and values, nested values failing
+    kwargs = {"session_configuration": {"timezone": zone}} if zone else {}
+    factory = _connection(**kwargs)
+    engine = _engine(zone)
+    try:
+        reference = pl.scan_database(_TYPES, factory, partition_on=None).collect()
+        got = pl.scan_database(_TYPES, engine, partition_on=None).collect()
+        uri = _uri(**({"timezone": zone} if zone else {}))
+        adbc = pl.scan_database(_TYPES, uri, driver="adbc", partition_on=None).collect()
+        assert got.schema == reference.schema == adbc.schema
+        assert_frame_equal(got, reference)
+        assert_frame_equal(got, adbc)
+        assert got["nan"].is_nan().to_list() == [True]
+        assert got["ltz"].dtype == pl.Datetime("us", zone or "UTC")
+        assert got["m"].dtype == pl.Map(pl.String, pl.Int64)
+        assert got["m"].to_list() == [{"k": 1, "l": None}]
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("sql", "params"),
+    [
+        ("SELECT id FROM edge WHERE id < ?", [30]),
+        ("SELECT id FROM edge WHERE id < :n", {"n": 30}),
+    ],
+)
+def test_engine_params_use_the_connectors_markers(sql: str, params: Any) -> None:
+    # the Engine's reads passed `execution_options` to the connector's cursor, which
+    # refused every one with params
+    engine = _engine()
+    try:
+        lf = pl.scan_database(sql, engine, params=params)
+        assert _ids(lf.collect()) == list(range(30))
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+def test_engine_read_database_with_params_reads_through_the_connector() -> None:
+    engine = _engine()
+    try:
+        for sql, params in [
+            ("SELECT id FROM edge WHERE id < ?", [30]),
+            ("SELECT id FROM edge WHERE id < :n", {"n": 30}),
+        ]:
+            out = pl.read_database(sql, engine, execute_options={"parameters": params})
+            assert _ids(out) == list(range(30))
+    finally:
+        engine.dispose()
+
+
+def test_map_with_timestamp_keys_in_a_utc_session() -> None:
+    # the connector names the zone `Etc/UTC` where the plan has `UTC`, and a Map key
+    # can't be cast between zone names
+    sql = (
+        "SELECT 1 AS id, map(TIMESTAMP '2024-07-01 12:00:00+00:00', 'a') AS mk, "
+        "map('k', TIMESTAMP '2024-07-01 12:00:00+00:00') AS mv, "
+        "array(map(TIMESTAMP '2024-07-01 12:00:00+00:00', 1)) AS ml"
+    )
+    expected = datetime(2024, 7, 1, 12, tzinfo=UTC)
+    for zone in [None, "UTC"]:
+        kwargs = {"session_configuration": {"timezone": zone}} if zone else {}
+        factory = _connection(**kwargs)
+        uri = _uri(**({"timezone": zone} if zone else {}))
+        for lf in [
+            pl.scan_database(sql, uri, driver="adbc"),
+            pl.scan_database(
+                sql, _uri(), driver="databricks.sql", connect_options=kwargs
+            ),
+            pl.scan_database(sql, factory),
+        ]:
+            out = lf.collect()
+            key = next(iter(out["mk"][0]))
+            assert key == expected
+            assert out["mv"][0] == {"k": expected}
+            # projected away, the column does no harm either
+            assert lf.select("id").collect().rows() == [(1,)]
+            assert lf.select("mk").collect().height == 1
+
+
+def test_sqlalchemy_connection_reads_on_its_own_session() -> None:
+    # the Engine's pooled connection was dropped when the cursor was made (and went back
+    # into the pool while in use), and a Connection read on another pooled connection:
+    # its temporary view wasn't there
+    engine = _engine()
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(
+                "CREATE OR REPLACE TEMPORARY VIEW r42_tmp AS SELECT 7 AS x"
+            )
+            lf = pl.scan_database("SELECT x FROM r42_tmp", conn, partition_on=None)
+            assert lf.collect()["x"].to_list() == [7]
+            # the Connection is still the user's, and open
+            assert conn.exec_driver_sql("SELECT x FROM r42_tmp").fetchall() == [(7,)]
+        pl.scan_database("SELECT 1 AS x", engine, partition_on=None).collect()
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+def test_engine_read_database_early_stop_gives_back_the_pooled_connection() -> None:
+    # a batch iterator dropped after one batch, or failing part-way, left the pooled
+    # connection checked out for good (a cycle through the driver's connection)
+    engine = _engine()
+    try:
+        for _ in range(2):
+            it = pl.read_database(
+                "SELECT id FROM edge_zones", engine, iter_batches=True, batch_size=1
+            )
+            next(iter(it))
+            del it
+            assert engine.pool.checkedout() == 0
+        it = pl.read_database(
+            "SELECT id FROM edge_zones", engine, iter_batches=True, batch_size=1
+        )
+        gen: Any = iter(it)
+        next(gen)
+        with pytest.raises(RuntimeError, match="boom"):
+            gen.throw(RuntimeError("boom"))
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+@contextlib.contextmanager
+def _scratch(setup: list[str]) -> Iterator[str]:
+    """
+    Run `setup` statements in the test schema and yield the qualified schema.
+
+    The objects are dropped by name afterwards (`DROP ... IF EXISTS` of each `CREATE`).
+    """
+    from tests.unit.io.database._databricks import connect, execute, parts
+
+    assert URI is not None
+    ensure_seeded(URI)
+    p = parts(URI)
+    schema = f"`{p['catalog']}`.`{p['schema']}`"
+    conn = connect(URI)
+    drops: list[str] = []
+    try:
+        for sql in setup:
+            sql = sql.format(schema=schema)
+            m = re.match(r"CREATE (?:OR REPLACE )?(TABLE|VIEW) ([^\s(]+)", sql, re.I)
+            assert m is not None, sql
+            execute(conn, sql)
+            drops.append(f"DROP {m[1]} IF EXISTS {m[2]}")
+        yield schema
+    finally:
+        for sql in reversed(drops):
+            execute(conn, sql)
+        conn.close()
+
+
+def test_a_view_with_columns_named_like_the_describe_headings() -> None:
+    # columns named `# Detailed Table Information` and `Type` must not be read as the
+    # view's details, which would make the view a table: a filter on its `rand()`
+    # column stays in Polars
+    setup = [
+        "CREATE OR REPLACE VIEW {schema}.vol_headings AS SELECT id, "
+        "rand() AS `# Detailed Table Information`, 'x' AS `Type` "
+        "FROM range(1, 201) AS t(id)"
+    ]
+    with _scratch(setup) as schema:
+        name = f"{schema}.vol_headings"
+        for source in (name, f"SELECT * FROM {name}"):
+            lf = _scan(source).filter(pl.col("# Detailed Table Information") < 0.5)
+            assert _filters(lf)[0] == 0
+        assert _scan(name).collect().height == 200

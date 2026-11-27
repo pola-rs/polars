@@ -42,3 +42,32 @@ fn stream_reader_try_new_invalid_argument_error_on_released_stream() {
         _ => panic!("ArrowArrayStreamReader::try_new did not return an InvalidArgumentError"),
     }
 }
+
+#[test]
+fn panic_in_iterator_ends_stream() -> PolarsResult<()> {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let array: Box<dyn Array> = Box::new(Int32Array::from(&[Some(1), None]));
+    let field = Field::new("a".into(), array.dtype().clone(), true);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let iter = {
+        let (array, calls) = (array.clone(), calls.clone());
+        std::iter::from_fn(move || match calls.fetch_add(1, Ordering::Relaxed) {
+            0 => Some(Ok(array.clone())),
+            1 => panic!("iterator boom"),
+            _ => Some(Ok(array.clone())),
+        })
+    };
+
+    let stream = Box::new(ffi::export_iterator(Box::new(iter), field));
+    let mut reader = unsafe { ffi::ArrowArrayStreamReader::try_new(stream)? };
+
+    assert_eq!(unsafe { reader.next() }.unwrap()?, array);
+    for _ in 0..2 {
+        let err = unsafe { reader.next() }.unwrap().unwrap_err();
+        assert!(err.to_string().contains("iterator boom"), "{err}");
+    }
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+    Ok(())
+}

@@ -95,6 +95,8 @@ def register_io_source(
             n_rows
                 Materialize only n rows from the source.
                 The reader can stop when `n_rows` are read.
+                These are the first rows of the source, before `predicate`
+                is applied.
             batch_size
                 A hint of the ideal batch size the reader's
                 generator must produce.
@@ -235,10 +237,11 @@ def _defer(
         lf = function().lazy()
         if with_columns is not None:
             lf = lf.select(with_columns)
-        if predicate is not None:
-            lf = lf.filter(predicate)
+        # `n_rows` counts rows before the predicate.
         if n_rows is not None:
             lf = lf.limit(n_rows)
+        if predicate is not None:
+            lf = lf.filter(predicate)
         yield lf._collect_eager()
 
     return register_io_source(

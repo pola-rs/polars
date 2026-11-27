@@ -1,39 +1,36 @@
 name: Release polars-iceberg
 
-# Releases the `polars-iceberg` I/O plugin (https://github.com/pola-rs/polars-iceberg) to PyPI.
+# Releases the `polars-iceberg` I/O plugin (`py-polars/polars-iceberg` in this repository) to PyPI.
 #
-# The version is the `package.version` in Cargo.toml of polars-iceberg (its pyproject.toml takes it
-# from there) at the given tag, which must be `py-<version>`. The tag is cloned to
-# `crates/polars-iceberg` (a workspace member) of this Polars checkout. The plugin is an abi3 wheel,
-# so one wheel per target covers every supported Python version.
+# The version is the `version` of the wrapper crate `py-polars/polars-iceberg/Cargo.toml`, which
+# must be the one in `crates/polars-iceberg/Cargo.toml` (the module's `__version__`). The plugin
+# is an abi3 wheel, so one wheel per target covers every supported Python version.
+#
+# The `version` job resolves the commit once; the other jobs build that commit. After publishing,
+# the release tags it `polars-iceberg-<version>`.
 
 on:
   workflow_dispatch:
     inputs:
-      # Tag `py-<version>` of polars-iceberg to release. Its Cargo.toml gives the version.
-      tag:
-        description: polars-iceberg tag
-        type: string
-        required: true
-      # Polars commit providing the workspace (and `polars-io-ext-ffi`). If omitted, use the latest
-      # commit on the main branch.
+      # Commit to release. If omitted, use the latest commit of the branch the workflow runs on.
       sha:
-        description: Polars commit SHA
+        description: Commit SHA
         type: string
-      # Create the sdist and build the wheels, but do not publish to PyPI.
+      # Create the sdist and build the wheels, but do not publish to PyPI or tag the commit.
       dry-run:
         description: Dry run
         type: boolean
         default: false
 
+# Releases queue rather than cancel each other: a cancelled run may have uploaded part of a release.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   PYTHON_VERSION: '3.10'
   PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
-  MANIFEST_PATH: crates/polars-iceberg/Cargo.toml
+  MANIFEST_PATH: py-polars/polars-iceberg/Cargo.toml
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
@@ -47,51 +44,61 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      # The commit every job builds.
+      sha: ${{ steps.commits.outputs.sha }}
+      tag: ${{ steps.tag.outputs.tag }}
+      # Whether the tag exists already, on this commit (a rerun).
+      tagged: ${{ steps.tag.outputs.tagged }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
 
-      # `git clone -b` also accepts a branch, so make sure the release is built from a tag.
-      - name: Check polars-iceberg tag exists
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          if ! git ls-remote --exit-code --tags https://github.com/pola-rs/polars-iceberg "refs/tags/$TAG"; then
-            echo "::error::polars-iceberg has no tag $TAG"
-            exit 1
-          fi
-
-      - name: Clone polars-iceberg
-        uses: ./.github/actions/clone-polars-iceberg
-        with:
-          ref: ${{ inputs.tag }}
-
       - name: Read polars-iceberg version
         id: version
-        env:
-          TAG: ${{ inputs.tag }}
         run: |
-          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-iceberg/Cargo.toml", "rb"))["package"]["version"])')
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("py-polars/polars-iceberg/Cargo.toml", "rb"))["package"]["version"])')
           echo "polars-iceberg version: $VERSION"
-          if [[ "$TAG" != "py-$VERSION" ]]; then
-            echo "::error::tag $TAG does not match polars-iceberg version $VERSION (expected py-$VERSION)"
+          # The module's `__version__` comes from the plugin crate.
+          LIB_VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-iceberg/Cargo.toml", "rb"))["package"]["version"])')
+          if [[ "$LIB_VERSION" != "$VERSION" ]]; then
+            echo "::error::crates/polars-iceberg version $LIB_VERSION does not match $VERSION"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve commit
+        id: commits
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "commit: $SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      # A tag on another commit means the version was released before: bump it.
+      - name: Check the tag
+        id: tag
+        env:
+          TAG: polars-iceberg-${{ steps.version.outputs.version }}
+          SHA: ${{ steps.commits.outputs.sha }}
+        run: |
+          # The last line is the commit, also for an annotated tag (`<tag>^{}`).
+          TAGGED=$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | tail -n 1 | cut -f 1)
+          if [[ -n "$TAGGED" && "$TAGGED" != "$SHA" ]]; then
+            echo "::error::$TAG already tags $TAGGED: bump the polars-iceberg version to release $SHA"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tagged=$([[ -n "$TAGGED" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
   create-sdist:
     needs: [version]
     runs-on: ubuntu-latest
+    env:
+      POLARS_ICEBERG_BUILD_COMMIT: ${{ needs.version.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.sha }}
-
-      - name: Clone polars-iceberg
-        uses: ./.github/actions/clone-polars-iceberg
-        with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ needs.version.outputs.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -121,6 +128,8 @@ jobs:
   build-wheels:
     needs: [version]
     runs-on: ${{ matrix.os }}
+    env:
+      POLARS_ICEBERG_BUILD_COMMIT: ${{ needs.version.outputs.sha }}
     strategy:
       fail-fast: false
       matrix:
@@ -154,17 +163,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.sha }}
+          ref: ${{ needs.version.outputs.sha }}
 
-      # After the checkout, which the local action needs, and before cloning, which needs git.
+      # After the checkout, which the local action needs.
       - name: Setup build environment (ARM64 Windows)
         if: matrix.os == 'windows-11-arm'
         uses: ./.github/actions/setup-windows-arm64
-
-      - name: Clone polars-iceberg
-        uses: ./.github/actions/clone-polars-iceberg
-        with:
-          ref: ${{ inputs.tag }}
 
       # The wheel is abi3 for Python 3.10+ whichever Python builds it.
       - name: Set up Python
@@ -177,6 +181,8 @@ jobs:
         with:
           command: build
           target: ${{ matrix.target }}
+          # Forward the build commit into the manylinux/musllinux container.
+          docker-options: -e POLARS_ICEBERG_BUILD_COMMIT
           args: >
             --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
             --manifest-path ${{ env.MANIFEST_PATH }}
@@ -189,7 +195,13 @@ jobs:
         if: endsWith(matrix.target, '-musl') == false
         run: |
           pip install --force-reinstall --verbose dist/*.whl
-          python -c 'import polars_iceberg'
+          # The Python release compares this commit with its own sources.
+          # `tr`: Python on Windows ends the line with CRLF.
+          COMMIT=$(python -c 'import polars_iceberg; print(polars_iceberg.__build_commit__)' | tr -d '\r')
+          if [[ "$COMMIT" != "$POLARS_ICEBERG_BUILD_COMMIT" ]]; then
+            echo "::error::__build_commit__ is '$COMMIT', expected $POLARS_ICEBERG_BUILD_COMMIT"
+            exit 1
+          fi
 
       - name: Upload wheel
         uses: actions/upload-artifact@v7
@@ -232,3 +244,17 @@ jobs:
         with:
           skip-existing: true
           verbose: true
+
+  tag:
+    needs: [version, publish-to-pypi]
+    if: inputs.dry-run == false && needs.version.outputs.tagged == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the released commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          SHA: ${{ needs.version.outputs.sha }}
+        run: gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$TAG" -f sha="$SHA"

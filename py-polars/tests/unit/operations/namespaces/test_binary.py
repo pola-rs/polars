@@ -82,6 +82,83 @@ def test_contains_with_expr() -> None:
     }
 
 
+def test_find() -> None:
+    df = pl.DataFrame(
+        {
+            "b": [b"\x00\xff\x00", b"abc", b"", b"h\xc3\xa9llo", None],
+            "p": [b"\xff", b"c", None, b"l", b"a"],
+        }
+    )
+    b = pl.col("b")
+    out = df.select(
+        zero=b.bin.find(b"\x00"),
+        empty=b.bin.find(b""),
+        str_lit=b.bin.find("bc"),
+        utf8=b.bin.find("l"),
+        null=b.bin.find(pl.lit(None)),
+        col=b.bin.find(pl.col("p")),
+        broadcast=pl.lit(b"hello world").bin.find(pl.col("p")),
+    )
+    expected = pl.DataFrame(
+        {
+            "zero": [0, None, None, None, None],
+            "empty": [0, 0, 0, 0, None],
+            "str_lit": [None, 1, None, None, None],
+            "utf8": [None, None, None, 3, None],
+            "null": [None] * 5,
+            "col": [1, 2, None, 3, None],
+            "broadcast": [None, None, None, 2, None],
+        },
+        schema=dict.fromkeys(out.columns, pl.UInt32),
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_find_many() -> None:
+    def find_many(
+        values: list[bytes | None], patterns: Any, **kwargs: Any
+    ) -> pl.Series:
+        return pl.Series("b", values).bin.find_many(patterns, **kwargs)
+
+    def expected(values: list[list[int] | None]) -> pl.Series:
+        return pl.Series("b", values, dtype=pl.List(pl.UInt32))
+
+    assert_series_equal(
+        find_many([b"h\xc3\xa9llo", None], [b"l"]), expected([[3, 4], None])
+    )
+    assert_series_equal(find_many([b"h\xc3\xa9llo"], ["l"]), expected([[3, 4]]))
+    assert_series_equal(find_many([b"\xc3\xa9"], [b""]), expected([[0, 1, 2]]))
+    patterns = [b"winter", b"disco", b"onte", b"discontent"]
+    assert_series_equal(find_many([b"discontent"], patterns), expected([[0]]))
+    assert_series_equal(
+        find_many([b"discontent"], patterns, overlapping=True), expected([[0, 4, 0]])
+    )
+    assert_series_equal(
+        find_many([b"HeLLo"], [b"l"], ascii_case_insensitive=True),
+        expected([[2, 3]]),
+    )
+    with pytest.raises(
+        ValueError, match="can not match overlapping patterns when leftmost == True"
+    ):
+        find_many([b"discontent"], patterns, overlapping=True, leftmost=True)
+
+    df = pl.DataFrame(
+        {
+            "b": [b"h\xc3\xa9llo", b"abcabc", None],
+            "p": [[b"\xc3\xa9"], [b"b", b"c"], [b"a"]],
+        }
+    )
+    out = df.select(
+        per_row=pl.col("b").bin.find_many(pl.col("p")),
+        null=pl.col("b").bin.find_many(pl.lit(None, dtype=pl.List(pl.Binary))),
+    )
+    expected_df = pl.DataFrame(
+        {"per_row": [[1], [1, 2, 4, 5], None], "null": [None, None, None]},
+        schema={"per_row": pl.List(pl.UInt32), "null": pl.List(pl.UInt32)},
+    )
+    assert_frame_equal(out, expected_df)
+
+
 def test_starts_ends_with() -> None:
     assert pl.DataFrame(
         {
@@ -448,7 +525,7 @@ def test_reinterpret_invalid() -> None:
         df.select(pl.col("x").bin.reinterpret(dtype=pl.String))
 
 
-@pytest.mark.parametrize("func", ["contains", "starts_with", "ends_with"])
+@pytest.mark.parametrize("func", ["contains", "starts_with", "ends_with", "find"])
 def test_bin_contains_unequal_lengths_22018(func: str) -> None:
     s = pl.Series("a", [b"a", b"xyz"], pl.Binary).bin
     f = getattr(s, func)

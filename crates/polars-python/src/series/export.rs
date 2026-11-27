@@ -187,12 +187,12 @@ impl PySeries {
         // Export out of the lock: `to_py_array` calls into Python, and holding the read
         // lock across that lets any thread blocking on the write lock (which it does while
         // holding the GIL) deadlock against us.
-        let (array, field) = py.enter_polars_ok(|| {
+        let (array, field) = py.enter_polars(|| {
             let s = self.series.read();
-            (
-                s.to_arrow(0, compat_level.0),
+            PolarsResult::Ok((
+                s.try_to_arrow(0, compat_level.0)?,
                 s.field().to_arrow(compat_level.0),
-            )
+            ))
         })?;
 
         interop::arrow::to_py::to_py_array(array, &field, &pyarrow)

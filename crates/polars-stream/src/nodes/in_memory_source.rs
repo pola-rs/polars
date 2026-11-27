@@ -104,7 +104,7 @@ impl ComputeNode for InMemorySourceNode {
             &self.seq,
             self.seq_offset,
             move |seq| {
-                let df = source.slice((seq as usize * morsel_size) as i64, morsel_size);
+                let df = source.slice((seq as usize * morsel_size, morsel_size));
                 // TODO: remove this 'always send at least one morsel'
                 // condition, see update_state.
                 std::future::ready((df.height() > 0 || seq == 0).then_some(df))

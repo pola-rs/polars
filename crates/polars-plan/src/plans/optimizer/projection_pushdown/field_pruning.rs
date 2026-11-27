@@ -647,7 +647,21 @@ impl<'a> SelectionWalker<'a> {
                 expr,
                 evaluation,
                 variant,
+                columns,
             } => {
+                // What the body reads of `columns` is not tracked.
+                let mut columns = columns.clone();
+                let mut columns_changed = false;
+                for c in &mut columns {
+                    let new_node = self.walk_rec(
+                        c.node(),
+                        &FieldSelection::All,
+                        out,
+                        struct_fields.as_deref_mut(),
+                    );
+                    columns_changed |= new_node != c.node();
+                    c.set_node(new_node);
+                }
                 let body_selection = match variant {
                     EvalVariant::List | EvalVariant::Array { .. } => match selection {
                         FieldSelection::Fields(fields) if fields.is_empty() => {
@@ -670,7 +684,7 @@ impl<'a> SelectionWalker<'a> {
                     _ => FieldSelection::element(element),
                 };
                 let new_expr = self.walk_rec(expr, &input_selection, out, struct_fields);
-                if new_expr == expr {
+                if new_expr == expr && !columns_changed {
                     return node;
                 }
                 // `evaluation` is not an input, so it is not replaced.
@@ -678,6 +692,7 @@ impl<'a> SelectionWalker<'a> {
                     expr: new_expr,
                     evaluation,
                     variant,
+                    columns,
                 })
             },
 
@@ -1532,6 +1547,7 @@ fn prune_to_dtype(
                 expr: node,
                 evaluation,
                 variant: EvalVariant::List,
+                columns: Vec::new(),
             })
         },
         #[cfg(feature = "dtype-array")]
@@ -1542,6 +1558,7 @@ fn prune_to_dtype(
                 expr: node,
                 evaluation,
                 variant: EvalVariant::Array { as_list: false },
+                columns: Vec::new(),
             })
         },
         _ => node,

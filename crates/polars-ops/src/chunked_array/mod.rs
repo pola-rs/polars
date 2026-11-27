@@ -46,3 +46,28 @@ pub use top_k::*;
 
 #[allow(unused_imports)]
 use crate::prelude::*;
+
+/// A count as `usize`; a count beyond `usize::MAX` covers any string or binary value the same way.
+pub(crate) fn saturating_usize(n: u64) -> usize {
+    usize::try_from(n).unwrap_or(usize::MAX)
+}
+
+/// `n` as Int64 counts for `len` values. A UInt64 count beyond the Int64 range is clipped, as
+/// it covers any value. A repeated count is returned once, so that it is applied as a scalar.
+pub(crate) fn count_as_i64(n: &Column, len: usize) -> PolarsResult<Column> {
+    let n = match n.as_scalar_column() {
+        Some(sc) if n.len() == len && len > 1 => &sc.as_single_value_series().into_column(),
+        _ => n,
+    };
+    match n.dtype() {
+        DataType::UInt64 => n.try_apply_unary_elementwise(|n| {
+            Ok(
+                arity::unary_elementwise_values::<_, Int64Type, _>(n.u64()?, |v| {
+                    v.min(i64::MAX as u64) as i64
+                })
+                .into_series(),
+            )
+        }),
+        _ => n.strict_cast(&DataType::Int64),
+    }
+}

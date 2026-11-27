@@ -10,6 +10,9 @@ pub enum StringFunction {
     Format {
         format: PlSmallStr,
         insertions: Arc<[usize]>,
+        /// The Python format specification of each input, or empty if no input has one.
+        #[cfg_attr(feature = "serde", serde(default))]
+        specs: Arc<[Option<PlSmallStr>]>,
     },
     #[cfg(feature = "concat_str")]
     ConcatHorizontal {
@@ -244,7 +247,7 @@ impl Display for StringFunction {
             #[cfg(feature = "find_many")]
             ExtractMany { .. } => "extract_many",
             #[cfg(feature = "find_many")]
-            FindMany { .. } => "extract_many",
+            FindMany { .. } => "find_many",
             #[cfg(feature = "regex")]
             EscapeRegex => "escape_regex",
         };

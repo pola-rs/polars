@@ -628,6 +628,7 @@ def test_date_duration_comparison_error_25517() -> None:
         _ = date == duration
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("dtype_lhs", "dtype_rhs"),
     combinations(sorted(INTEGER_DTYPES, key=lambda v: str(v)), 2),
@@ -1471,3 +1472,8 @@ def test_compare_unit_literal_with_scalar_column_30518(
         df.select(y=op(pl.lit(0.0), pl.col("x"))),
         pl.DataFrame({"y": [expected] * 3}),
     )
+
+
+def test_uint128_compare_negative_scalar() -> None:
+    with pytest.raises(OverflowError):
+        pl.Series([1], dtype=pl.UInt128) == -1  # noqa: B015

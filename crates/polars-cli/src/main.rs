@@ -5,17 +5,46 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
-use polars_cli::{Args, Input, Printer, Script, exit_code, run};
+use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run};
 
 // The allocator of the Python runtime, so that both perform alike.
 #[global_allocator]
 static ALLOC: polars_ooc::Allocator = polars_ooc::Allocator;
 
-/// The stack of the thread that runs the command: the usual size of a main thread on Linux.
-/// The main thread on Windows has 1 MiB, which a debug build of the engine overflows.
-const STACK_SIZE: usize = 8 * 1024 * 1024;
+// The Python package's jemalloc settings (py-polars/src/polars/__init__.py). jemalloc reads this C
+// string (`const char *malloc_conf`) when it starts, before `main`; `_RJEM_MALLOC_CONF` overrides
+// any of its options.
+#[cfg(all(target_family = "unix", not(target_os = "emscripten")))]
+#[unsafe(export_name = "_rjem_malloc_conf")]
+static mut MALLOC_CONF: *const std::ffi::c_char =
+    c"dirty_decay_ms:500,muzzy_decay_ms:1000".as_ptr();
+
+// `POLARS_THP=1` adds transparent huge pages, which jemalloc supports only on Linux. An
+// `.init_array` entry with a priority runs before jemalloc's own, which has none.
+#[cfg(target_os = "linux")]
+#[used]
+#[unsafe(link_section = ".init_array.00100")]
+static WITH_THP: extern "C" fn() = with_thp;
+
+#[cfg(target_os = "linux")]
+extern "C" fn with_thp() {
+    // SAFETY: only jemalloc reads MALLOC_CONF, and it does so later in start-up.
+    unsafe {
+        let thp = libc::getenv(c"POLARS_THP".as_ptr());
+        if !thp.is_null() && std::ffi::CStr::from_ptr(thp) == c"1" {
+            MALLOC_CONF =
+                c"dirty_decay_ms:500,muzzy_decay_ms:1000,thp:always,metadata_thp:always".as_ptr();
+        }
+    }
+}
 
 fn main() -> ExitCode {
+    // Debug frames are large, as in the Python package.
+    #[cfg(debug_assertions)]
+    {
+        recursive::set_minimum_stack_size(1024 * 1024);
+        recursive::set_stack_allocation_size(1024 * 1024 * 16);
+    }
     let command = std::thread::Builder::new()
         .name("polars-cli".to_string())
         .stack_size(STACK_SIZE)
@@ -38,28 +67,41 @@ fn run_command() -> ExitCode {
         Err(error) => return report(error),
     };
     let format = args.format();
+    let read_only = args.read_only_origin();
+    let verbose = args.verbose();
+    let on_terminal = io::stdout().is_terminal();
     // Checked before the script is read, which can wait for standard input.
-    if format.is_one_file() && io::stdout().is_terminal() {
+    if format.is_one_file() && on_terminal {
         return report(usage_error(
             ErrorKind::InvalidValue,
             format!("format '{format}' is binary; send the output to a file or a pipe"),
         ));
     }
-    let script = match read_script(args.input()) {
+    let input = args.input();
+    let source = input.name();
+    let script = match read_script(input) {
         Ok(script) => script,
         Err(error) => return report(error),
     };
-    if format.is_one_file() && script.len() != 1 {
+    // A script that cannot be split is reported as such when it runs.
+    if format.is_one_file() && script.can_be_split() && !script.ends_in_its_only_result() {
         return report(usage_error(
             ErrorKind::InvalidValue,
-            format!("format '{format}' writes one file, so it takes a script of one statement"),
+            format!(
+                "format '{format}' writes one file, so the last statement must be the only one \
+                 that returns rows"
+            ),
         ));
     }
 
     let interrupted = handle_interrupts();
     // Not locked: Polars and the panic hook write to these streams from other threads.
     let stdout = BufWriter::new(io::stdout());
-    let code = run(&script, &mut Printer::new(stdout, io::stderr(), format));
+    let mut printer = Printer::new(stdout, io::stderr(), format)
+        .on_terminal(on_terminal)
+        .source(source)
+        .verbose(verbose);
+    let code = run(&script, read_only, &mut printer);
     // An interrupt that arrived while the last result was printed stopped nothing.
     if code == exit_code::OK && interrupted.load(Ordering::SeqCst) {
         ExitCode::from(exit_code::INTERRUPTED)

@@ -21,6 +21,7 @@ use crate::col;
 use crate::context::{RelationName, factor_relations, match_qualifier};
 use crate::functions::reads_no_input;
 use crate::sql_expr::parse_sql_expr;
+use crate::subquery::strip_nested;
 use crate::subquery_group_by::is_aggregate_call;
 use crate::subquery_pull_up::has_aggregate;
 use crate::{SQLContext, dyn_visit};
@@ -361,7 +362,7 @@ fn is_constant(expr: &SQLExpr) -> bool {
 
 /// The column name a PIVOT value gives: a string as is, else the value as written.
 fn pivot_value_name(expr: &SQLExpr) -> String {
-    match expr {
+    match strip_nested(expr) {
         SQLExpr::Value(value) => value
             .value
             .clone()

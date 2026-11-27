@@ -13,15 +13,14 @@ impl DfWithOffset {
 
     /// Note: This performs a linear scan across chunks on each call.
     pub fn split_off_front(&mut self, n_rows: usize) -> DataFrame {
-        let ret = self.df.slice(self.offset as i64, n_rows);
+        let ret = self.df.slice((self.offset, n_rows));
         self.offset += n_rows;
         assert!(self.offset <= self.df.height());
         ret
     }
 
     pub fn into_df(self) -> DataFrame {
-        self.df
-            .slice(self.offset as i64, self.df.height() - self.offset)
+        self.df.slice((self.offset, self.df.height() - self.offset))
     }
 
     pub fn height(&self) -> usize {

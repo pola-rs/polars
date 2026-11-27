@@ -329,22 +329,23 @@ pub(crate) fn try_get_pyfile(
     };
 
     #[cfg(target_family = "unix")]
-    if let Some(fd) = (py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
-        || (py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
-            || py_f.is_exact_instance(&io.getattr("BufferedWriter").unwrap())
-            || py_f.is_exact_instance(&io.getattr("BufferedRandom").unwrap())
-            || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
-            || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
-                && is_utf8_encoding(&py_f)?))
-            && if write {
-                // invalidate read buffer
-                py_f.call_method0("flush").is_ok()
-            } else {
-                py_f.call_method0("tell")
-                    .ok()
-                    .is_none_or(|x| x.extract::<u64>().ok() == Some(0))
-                    && py_f.call_method1("seek", (0, 1)).is_ok()
-            })
+    if let Some(fd) = ((py_f.is_exact_instance(&io.getattr("FileIO").unwrap())
+        || py_f.is_exact_instance(&io.getattr("BufferedReader").unwrap())
+        || py_f.is_exact_instance(&io.getattr("BufferedWriter").unwrap())
+        || py_f.is_exact_instance(&io.getattr("BufferedRandom").unwrap())
+        || py_f.is_exact_instance(&io.getattr("BufferedRWPair").unwrap())
+        || (py_f.is_exact_instance(&io.getattr("TextIOWrapper").unwrap())
+            && is_utf8_encoding(&py_f)?))
+        && if write {
+            // invalidate read buffer
+            py_f.call_method0("flush").is_ok()
+        } else {
+            // Only use the fd of a seekable file at position 0; seeking fails on a pipe or socket.
+            py_f.call_method0("tell")
+                .ok()
+                .is_none_or(|x| x.extract::<u64>().ok() == Some(0))
+                && py_f.call_method1("seek", (0, 1)).is_ok()
+        })
     .then(|| {
         py_f.getattr("fileno")
             .and_then(|fileno| fileno.call0())

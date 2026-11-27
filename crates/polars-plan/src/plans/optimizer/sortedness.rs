@@ -239,11 +239,7 @@ fn is_sorted_rec(
     let sorted = match ir_arena.get(root) {
         #[cfg(feature = "python")]
         IR::PythonScan { .. } => None,
-        IR::Slice {
-            input,
-            offset: _,
-            len: _,
-        } => rec!(*input),
+        IR::Slice { input, slice: _ } => rec!(*input),
         IR::Filter {
             input,
             predicate: _,
@@ -692,7 +688,7 @@ pub fn aexpr_sortedness(
     keep_distinct: bool,
 ) -> Option<AExprSorted> {
     match aexpr {
-        AExpr::Element => None,
+        AExpr::Element | AExpr::EvalColumn(_) => None,
         AExpr::Explode { .. } => None,
         AExpr::Column(col) => {
             let fst = input_sorted?.first()?;

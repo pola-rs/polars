@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import datetime
+import math
 from fractions import Fraction
 from typing import Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -281,6 +283,53 @@ def test_bin_intervals_uniform_float_extremes() -> None:
 
     assert result.struct["bin"].to_list() == [0, 1]
     assert result.struct["right"].to_list() == [0.0, None]
+
+
+@pytest.mark.parametrize(("lo", "n_bins"), [(7.391, 3), (6.2, 4)])
+@pytest.mark.parametrize("right_closed", [False, True])
+@pytest.mark.parametrize(
+    ("dtype", "np_dtype"),
+    [(pl.Float16, np.float16), (pl.Float32, np.float32), (pl.Float64, np.float64)],
+)
+def test_bin_intervals_uniform_float_span_of_one_ulp(
+    lo: float,
+    n_bins: int,
+    right_closed: bool,
+    dtype: pl.DataType,
+    np_dtype: type[np.floating[Any]],
+) -> None:
+    lo_np = np_dtype(lo)
+    lo, hi = float(lo_np), float(np.nextafter(lo_np, np_dtype(math.inf)))
+    s = pl.Series("a", [lo, hi], dtype=dtype)
+
+    result = s.bin_intervals(
+        n_bins, labels=False, include_intervals=True, right_closed=right_closed
+    )
+
+    # The exact breakpoints lie strictly between the two values, which rounds them down
+    # to `lo` when right-closed and up to `hi` when left-closed.
+    edge = lo if right_closed else hi
+    assert result.struct["bin"].to_list() == [0, n_bins - 1]
+    assert result.struct["left"].to_list() == [None, edge]
+    assert result.struct["right"].to_list() == [edge, None]
+
+
+@pytest.mark.parametrize(
+    ("values", "right_closed"),
+    [([0.0, 1.0, math.inf], True), ([-math.inf, -1.0, 0.0], False)],
+)
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+def test_bin_intervals_uniform_float_infinite_endpoint(
+    values: list[float], right_closed: bool, dtype: pl.DataType
+) -> None:
+    s = pl.Series("a", values, dtype=dtype)
+
+    result = s.bin_intervals(2, labels=False, right_closed=right_closed)
+
+    # The breakpoint interpolates to the infinite endpoint, and moves to the nearest
+    # finite value rather than taking a finite row into the infinite one's bin.
+    expected = [0, 0, 1] if right_closed else [0, 1, 1]
+    assert result.to_list() == expected
 
 
 @pytest.mark.parametrize(

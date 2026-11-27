@@ -188,7 +188,7 @@ impl ComputeNode for ForwardFillNode {
                                     ))?;
                                 }
 
-                                let mut tail = column.slice(leading as i64, height - leading);
+                                let mut tail = column.slice((leading, height - leading));
                                 if tail.has_nulls() {
                                     tail = tail.fill_null(FillNullStrategy::Forward(Some(
                                         limit as IdxSize,

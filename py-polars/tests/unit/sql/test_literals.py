@@ -86,7 +86,7 @@ def test_bit_hex_errors() -> None:
 
         with pytest.raises(
             SQLInterfaceError,
-            match=r'NationalStringLiteral\("hmmm"\) is not a supported literal',
+            match="value `N'hmmm'` is not a supported literal",
         ):
             pl.sql_expr("N'hmmm'")
 
@@ -121,6 +121,25 @@ def test_dollar_quoted_literals() -> None:
 
     df = pl.sql("SELECT $$x$z$$ AS dq").collect()
     assert df.item() == "x$z"
+
+
+def test_escape_string_literals() -> None:
+    df = pl.DataFrame({"s": ["a\nb", "a-b"]})
+    res = df.sql(
+        r"""
+        SELECT
+          E'a\nb' AS e1,
+          e'it\'s\t' AS e2,
+          'a\nb' AS plain,
+          REPLACE(s, '-', E'\n') AS r,
+          s = E'a\nb' AS eq
+        FROM self
+        """
+    )
+    assert res.rows() == [
+        ("a\nb", "it's\t", "a\\nb", "a\nb", True),
+        ("a\nb", "it's\t", "a\\nb", "a\nb", False),
+    ]
 
 
 def test_fixed_intervals() -> None:

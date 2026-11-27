@@ -522,6 +522,11 @@ def test_try_strptime() -> None:
     ):
         ctx.execute("SELECT TRY_STRPTIME(s) FROM df", eager=True)
 
+    # an invalid format raises, also for TRY_STRPTIME
+    for func in ["STRPTIME(s, '%Q')", "TRY_STRPTIME(s, '%Y-%')", "DATE(s, '%Q')"]:
+        with pytest.raises(SQLInterfaceError, match="invalid date/time format"):
+            ctx.execute(f"SELECT {func} FROM df", eager=True)
+
 
 def test_temporal_strings_to_datetime() -> None:
     df = pl.DataFrame(

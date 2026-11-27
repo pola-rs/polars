@@ -838,6 +838,42 @@ def test_set_np_array(dtype: Any) -> None:
     assert_series_equal(a, pl.Series("a", [4, 2, 4]))
 
 
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+def test_set_np_array_large_index_31010(dtype: Any) -> None:
+    s = pl.Series("a", [10, 11, 12, 13, 14])
+    with pytest.raises(pl.exceptions.OutOfBoundsError):
+        s[np.array([2**32 + 1], dtype=dtype)] = 0
+    assert_series_equal(s, pl.Series("a", [10, 11, 12, 13, 14]))
+
+
+def test_set_np_array_negative_index() -> None:
+    s = pl.Series("a", [10, 11, 12, 13, 14])
+    s[np.array([1, -1])] = 0
+    assert_series_equal(s, pl.Series("a", [10, 0, 12, 13, 0]))
+
+
+def test_set_np_array_float_key() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    with pytest.raises(TypeError, match="cannot use Series of dtype"):
+        s[np.array([1.0])] = 0
+    assert_series_equal(s, pl.Series("a", [1, 2, 3]))
+
+
+@pytest.mark.parametrize("idx", [[2**32 + 1], (2**32 + 1,)])
+def test_set_list_and_tuple_large_index_31010(idx: list[int] | tuple[int]) -> None:
+    s = pl.Series("a", [10, 11, 12, 13, 14])
+    with pytest.raises(pl.exceptions.OutOfBoundsError):
+        s[idx] = 0
+    assert_series_equal(s, pl.Series("a", [10, 11, 12, 13, 14]))
+
+
+@pytest.mark.parametrize("idx", [[1, -1], (1, -1)])
+def test_set_list_and_tuple_negative_index(idx: list[int] | tuple[int, int]) -> None:
+    s = pl.Series("a", [10, 11, 12, 13, 14])
+    s[idx] = 0
+    assert_series_equal(s, pl.Series("a", [10, 0, 12, 13, 0]))
+
+
 @pytest.mark.parametrize("idx", [[0, 2], (0, 2)])
 def test_set_list_and_tuple(idx: list[int] | tuple[int]) -> None:
     a = pl.Series("a", [1, 2, 3])

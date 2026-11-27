@@ -48,6 +48,17 @@ class ParquetEncryptionProperties:
         Store the AAD prefix in the file. If this is false, readers must provide
         the AAD prefix in order to read the file.
 
+    Notes
+    -----
+    The keys are stored unencrypted in the serialized query when a query that uses
+    these properties is serialized, for example with :meth:`LazyFrame.serialize`,
+    by pickling a LazyFrame, or to run on Polars Nanook. Anyone who can read the
+    serialized query can decrypt the files with these keys, so treat it as being as
+    sensitive as the keys themselves. To avoid serializing keys, use
+    :class:`ParquetEncryptionConfig` and :class:`ParquetDecryptionConfig` with a
+    Key Management Service instead. These never serialize encryption keys, but do
+    serialize the KMS key access token (see :class:`KmsConnectionConfig`).
+
     Examples
     --------
     >>> encryption_properties = pl.ParquetEncryptionProperties(
@@ -106,6 +117,17 @@ class ParquetDecryptionProperties:
         the file was written with an AAD prefix that is not stored in the file.
     verify_footer_signature
         Verify the footer signature of encrypted files with a plaintext footer.
+
+    Notes
+    -----
+    The keys are stored unencrypted in the serialized query when a query that uses
+    these properties is serialized, for example with :meth:`LazyFrame.serialize`,
+    by pickling a LazyFrame, or to run on Polars Nanook. Anyone who can read the
+    serialized query can decrypt the files with these keys, so treat it as being as
+    sensitive as the keys themselves. To avoid serializing keys, use
+    :class:`ParquetEncryptionConfig` and :class:`ParquetDecryptionConfig` with a
+    Key Management Service instead. These never serialize encryption keys, but do
+    serialize the KMS key access token (see :class:`KmsConnectionConfig`).
 
     Examples
     --------

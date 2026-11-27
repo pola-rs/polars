@@ -153,6 +153,51 @@ def test_node_traverse_sink(tmp_path: Path) -> None:
     )
 
 
+PARQUET_KEY = b"0123456789012345"
+
+
+def test_node_traverse_parquet_decryption_not_implemented(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"x": [0, 1, 2]}).write_parquet(
+        path, encryption=pl.ParquetEncryptionProperties(footer_key=PARQUET_KEY)
+    )
+    q = pl.scan_parquet(
+        path, decryption=pl.ParquetDecryptionProperties(footer_key=PARQUET_KEY)
+    )
+
+    with pytest.raises(NotImplementedError, match="parquet decryption"):
+        q._ldf.visit().view_current_node()
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_node_traverse_parquet_encryption_not_implemented(
+    tmp_path: Path, partitioned: bool
+) -> None:
+    errors: list[Exception] = []
+
+    def callback(node_traverser: Any) -> None:
+        try:
+            node_traverser.view_current_node()
+        except Exception as e:
+            errors.append(e)
+
+    target = (
+        pl.PartitionBy(tmp_path, key="x") if partitioned else tmp_path / "a.parquet"
+    )
+    q = pl.LazyFrame({"x": [0, 1, 2]}).sink_parquet(
+        target,
+        encryption=pl.ParquetEncryptionProperties(footer_key=PARQUET_KEY),
+        lazy=True,
+    )
+    q.collect(  # pyrefly: ignore[no-matching-overload]
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )
+
+    assert len(errors) == 1
+    assert isinstance(errors[0], NotImplementedError)
+    assert str(errors[0]) == "parquet encryption"
+
+
 def _collect_join_nodes(query: pl.LazyFrame) -> list[tuple[Any, Any, list[Any]]]:
     """
     Return each Join node of the optimized plan with a view of its predicate.

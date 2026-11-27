@@ -16,6 +16,7 @@ where
 
 #[cfg(any(
     feature = "object",
+    feature = "dtype-array",
     feature = "dtype-struct",
     feature = "dtype-map",
     feature = "dtype-categorical"
@@ -91,6 +92,8 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
         },
         #[cfg(feature = "object")]
         Object(_) => shift_and_fill_with_mask(s, n, fill_value_s),
+        #[cfg(feature = "dtype-array")]
+        Array(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
         #[cfg(feature = "dtype-struct")]
         Struct(_) => shift_and_fill_with_mask(s, n, fill_value_s),
         #[cfg(feature = "dtype-map")]

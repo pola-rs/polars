@@ -127,9 +127,7 @@ fn to_py_resolve_dsl_args<'py>(
     )?;
     py_resolve_dsl_kwargs.set_item(intern!(py, "projection"), projection.as_deref())?;
 
-    let limit = slice
-        .filter(|(offset, _)| *offset >= 0)
-        .map(|(offset, len)| offset as u128 + len as u128);
+    let limit = slice.and_then(|slice| slice.end_position());
 
     py_resolve_dsl_kwargs.set_item(intern!(py, "limit"), limit)?;
 

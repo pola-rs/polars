@@ -7,7 +7,7 @@ use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
 use sqlparser::ast::{
-    JoinConstraint, JoinOperator, Select, Spanned, Statement, TableFactor, TableWithJoins, Visit,
+    JoinConstraint, JoinOperator, Select, Spanned, TableFactor, TableWithJoins, Visit, VisitMut,
     Visitor, VisitorMut,
 };
 use sqlparser::keywords::Keyword;
@@ -71,7 +71,7 @@ impl PositionalJoins {
     }
 
     /// Mark each plain `JOIN` without a condition that a `POSITIONAL` word was taken from.
-    pub(crate) fn attach(mut self, stmts: &mut [Statement]) -> PolarsResult<()> {
+    pub(crate) fn attach<T: VisitMut>(mut self, stmts: &mut [T]) -> PolarsResult<()> {
         for stmt in stmts {
             let _ = dyn_visit::visit_mut(stmt, &mut self);
         }
@@ -119,7 +119,7 @@ const JOIN_CONDITION: &str = "POSITIONAL JOIN does not take a join condition";
 
 /// Mark each plain `JOIN` after an alias `positional`, written without `AS` or quotes, as a
 /// positional join, and drop the alias.
-pub(crate) fn attach_positional_aliases(stmts: &mut [Statement]) -> PolarsResult<()> {
+pub(crate) fn attach_positional_aliases<T: VisitMut>(stmts: &mut [T]) -> PolarsResult<()> {
     struct Attach;
 
     impl VisitorMut for Attach {

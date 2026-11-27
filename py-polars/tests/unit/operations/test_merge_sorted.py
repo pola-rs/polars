@@ -122,6 +122,7 @@ def test_merge_sorted_unbalanced(size: int, ra: list[int]) -> None:
     assert_series_equal(df.get_column("a"), reference)
 
 
+@pytest.mark.slow
 @given(
     lhs=series(
         name="a", allowed_dtypes=[pl.Int32], allow_null=False
@@ -158,6 +159,7 @@ def test_merge_sorted_parametric_binary(lhs: pl.Series, rhs: pl.Series) -> None:
     assert_series_equal(merge_sorted, append_sorted)
 
 
+@pytest.mark.slow
 @given(
     lhs=series(
         name="a", allowed_dtypes=[pl.String], allow_null=False
@@ -176,6 +178,7 @@ def test_merge_sorted_parametric_string(lhs: pl.Series, rhs: pl.Series) -> None:
     assert_series_equal(merge_sorted, append_sorted)
 
 
+@pytest.mark.slow
 @given(
     lhs=series(
         name="a",
@@ -202,6 +205,7 @@ def test_merge_sorted_parametric_struct(lhs: pl.Series, rhs: pl.Series) -> None:
     assert_series_equal(merge_sorted, append_sorted)
 
 
+@pytest.mark.slow
 @given(
     s=series(
         name="a",
@@ -238,6 +242,29 @@ def test_merge_sorted_categorical_global_lexical() -> None:
     )
     result = df1.merge_sorted(df2, key="a")
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("n_categories", [200, 300])
+@pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_enum_30820(
+    n_categories: int, maintain_order: bool, streaming: bool
+) -> None:
+    # The Enum order is the reverse of the string order. Many categories keep
+    # several keys in each streaming morsel.
+    cats = [f"c{i:03}" for i in reversed(range(n_categories))]
+    dtype = pl.Enum(cats)
+    left = pl.DataFrame({"k": cats}, schema={"k": dtype})
+    right = pl.DataFrame(
+        {"k": [c for c in cats[::2] for _ in range(2)]}, schema={"k": dtype}
+    )
+
+    out = (
+        left.lazy()
+        .merge_sorted(right.lazy(), key="k", maintain_order=maintain_order)
+        .collect(engine="streaming" if streaming else "in-memory")
+    )
+    assert_series_equal(out["k"], pl.concat([left, right]).sort("k")["k"])
 
 
 def test_merge_sorted_categorical_21952() -> None:
@@ -347,6 +374,7 @@ def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
         assert_frame_equal(df_chained_from_right, df_full)
 
 
+@pytest.mark.slow
 @given(
     lhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
     rhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
@@ -538,6 +566,7 @@ def test_merge_sorted_empty_key_raises() -> None:
         a.merge_sorted(a, key=[])
 
 
+@pytest.mark.slow
 @given(
     left=dataframes(
         [

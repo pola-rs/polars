@@ -153,7 +153,7 @@ fn remove_dynamic_preds(
         }
         match ir_arena.get_mut(node) {
             IR::Sort {
-                slice: Some((_, _, pred)),
+                slice: Some((_, pred)),
                 ..
             } => *pred = None,
             IR::Join { options, .. } if !options.runtime_filters.is_empty() => {

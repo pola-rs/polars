@@ -65,20 +65,22 @@ pub fn build_plain_page(
     options: WriteOptions,
     encoding: Encoding,
 ) -> PolarsResult<DataPage> {
+    let value_count = i32::try_from(num_values)
+        .map_err(|_| polars_err!(ComputeError: "Parquet page has too many values: {num_values}"))?;
     // The null count of the leaf array misses null and empty lists, so use `num_nulls` instead.
     if let Some(null_count) = statistics.as_mut().and_then(|s| s.null_count.as_mut()) {
         *null_count = num_nulls as i64;
     }
     let header = match options.version {
         Version::V1 => DataPageHeader::V1(DataPageHeaderV1 {
-            num_values: num_values as i32,
+            num_values: value_count,
             encoding: encoding.into(),
             definition_level_encoding: Encoding::Rle.into(),
             repetition_level_encoding: Encoding::Rle.into(),
             statistics,
         }),
         Version::V2 => DataPageHeader::V2(DataPageHeaderV2 {
-            num_values: num_values as i32,
+            num_values: value_count,
             encoding: encoding.into(),
             num_nulls: num_nulls as i32,
             num_rows: num_rows as i32,

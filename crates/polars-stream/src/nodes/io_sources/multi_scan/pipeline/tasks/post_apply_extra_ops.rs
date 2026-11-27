@@ -63,11 +63,7 @@ impl PostApplyExtraOps {
                     unreachable!();
                 };
 
-                assert!(
-                    physical_pre_slice
-                        .as_ref()
-                        .is_none_or(|x| matches!(x, Slice::Positive { .. }))
-                );
+                assert!(physical_pre_slice.is_none_or(|x| !x.is_negative()));
 
                 loop {
                     let row_count_this_morsel = {
@@ -79,15 +75,14 @@ impl PostApplyExtraOps {
                         //   * Instead, `physical_rows` will be a counter that has the `deleted_rows` count subtracted
                         //     from it (because we are taking the height of the morsels after the rows are deleted).
                         let deleted_rows = external_filter_mask.as_ref().map_or(0, |mask| {
-                            let Slice::Positive { offset, len } = Slice::Positive {
+                            let range = Slice::Positive {
                                 offset: row_counter.num_physical_rows(),
                                 len: morsel.height(),
                             }
-                            .restrict_to_bounds(mask.len()) else {
-                                unreachable!()
-                            };
+                            .resolve(mask.len());
 
-                            mask.slice(offset, len).num_deleted_rows(len)
+                            mask.slice(range.start, range.len())
+                                .num_deleted_rows(range.len())
                         });
 
                         RowCounter::new(physical_rows, deleted_rows)
@@ -95,8 +90,8 @@ impl PostApplyExtraOps {
 
                     // We hit this if a reader does not support PRE_SLICE.
                     if physical_pre_slice
-                        .clone()
-                        .is_some_and(|x| x.offsetted(row_counter.num_physical_rows()).len() == 0)
+                        .and_then(|x| x.offsetted(row_counter.num_physical_rows()))
+                        .is_some_and(|x| x.is_empty())
                     {
                         // Note: We do not return any flag indicating that we have reached end of slice
                         // from this context. The read should be stopped on a higher level by using

@@ -156,7 +156,11 @@ build-dist-release: update-cargo-env  ## Compile and install Python Polars binar
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-polars-iceberg
-build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (crates/polars-iceberg)
+build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (py-polars/polars-iceberg)
+	@$(MAKE) -s -C crates $@ VENV=$(abspath $(VENV))
+
+.PHONY: build-polars-database
+build-polars-database: .venv  ## Compile and install the `polars_database` I/O plugin (py-polars/polars-database)
 	@$(MAKE) -s -C crates $@ VENV=$(abspath $(VENV))
 
 .PHONY: check

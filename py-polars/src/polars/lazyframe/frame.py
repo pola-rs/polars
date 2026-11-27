@@ -4,7 +4,6 @@ import contextlib
 import io
 import warnings
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, reduce
 from io import BytesIO, StringIO
@@ -45,6 +44,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
     parse_into_list_of_expressions_require_selectors,
+    parse_quantile_into_expression,
 )
 from polars._utils.parse.expr import parse_list_into_selector
 from polars._utils.serde import serialize_polars_object
@@ -186,8 +186,6 @@ if TYPE_CHECKING:
     T = TypeVar("T")
     P = ParamSpec("P")
 
-
-_COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
 # Name of the placeholder column used by `LazyFrame._with_height_column()`.
 _HEIGHT_COLUMN = "__POLARS_INTERNAL_HEIGHT_COLUMN"
@@ -1681,7 +1679,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def sql(self, query: str, *, table_name: str = "self") -> LazyFrame:
+    def sql(
+        self,
+        query: str,
+        *,
+        table_name: str = "self",
+        params: Sequence[Any] | Mapping[str, Any] | None = None,
+    ) -> LazyFrame:
         """
         Execute a SQL query against the LazyFrame.
 
@@ -1701,6 +1705,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         table_name
             Optionally provide an explicit name for the table that represents the
             calling frame (defaults to "self").
+        params
+            The values of the query parameters. A sequence gives the values of the
+            positional parameters `?` (in order) or `$1`, `$2`, ...; a mapping gives
+            the values of the named parameters `$name` or `:name`. A parameter acts as
+            a literal of its value, so it can never inject SQL.
 
         Notes
         -----
@@ -1765,7 +1774,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         with SQLContext(register_globals=False, eager=False) as ctx:
             name = table_name if table_name else "self"
             ctx.register(name=name, frame=self)
-            return ctx.execute(query)
+            return ctx.execute(query, params=params)
 
     @removed_parameters(
         RenamedParameter(
@@ -3181,8 +3190,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             authentication must outlive the sink (e.g. PyIceberg's ``auth.type``
             rather than a static ``token``). Credentials given here replace them.
 
-            Not renewed: credentials vended without an expiry, per-account ADLS
-            credentials, and those of a table created by SQL ``CREATE TABLE AS``.
+            Not renewed: credentials vended without an expiry, and those of a
+            table created by SQL ``CREATE TABLE AS``.
         compression
             Parquet compression codec.
         compression_level
@@ -7351,7 +7360,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7860,7 +7869,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3.0 ┆ 1.0 │
         └─────┴─────┘
         """  # noqa: W505
-        quantile_py = parse_into_expression(quantile)
+        quantile_py = parse_quantile_into_expression(quantile)
         return self._height_preserving(
             lambda lf: lf._from_pyldf(lf._ldf.quantile(quantile_py, interpolation))
         )

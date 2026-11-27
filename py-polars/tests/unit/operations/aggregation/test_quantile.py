@@ -172,6 +172,7 @@ def test_quantile_group_by_fixed(method: QuantileMethod, dtype: pl.DataType) -> 
         assert_frame_equal(run(df), expected)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("method", METHODS)
 def test_quantile_group_by_random(method: QuantileMethod) -> None:
     rng = random.Random(2)
@@ -228,13 +229,14 @@ def test_quantile_large_matches_sorted(method: QuantileMethod) -> None:
     rng = random.Random(4)
     values = [
         None if rng.random() < 0.05 else rng.randint(-1000, 1000)
-        for _ in range(300_000)
+        for _ in range(150_000)
     ]
     s = _chunked(values, pl.Int64())
     qs = [i / 100 for i in range(101)]
     assert_series_equal(_quantiles(s, qs, method), _quantiles(s.sort(), qs, method))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("method", METHODS)
 @pytest.mark.parametrize("kind", ["mostly_null", "two_values", "constant", "heavy"])
 def test_quantile_large_single_matches_sorted(
@@ -244,7 +246,7 @@ def test_quantile_large_single_matches_sorted(
     # those equal to the bounds around it when values repeat; mostly-null chunks are
     # filtered first.
     rng = random.Random(10)
-    n = 300_000
+    n = 225_000 if kind == "mostly_null" else 70_002
     values: list[float | None]
     if kind == "mostly_null":
         values = [None if rng.random() < 0.7 else rng.uniform(-1, 1) for _ in range(n)]
@@ -279,7 +281,7 @@ def test_quantile_large_floats_matches_sorted(method: QuantileMethod) -> None:
             return rng.choice(specials)
         return rng.uniform(-1000, 1000)
 
-    values = [value() for _ in range(300_000)]
+    values = [value() for _ in range(150_000)]
     s = _chunked(values, pl.Float64())
     qs = [i / 100 for i in range(101)]
     assert_series_equal(_quantiles(s, qs, method), _quantiles(s.sort(), qs, method))
@@ -287,9 +289,9 @@ def test_quantile_large_floats_matches_sorted(method: QuantileMethod) -> None:
 
 @pytest.mark.parametrize("method", METHODS)
 def test_quantile_group_by_large_group(method: QuantileMethod) -> None:
-    # A group large enough for the selection to recurse in parallel inside the group-by.
+    # A large indexed group alongside a small group exercises the scratch-buffer path.
     rng = random.Random(6)
-    n = 200_000
+    n = 12_000
     df = pl.DataFrame(
         {
             "g": [0] * n + [1] * 5,

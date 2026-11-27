@@ -14,6 +14,12 @@ ignore = [
   # supports it yet. Only reached through polars-doc-examples.
   # Remove once aws-sigv4 / p256 move to crypto-bigint >= 0.7.
   "RUSTSEC-2026-0387",
+
+  # chrono, chrono-tz and humantime are unmaintained (chronotope/chrono#1768)
+  # and have no replacement release. humantime comes via object_store.
+  "RUSTSEC-2026-0542",
+  "RUSTSEC-2026-0543",
+  "RUSTSEC-2026-0555",
 ]
 
 [licenses]

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_core::prelude::{Column, PlSmallStr, Series, SortOptions};
 use polars_ops::prelude::SeriesMethods;
 use polars_ops::series::resolve_sort_options;
+use polars_utils::slice_enum::Slice;
 
 use super::compute_node_prelude::*;
 use super::in_memory_source::InMemorySourceNode;
@@ -111,7 +112,7 @@ fn process_morsel(
     let boundary = match last_value.as_ref() {
         Some(prev) => {
             let mut boundary = prev.clone();
-            boundary.append(&series.slice(0, 1))?;
+            boundary.append(&series.slice(Slice::head(1)))?;
             Some(boundary)
         },
         None => None,
@@ -159,7 +160,7 @@ fn process_morsel(
         }
     }
 
-    *last_value = Some(series.slice(-1, 1));
+    *last_value = Some(series.slice(Slice::tail(1)));
     Ok(true)
 }
 

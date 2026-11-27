@@ -642,10 +642,33 @@ impl BinaryViewArray {
         unsafe { validate_views_utf8_only(&self.views, &self.buffers, 0) }
     }
 
-    /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`].
+    /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`]. The bytes of null values need not be
+    /// UTF-8; those values become empty.
     pub fn to_utf8view(&self) -> PolarsResult<Utf8ViewArray> {
-        self.validate_utf8()?;
-        unsafe { Ok(self.to_utf8view_unchecked()) }
+        let err = match self.validate_utf8() {
+            Ok(()) => return unsafe { Ok(self.to_utf8view_unchecked()) },
+            Err(err) => err,
+        };
+        let Some(validity) = self.validity.as_ref().filter(|v| v.unset_bits() > 0) else {
+            return Err(err);
+        };
+        let views: Buffer<View> = self
+            .views
+            .iter()
+            .zip(validity.iter())
+            .map(|(view, valid)| if valid { *view } else { View::default() })
+            .collect();
+        // SAFETY: views are correct
+        unsafe {
+            validate_views_utf8_only(&views, &self.buffers, 0)?;
+            Ok(Utf8ViewArray::new_unchecked_unknown_md(
+                ArrowDataType::Utf8View,
+                views,
+                self.buffers.clone(),
+                Some(validity.clone()),
+                Some(self.total_buffer_len),
+            ))
+        }
     }
 
     /// Convert [`BinaryViewArray`] to [`Utf8ViewArray`] without checking UTF-8.

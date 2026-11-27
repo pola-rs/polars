@@ -85,6 +85,13 @@ impl PhysicalExpr for RollingExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut index_column = self.index_column.evaluate_on_groups(df, groups, state)?;
+        polars_ensure!(
+            !matches!(
+                index_column.agg_state(),
+                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
+            ),
+            InvalidOperation: "the index column of `rolling` must have a value per row, not per group"
+        );
 
         index_column.groups();
 

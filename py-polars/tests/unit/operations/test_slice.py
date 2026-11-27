@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, ShapeError
+from polars.exceptions import ComputeError, OutOfBoundsError, ShapeError
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -13,6 +13,9 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -620,15 +623,15 @@ def test_streaming_negative_slice_uneven_morsels_29398(
 )
 def test_slice_expr_non_scalar_args_raise(expr: pl.Expr) -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3], "o": [1, 1, 1]})
-    with pytest.raises(ComputeError, match="invalid argument to slice"):
+    with pytest.raises(ShapeError, match="must be a scalar value in `slice`"):
         lf.select(expr).collect()
 
 
 @pytest.mark.parametrize(
     ("expr", "expected"),
     [
-        (pl.col("a").slice(pl.col("o").head(1), 1), [2]),
-        (pl.col("a").first().slice(pl.col("o").head(1), 1), []),
+        (pl.col("a").slice(pl.col("o").first(), 1), [2]),
+        (pl.col("a").first().slice(pl.col("o").first(), 1), []),
     ],
 )
 def test_slice_expr_single_value_offset(expr: pl.Expr, expected: list[int]) -> None:
@@ -637,3 +640,122 @@ def test_slice_expr_single_value_offset(expr: pl.Expr, expected: list[int]) -> N
         lf.select(expr).collect(),
         pl.DataFrame({"a": expected}, schema={"a": pl.Int64}),
     )
+
+
+def test_slice_expr_dynamic_offset_selects_every_row(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
+    df = pl.DataFrame({"a": range(100), "o": [0] * 100})
+    assert_frame_equal(
+        df.lazy().select(pl.col("a").slice(pl.col("o").first())).collect(),
+        df.select("a"),
+    )
+
+
+def test_slice_offset_beyond_u32_after_sorted_group_by() -> None:
+    lf = (
+        pl.LazyFrame({"g": [1, 2, 3], "x": [1, 2, 3]})
+        .set_sorted("g")
+        .group_by("g", maintain_order=True)
+        .agg(pl.col("x").sum())
+    )
+    assert lf.slice(2**32 + 1, 10).collect().height == 0
+
+
+def test_slice_offset_beyond_u32_after_rolling() -> None:
+    lf = (
+        pl.LazyFrame({"t": [1, 2, 3], "x": [1, 2, 3]})
+        .set_sorted("t")
+        .rolling("t", period="2i")
+        .agg(pl.col("x").sum())
+    )
+    assert lf.slice(2**32 + 1, 10).collect().height == 0
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [(0, 1), (20, 30), (99, 5), (20, None), (95, None), (-3, None), (500, None)],
+)
+@pytest.mark.parametrize(
+    "group_by",
+    [
+        lambda f: f.group_by("g", maintain_order=True).agg(pl.col("x").sum()),
+        lambda f: f.rolling("t", period="3i").agg(pl.col("x").sum()),
+        lambda f: f.group_by_dynamic("t", every="2i").agg(pl.col("x").sum()),
+    ],
+)
+def test_group_by_slice_across_morsels(
+    offset: int,
+    length: int | None,
+    group_by: Callable[[Any], Any],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
+    df = pl.DataFrame(
+        {"t": range(300), "g": [i // 3 for i in range(300)], "x": range(300)}
+    )
+    lf = df.lazy().set_sorted("t").set_sorted("g")
+    assert_frame_equal(
+        group_by(lf).slice(offset, length).collect(),
+        group_by(df).slice(offset, length),
+    )
+
+
+def test_slice_offset_beyond_u32_after_union() -> None:
+    lf = pl.concat([pl.LazyFrame({"a": [1, 2]}), pl.LazyFrame({"a": [3]})])
+    assert lf.slice(5_000_000_000, 10).collect().height == 0
+
+
+def test_slice_i64_min_offset_on_scan(tmp_path: Path) -> None:
+    path = tmp_path / "a.parquet"
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    df.write_parquet(path)
+    assert_frame_equal(
+        pl.scan_parquet(path).slice(-(2**63), 1).collect(), df.slice(-(2**63), 1)
+    )
+
+
+def test_tail_of_sequential_union() -> None:
+    lf = pl.concat(
+        [pl.LazyFrame({"a": [1, 2]}), pl.LazyFrame({"a": [3, 4]})], parallel=False
+    )
+    assert_frame_equal(lf.tail(1).collect(), pl.DataFrame({"a": [4]}))
+
+
+def test_expr_slice_negative_length_raises() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    with pytest.raises(ComputeError):
+        lf.select(pl.col("a").slice(1, -1)).collect()
+
+
+def test_expr_slice_offset_beyond_i64_raises() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "o": pl.Series([2**63] * 4, dtype=pl.UInt64)})
+    with pytest.raises(ComputeError, match="unable to extract offset"):
+        lf.select(pl.col("a").slice(pl.col("o").first(), 2)).collect()
+
+
+def test_expr_last_through_elementwise_onto_sliced_column() -> None:
+    lf = pl.LazyFrame({"a": range(10)})
+    q = lf.select((pl.col("a").slice(1, 5) + 1).last())
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [6]}))
+
+
+def test_expr_chained_slices_offset_beyond_i64() -> None:
+    lf = pl.LazyFrame({"a": range(5)})
+    q = lf.select(pl.col("a").slice(2**63 - 1).slice(2**63 - 1))
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": []}, schema={"a": pl.Int64}))
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        pl.LazyFrame({"a": [3, 1, 2]}).sort("a").head(2**64 - 1),
+        pl.LazyFrame({"a": [5]})
+        .join_where(pl.LazyFrame({"b": [1, 2, 10]}), pl.col("a") < pl.col("b"))
+        .slice(1, 2**63 - 1),
+    ],
+)
+def test_slice_past_i64_max_raises(q: pl.LazyFrame) -> None:
+    with pytest.raises(OutOfBoundsError, match="past row i64::MAX"):
+        q.collect()

@@ -2,18 +2,18 @@ name: Benchmark
 
 on:
   pull_request:
+    types:
+      - opened
+      - ready_for_review
+      - reopened
+      - synchronize
     paths:
       - crates/**
+      - py-polars/polars-database/**
+      - py-polars/polars-iceberg/**
       - Cargo.toml
-      - py-polars/tests/benchmark/**
-      - .github/workflows/benchmark.yml
-  push:
-    branches:
-      - main
-      - "1.x"
-    paths:
-      - crates/**
-      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
 
@@ -26,12 +26,10 @@ env:
 
 jobs:
   main:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
-      - name: Clone polars-iceberg
-        uses: ./.github/actions/clone-polars-iceberg
 
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -62,16 +60,6 @@ jobs:
 
       - name: Set up Rust
         run: rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          env-vars: ImageVersion
-          save-if: ${{ github.event_name == 'push' }}
-          # This job builds with `-C target-cpu=native`, which the cache key does
-          # not capture, so reusing artifacts across runner CPUs risks SIGILL and
-          # makes timings incomparable; cache the registry only.
-          cache-targets: false
 
       - name: Build Polars release build
         working-directory: py-polars
@@ -139,9 +127,17 @@ jobs:
         working-directory: py-polars
         run: |
           # The venv is created by uv and has no pip.
-          maturin develop --uv --manifest-path ../crates/polars-iceberg/Cargo.toml
+          maturin develop --uv --manifest-path polars-iceberg/Cargo.toml
           # The plugin tests skip when the module is missing; fail here instead.
           python -c 'import polars_iceberg'
+
+      - name: Install polars_database plugin
+        working-directory: py-polars
+        run: |
+          # The venv is created by uv and has no pip.
+          maturin develop --uv --manifest-path polars-database/Cargo.toml
+          # The plugin tests skip when the module is missing; fail here instead.
+          python -c 'import polars_database'
 
       - name: Run non-benchmark tests
         working-directory: py-polars

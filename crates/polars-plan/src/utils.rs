@@ -106,7 +106,7 @@ where
 /// Check if expression is independent from any column.
 pub(crate) fn is_column_independent_aexpr(expr: Node, arena: &Arena<AExpr>) -> bool {
     !has_aexpr(expr, arena, |e| match e {
-        AExpr::Column(_) | AExpr::Len => true,
+        AExpr::Column(_) | AExpr::EvalColumn(_) | AExpr::Len => true,
         #[cfg(feature = "dtype-struct")]
         AExpr::Function {
             input: _,
@@ -392,4 +392,20 @@ pub fn structfield_to_column(
         .rewrite(&mut MapStructFields(prefix), expr_arena)
         .unwrap()
         .node()
+}
+
+/// How long a failed query waits for the other resolvers' plugin calls before returning its error.
+/// Such a call runs on a blocking thread that can't be aborted: waiting keeps it from outliving the
+/// query, but a call that never returns would turn a quick error into a hang.
+pub(crate) const RESOLVER_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Waits for the futures of a stream until it ends, at most [`RESOLVER_DRAIN_TIMEOUT`]; returns
+/// whether it gave up (the futures left are dropped).
+pub(crate) async fn drain_bounded<S: futures::Stream + Unpin>(stream: &mut S) -> bool {
+    use futures::StreamExt;
+    tokio::time::timeout(RESOLVER_DRAIN_TIMEOUT, async {
+        while stream.next().await.is_some() {}
+    })
+    .await
+    .is_err()
 }

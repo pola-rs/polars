@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::BTreeMap;
 
 use polars_arrow::datatypes::{
@@ -826,6 +826,85 @@ impl DataType {
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.contains_categoricals(),
             _ => false,
+        }
+    }
+
+    /// Check if this [`DataType`] is, or contains, a type with a [`TimeUnit`].
+    pub fn contains_time_units(&self) -> bool {
+        self.any_time_unit(|_| true)
+    }
+
+    /// Check if any (possibly nested) [`TimeUnit`] in this [`DataType`] satisfies `f`.
+    fn any_time_unit(&self, f: impl Fn(TimeUnit) -> bool + Copy) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(tu, _) => f(*tu),
+            #[cfg(feature = "dtype-duration")]
+            Duration(tu) => f(*tu),
+            List(inner) => inner.any_time_unit(f),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.any_time_unit(f),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.any_time_unit(f)),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => key.any_time_unit(f) || value.any_time_unit(f),
+            _ => false,
+        }
+    }
+
+    /// Adopt any finer [`TimeUnit`]s found at the same (possibly nested) positions in `others`,
+    /// so that values of all these types can be represented without loss of precision.
+    pub fn merge_finest_time_units_from(
+        &mut self,
+        others: impl IntoIterator<Item = impl Borrow<DataType>>,
+    ) {
+        let mut others = others.into_iter();
+        while self.any_time_unit(|tu| tu != TimeUnit::Nanoseconds)
+            && let Some(other) = others.next()
+        {
+            self.merge_time_units(other.borrow(), |tu, other_tu| tu.min(other_tu));
+        }
+    }
+
+    /// Adopt the [`TimeUnit`]s found at the same (possibly nested) positions in `other`.
+    pub fn adopt_time_units_from(&mut self, other: &DataType) {
+        self.merge_time_units(other, |_, other_tu| other_tu);
+    }
+
+    /// Set each (possibly nested) [`TimeUnit`] that has a counterpart at the same position in
+    /// `other` to `pick(time_unit, other_time_unit)`.
+    fn merge_time_units(&mut self, other: &DataType, pick: fn(TimeUnit, TimeUnit) -> TimeUnit) {
+        use DataType::*;
+        match (self, other) {
+            #[cfg(feature = "dtype-datetime")]
+            (Datetime(tu, _), Datetime(other_tu, _)) => *tu = pick(*tu, *other_tu),
+            #[cfg(feature = "dtype-duration")]
+            (Duration(tu), Duration(other_tu)) => *tu = pick(*tu, *other_tu),
+            (List(inner), List(other_inner)) => inner.merge_time_units(other_inner, pick),
+            #[cfg(feature = "dtype-array")]
+            (Array(inner, _), Array(other_inner, _)) => inner.merge_time_units(other_inner, pick),
+            #[cfg(feature = "dtype-struct")]
+            (Struct(fields), Struct(other_fields)) => {
+                for (i, field) in fields.iter_mut().enumerate() {
+                    if !field.dtype.contains_time_units() {
+                        continue;
+                    }
+                    let other = match other_fields.get(i) {
+                        Some(other) if other.name == field.name => Some(other),
+                        _ => other_fields.iter().find(|f| f.name == field.name),
+                    };
+                    if let Some(other) = other {
+                        field.dtype.merge_time_units(&other.dtype, pick);
+                    }
+                }
+            },
+            #[cfg(feature = "dtype-map")]
+            (Map(key, value), Map(other_key, other_value)) => {
+                key.merge_time_units(other_key, pick);
+                value.merge_time_units(other_value, pick);
+            },
+            _ => {},
         }
     }
 

@@ -17,6 +17,16 @@ use crate::series::AsSeries;
 #[cfg(feature = "rolling_window_by")]
 use crate::windows::group_by::group_by_values_iter_lookbehind_collected;
 
+/// Returns an error if the fraction that `params` gives a rolling quantile is NaN or outside
+/// `0.0..=1.0`.
+#[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
+fn check_rolling_quantile(params: Option<&RollingFnParams>) -> PolarsResult<()> {
+    if let Some(RollingFnParams::Quantile(params)) = params {
+        check_quantiles([params.prob])?;
+    }
+    Ok(())
+}
+
 #[cfg(feature = "rolling_window")]
 #[allow(clippy::type_complexity)]
 fn rolling_agg<T>(
@@ -385,6 +395,7 @@ pub trait SeriesOpsTime: AsSeries {
         by: &Series,
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
+        check_rolling_quantile(options.fn_params.as_ref())?;
         let s = self.as_series().to_float()?;
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
@@ -400,6 +411,7 @@ pub trait SeriesOpsTime: AsSeries {
     /// Apply a rolling quantile to a Series.
     #[cfg(feature = "rolling_window")]
     fn rolling_quantile(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
+        check_rolling_quantile(options.fn_params.as_ref())?;
         let s = self.as_series().to_float()?;
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();

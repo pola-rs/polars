@@ -3,8 +3,6 @@ mod python_scan;
 
 use std::mem;
 
-use polars_utils::slice_enum::Slice;
-
 #[cfg(feature = "python")]
 pub(crate) use self::python_scan::*;
 use super::*;
@@ -44,8 +42,8 @@ pub(crate) struct AnonymousScanExec {
 impl Executor for AnonymousScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let mut args = AnonymousScanArgs {
-            n_rows: self.unified_scan_args.pre_slice.clone().map(|x| {
-                assert!(matches!(x, Slice::Positive { offset: 0, .. }));
+            n_rows: self.unified_scan_args.pre_slice.and_then(|x| {
+                assert_eq!(x.positive_offset(), 0);
 
                 x.len()
             }),

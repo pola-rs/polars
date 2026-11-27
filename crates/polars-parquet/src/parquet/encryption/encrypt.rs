@@ -564,6 +564,173 @@ fn column_path_string(column: &ColumnDescriptor) -> Cow<'_, str> {
     }
 }
 
+/// Serialization of [`FileEncryptionProperties`], including the encryption keys.
+#[cfg(any(feature = "serde", feature = "dsl-schema"))]
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+mod serialization {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "dsl-schema", schemars(rename = "ParquetEncryptionKey"))]
+    struct SerializableEncryptionKey {
+        key: Vec<u8>,
+        key_metadata: Option<Vec<u8>>,
+    }
+
+    // Column keys are sorted by name so that serialization is deterministic.
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "dsl-schema", schemars(rename = "FileEncryptionProperties"))]
+    struct SerializableFileEncryptionProperties {
+        encrypt_footer: bool,
+        footer_key: SerializableEncryptionKey,
+        column_keys: BTreeMap<String, SerializableEncryptionKey>,
+        aad_prefix: Option<Vec<u8>>,
+        store_aad_prefix: bool,
+    }
+
+    #[cfg(feature = "serde")]
+    impl From<&EncryptionKey> for SerializableEncryptionKey {
+        fn from(key: &EncryptionKey) -> Self {
+            Self {
+                key: key.key.clone(),
+                key_metadata: key.key_metadata.clone(),
+            }
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    impl From<SerializableEncryptionKey> for EncryptionKey {
+        fn from(key: SerializableEncryptionKey) -> Self {
+            Self {
+                key: key.key,
+                key_metadata: key.key_metadata,
+            }
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    impl serde::Serialize for FileEncryptionProperties {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            SerializableFileEncryptionProperties {
+                encrypt_footer: self.encrypt_footer,
+                footer_key: (&self.footer_key).into(),
+                column_keys: self
+                    .column_keys
+                    .iter()
+                    .map(|(name, key)| (name.clone(), key.into()))
+                    .collect(),
+                aad_prefix: self.aad_prefix.clone(),
+                store_aad_prefix: self.store_aad_prefix,
+            }
+            .serialize(serializer)
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    impl<'de> serde::Deserialize<'de> for FileEncryptionProperties {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            use serde::de::Error;
+
+            let properties = SerializableFileEncryptionProperties::deserialize(deserializer)?;
+            // Use the builder so that keys are validated.
+            let builder = EncryptionPropertiesBuilder {
+                encrypt_footer: properties.encrypt_footer,
+                footer_key: properties.footer_key.into(),
+                column_keys: properties
+                    .column_keys
+                    .into_iter()
+                    .map(|(name, key)| (name, key.into()))
+                    .collect(),
+                aad_prefix: properties.aad_prefix,
+                store_aad_prefix: properties.store_aad_prefix,
+            };
+            let properties = builder.build().map_err(D::Error::custom)?;
+            Ok(Arc::unwrap_or_clone(properties))
+        }
+    }
+
+    #[cfg(feature = "dsl-schema")]
+    impl schemars::JsonSchema for FileEncryptionProperties {
+        fn schema_name() -> Cow<'static, str> {
+            SerializableFileEncryptionProperties::schema_name()
+        }
+
+        fn schema_id() -> Cow<'static, str> {
+            SerializableFileEncryptionProperties::schema_id()
+        }
+
+        fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+            SerializableFileEncryptionProperties::json_schema(generator)
+        }
+    }
+
+    #[cfg(all(test, feature = "serde"))]
+    mod tests {
+        use super::*;
+
+        const FOOTER_KEY: &[u8] = b"0123456789012345";
+        const COLUMN_KEY_A: &[u8] = b"1234567890123450";
+        const COLUMN_KEY_B: &[u8] = b"12345678901234501234567890123450";
+
+        #[test]
+        fn round_trip() {
+            let properties = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+                .with_plaintext_footer(true)
+                .with_footer_key_metadata(b"footer".to_vec())
+                .with_column_key("a", COLUMN_KEY_A.to_vec())
+                .with_column_key_and_metadata("b.c", COLUMN_KEY_B.to_vec(), b"b".to_vec())
+                .with_aad_prefix(b"prefix".to_vec())
+                .with_aad_prefix_storage(true)
+                .build()
+                .unwrap();
+
+            let json = serde_json::to_string(&properties).unwrap();
+            let deserialized: FileEncryptionProperties = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, *properties);
+        }
+
+        #[test]
+        fn column_key_order_is_deterministic() {
+            let a_then_b = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+                .with_column_key("a", COLUMN_KEY_A.to_vec())
+                .with_column_key("b", COLUMN_KEY_B.to_vec())
+                .build()
+                .unwrap();
+            let b_then_a = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+                .with_column_key("b", COLUMN_KEY_B.to_vec())
+                .with_column_key("a", COLUMN_KEY_A.to_vec())
+                .build()
+                .unwrap();
+            assert_eq!(
+                serde_json::to_string(&a_then_b).unwrap(),
+                serde_json::to_string(&b_then_a).unwrap()
+            );
+        }
+
+        #[test]
+        fn deserialize_validates_keys() {
+            let properties = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+                .build()
+                .unwrap();
+            let json = serde_json::to_string(&properties)
+                .unwrap()
+                .replace("\"key\":[48,", "\"key\":[");
+            let err = serde_json::from_str::<FileEncryptionProperties>(&json).unwrap_err();
+            assert!(err.to_string().contains("footer key"), "{err}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

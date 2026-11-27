@@ -92,7 +92,7 @@ class FileReader(abc.ABC):
         *,
         columns: Sequence[str],
         row_index: tuple[str, int] | None,
-        pre_slice: tuple[int, int] | None,
+        pre_slice: tuple[int, int | None] | None,
         filters: Sequence[FilterExpr],
         num_pipelines: int,
     ) -> Iterator[DataFrame]:
@@ -111,7 +111,8 @@ class FileReader(abc.ABC):
         row_index
             Requested row index. Not given if ReaderCapabilities.row_index was False.
         pre_slice
-            Requested pre-slice. Not given if ReaderCapabilities.pre_slice was False.
+            Requested pre-slice as `(offset, length)`, where a length of `None` runs
+            to the end. Not given if ReaderCapabilities.pre_slice was False.
         filters
             Requested filters. Not given if ReaderCapabilities.supported_filter was None.
         num_pipelines

@@ -536,7 +536,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
             },
         };
         let out = if let Some(idx) = arg_extremum {
-            input.slice(idx as i64, 1)
+            input.slice((idx, 1))
         } else {
             let dtype = input.dtype().clone();
             Column::new_scalar(input.name().clone(), Scalar::null(dtype), 1)
@@ -891,7 +891,7 @@ where
         splits
             .into_par_iter()
             .map(|(offset, len)| {
-                let s = s.slice(offset as i64, len);
+                let s = s.slice((offset, len));
                 f(s)
             })
             .collect::<PolarsResult<Vec<_>>>()

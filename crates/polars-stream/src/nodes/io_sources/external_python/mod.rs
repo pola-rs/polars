@@ -375,8 +375,9 @@ impl FileReader for PythonFileReader {
             if (pre_slice.is_some() || filters.is_some())
                 && (n_rows_in_file_tx.is_some() || row_position_on_end_tx.is_some())
             {
-                let n_rows =
-                    slf.n_rows_in_file_cached(pre_slice.clone().map(|x| x.end_position() as u64))?;
+                let n_rows = slf.n_rows_in_file_cached(
+                    pre_slice.and_then(|x| x.end_position()).map(|x| x as u64),
+                )?;
                 let n_rows = idxsize_try_from(n_rows).unwrap_or(IdxSize::MAX);
 
                 if let Some(n_rows_in_file_tx) = n_rows_in_file_tx.take() {

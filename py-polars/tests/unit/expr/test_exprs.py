@@ -1053,10 +1053,10 @@ def test_slice_rejects_non_integral() -> None:
     df = pl.LazyFrame({"a": [0, 1, 2, 3], "b": [1.5, 2, 3, 4]})
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        df.select(pl.col("a").slice(pl.col("b").slice(0, 1), None)).collect()
+        df.select(pl.col("a").slice(pl.col("b").first(), None)).collect()
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        df.select(pl.col("a").slice(0, pl.col("b").slice(1, 2))).collect()
+        df.select(pl.col("a").slice(0, pl.col("b").max())).collect()
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.select(pl.col("a").slice(pl.lit("1"), None)).collect()

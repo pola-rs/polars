@@ -229,7 +229,7 @@ pub(super) fn date_diff(s: &[Column], unit: DateDiffUnit) -> PolarsResult<Column
     if let DataType::Datetime(tu, _) = &mut dtype {
         for input in [start.dtype(), end.dtype()] {
             if let DataType::Datetime(input_tu, _) = input
-                && tick_nanoseconds(*input_tu) < tick_nanoseconds(*tu)
+                && input_tu.nanoseconds() < tu.nanoseconds()
             {
                 *tu = *input_tu;
             }
@@ -263,7 +263,7 @@ fn date_diff_index(c: &Column, unit: DateDiffUnit) -> PolarsResult<(Int64Chunked
         },
         (DataType::Datetime(tu, tz), Some(ns)) => {
             let ca = c.datetime()?;
-            let tick_ns = tick_nanoseconds(*tu);
+            let tick_ns = tu.nanoseconds();
             if ns <= tick_ns {
                 return Ok((ca.physical().clone(), tick_ns / ns));
             }
@@ -293,14 +293,6 @@ fn date_diff_index(c: &Column, unit: DateDiffUnit) -> PolarsResult<(Int64Chunked
     Ok((index, 1))
 }
 
-fn tick_nanoseconds(tu: TimeUnit) -> i64 {
-    match tu {
-        TimeUnit::Nanoseconds => 1,
-        TimeUnit::Microseconds => 1_000,
-        TimeUnit::Milliseconds => 1_000_000,
-    }
-}
-
 /// Physical values of the wall-clock time; the values themselves without a time zone.
 fn wall_clock(ca: &DatetimeChunked) -> PolarsResult<Int64Chunked> {
     match ca.time_zone() {
@@ -327,7 +319,7 @@ fn calendar_index(c: &Column, unit: DateDiffUnit) -> PolarsResult<Int64Chunked> 
     let days = || -> PolarsResult<Int64Chunked> {
         Ok(match c.dtype() {
             DataType::Datetime(tu, _) => {
-                let ticks_in_day = NANOSECONDS_IN_DAY / tick_nanoseconds(*tu);
+                let ticks_in_day = NANOSECONDS_IN_DAY / tu.nanoseconds();
                 wall_clock(c.datetime()?)?.apply_values(|t| t.div_euclid(ticks_in_day))
             },
             _ => unary_elementwise_values(c.date()?.physical(), i64::from),

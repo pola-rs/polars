@@ -151,8 +151,8 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         Ok(self.0.sort_with(options).into_series())
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Series {
-        self.0.slice(offset, length).into_series()
+    fn slice(&self, slice: Slice) -> Series {
+        self.0.slice(slice).into_series()
     }
 
     fn split_at(&self, offset: i64) -> (Series, Series) {

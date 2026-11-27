@@ -2176,3 +2176,46 @@ def test_is_in_row_wise_series_is_not_elementwise() -> None:
     chunked = pl.concat([df[:2], df[2:]], rechunk=False)
     out = chunked.with_columns(r=pl.col("a").is_in(pl.Series([[0], [9], [2], [9]])))
     assert out["r"].to_list() == [True, False, True, False]
+
+
+def test_is_in_list_array_haystack_flat() -> None:
+    lists = pl.Series([[1, 2, 3], [], None, [None, 4], [5], [6, 7, 6]])
+    arrays = pl.Series(
+        [[1, 2], [3, 4], None, [None, 4], [5, 5], [6, 7]], dtype=pl.Array(pl.Int64, 2)
+    )
+    needles = pl.Series([3, 1, 5, 4, 5, 7])
+    null_needles = pl.Series([None, 1, 5, None, 5, None], dtype=pl.Int64)
+    for hay, expected_vals in [
+        (lists, [True, False, None, True, True, True]),
+        (arrays, [False, False, None, True, True, True]),
+    ]:
+        for nulls_equal in (False, True):
+            out = needles.is_in(hay, nulls_equal=nulls_equal)
+            assert out.to_list() == expected_vals
+        assert needles.slice(1).is_in(hay.slice(1)).to_list() == expected_vals[1:]
+        assert null_needles.is_in(hay, nulls_equal=True).to_list() == [
+            False,
+            False,
+            None,
+            True,
+            True,
+            False,
+        ]
+        assert null_needles.is_in(hay, nulls_equal=False).to_list() == [
+            None if v is None or n is None else (n in v)
+            for v, n in zip(hay.to_list(), null_needles.to_list(), strict=True)
+        ]
+        chunked = pl.concat([hay.slice(0, 2), hay.slice(2)], rechunk=False)
+        assert needles.is_in(chunked).to_list() == expected_vals
+
+    nan = float("nan")
+    fl = pl.Series([[1.0, nan], [2.0], None], dtype=pl.List(pl.Float64))
+    assert pl.Series([nan, nan, 1.0]).is_in(fl).to_list() == [True, False, None]
+    assert pl.Series([nan]).is_in(fl).to_list() == [True, False, None]
+    assert pl.Series([2.0]).is_in(fl).to_list() == [False, True, None]
+
+
+def test_bin_contains_literal_flat() -> None:
+    s = pl.Series([b"abcabc", b"", None, b"xbc", b"ab"])
+    assert s.bin.contains(b"bc").to_list() == [True, False, None, True, False]
+    assert s.bin.contains(b"").to_list() == [True, True, None, True, True]

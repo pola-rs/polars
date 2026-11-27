@@ -7,13 +7,13 @@ use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
 use sqlparser::ast::{
-    Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
-    FunctionArguments, Ident, ObjectName, Query, SetExpr, TableFactor, Visit,
+    AccessExpr, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr,
+    FunctionArgumentList, FunctionArguments, Ident, ObjectName, Query, SetExpr, TableFactor, Visit,
     Visitor as SQLVisitor, VisitorMut, WindowSpec, WindowType, With,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
-use crate::context::{RelationName, match_qualifier, object_name_to_string};
+use crate::context::{RelationName, is_using_left_key, match_qualifier, object_name_to_string};
 use crate::dyn_visit::{self, visit_expressions};
 
 // ---------------------------------------------------------------------------
@@ -274,7 +274,9 @@ pub(crate) fn check_ambiguous_column(
     let mut tables: Vec<_> = joined_aliases
         .iter()
         .filter(|(t, cols)| {
-            cols.contains_key(col) && !using_cols.iter().any(|(ut, uc)| ut == *t && uc == col)
+            // A hidden USING key is the relation's own column.
+            cols.get(col).is_some_and(|name| !is_using_left_key(name))
+                && !using_cols.iter().any(|(ut, uc)| ut == *t && uc == col)
         })
         .map(|(t, _)| t.as_str())
         .collect();
@@ -697,7 +699,59 @@ pub(crate) fn is_column_selector(expr: &SQLExpr) -> bool {
 // ColumnRefFinder
 // ---------------------------------------------------------------------------
 
+/// The identifiers that do not name a column or parameter: the field names in field accesses
+/// (`(expr).name`) and the form of `NORMALIZE(s, NFKC)`.
+#[derive(Default)]
+pub(crate) struct FieldNames(PlHashSet<*const SQLExpr>);
+
+impl FieldNames {
+    /// Records the names in `expr`, a parent of the expressions `take` is called on.
+    pub(crate) fn record(&mut self, expr: &SQLExpr) {
+        match expr {
+            SQLExpr::CompoundFieldAccess { access_chain, .. } => {
+                for access in access_chain {
+                    if let AccessExpr::Dot(
+                        name @ (SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_)),
+                    ) = access
+                    {
+                        self.0.insert(name);
+                    }
+                }
+            },
+            SQLExpr::Function(SQLFunction {
+                name,
+                args: FunctionArguments::List(list),
+                ..
+            }) if name.0.len() == 1
+                && name.0[0]
+                    .as_ident()
+                    .is_some_and(|ident| ident.value.eq_ignore_ascii_case("normalize")) =>
+            {
+                if let [
+                    _,
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(form @ SQLExpr::Identifier(_))),
+                ] = list.args.as_slice()
+                {
+                    self.0.insert(form);
+                }
+            },
+            _ => {},
+        }
+    }
+
+    /// Whether `expr` is a recorded field name.
+    pub(crate) fn contains(&self, expr: &SQLExpr) -> bool {
+        !self.0.is_empty() && self.0.contains(&(expr as *const SQLExpr))
+    }
+
+    /// Whether `expr` is a recorded field name, which is then no longer recorded.
+    pub(crate) fn take(&mut self, expr: &SQLExpr) -> bool {
+        !self.0.is_empty() && self.0.remove(&(expr as *const SQLExpr))
+    }
+}
+
 /// Visitor that checks if a SQL expression contains any column reference at all.
+#[derive(Default)]
 struct ColumnRefFinder;
 
 impl SQLVisitor for ColumnRefFinder {
@@ -709,6 +763,15 @@ impl SQLVisitor for ColumnRefFinder {
             | SQLExpr::CompoundIdentifier(_)
             | SQLExpr::Wildcard(_)
             | SQLExpr::QualifiedWildcard(..) => true,
+            // a column selector, eg: COLUMNS('^x$')
+            SQLExpr::Function(func)
+                if func.name.0.len() == 1
+                    && func.name.0[0]
+                        .as_ident()
+                        .is_some_and(|ident| ident.value.eq_ignore_ascii_case("columns")) =>
+            {
+                true
+            },
             // wildcard arguments, eg: COUNT(*) / COLUMNS(*)
             SQLExpr::Function(func) => match &func.args {
                 FunctionArguments::List(args) => args.args.iter().any(|arg| {

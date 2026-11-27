@@ -6,6 +6,7 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
+use polars_utils::slice_enum::Slice;
 
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -45,7 +46,7 @@ impl ApplyRowIndexOrLimit {
             if let Some(limit) = &limit {
                 let remaining = *limit - n_rows_received;
                 if remaining < df.height() {
-                    df = df.slice(0, remaining);
+                    df = df.slice(Slice::head(remaining));
                 }
             }
 

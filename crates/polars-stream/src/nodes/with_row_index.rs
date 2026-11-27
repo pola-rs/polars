@@ -65,10 +65,17 @@ impl ComputeNode for WithRowIndexNode {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = receiver.recv().await {
                 let offset = self.offset;
-                self.offset = self
-                    .offset
-                    .checked_add(morsel.height().try_into().unwrap())
-                    .unwrap();
+                let next = IdxSize::try_from(morsel.height())
+                    .ok()
+                    .and_then(|h| offset.checked_add(h));
+                let Some(next) = next else {
+                    polars_bail!(
+                        ComputeError:
+                        "row index with offset {} overflows on dataframe with height {}",
+                        offset, morsel.height()
+                    )
+                };
+                self.offset = next;
                 if distributor.send((morsel, offset)).await.is_err() {
                     break;
                 }

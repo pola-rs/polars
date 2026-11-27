@@ -110,7 +110,7 @@ impl ChunkReader {
         if slice != NO_SLICE {
             assert!(slice != SLICE_ENDED);
 
-            df = df.slice(i64::try_from(slice.0).unwrap(), slice.1);
+            df = df.slice((slice.0, slice.1));
         }
 
         cast_columns(&mut df, &self.fields_to_cast, false, self.ignore_errors)?;

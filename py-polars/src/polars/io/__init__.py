@@ -4,7 +4,7 @@ from polars.io.arrow_c_stream import scan_arrow_c_stream
 from polars.io.avro import read_avro
 from polars.io.clipboard import read_clipboard
 from polars.io.csv import read_csv, scan_csv
-from polars.io.database import read_database, read_database_uri
+from polars.io.database import read_database, read_database_uri, scan_database
 from polars.io.delta import read_delta, scan_delta
 from polars.io.external_reader.api import scan_external_reader
 from polars.io.iceberg import delete_iceberg, scan_iceberg
@@ -58,6 +58,7 @@ __all__ = [
     "scan_csv",
     "scan_delta",
     "scan_external_reader",
+    "scan_database",
     "scan_iceberg",
     "scan_ipc",
     "scan_lance",

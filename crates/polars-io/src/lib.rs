@@ -18,6 +18,8 @@ pub mod csv;
 pub mod external_reader;
 #[cfg(feature = "file_cache")]
 pub mod file_cache;
+#[cfg(feature = "io_plugin_ffi")]
+pub mod io_plugin_ffi;
 #[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
 pub mod ipc;
 #[cfg(feature = "json")]

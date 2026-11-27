@@ -9,6 +9,37 @@ impl BinaryNameSpace {
             .map_binary(FunctionExpr::BinaryExpr(BinaryFunction::Contains), pat)
     }
 
+    /// Find the byte offset of the first occurrence of a literal binary.
+    pub fn find(self, pat: Expr) -> Expr {
+        self.0
+            .map_binary(FunctionExpr::BinaryExpr(BinaryFunction::Find), pat)
+    }
+
+    /// Uses aho-corasick to find the byte offsets of many patterns.
+    /// # Arguments
+    /// - `patterns`: an expression that evaluates to a List of Binary or String
+    /// - `ascii_case_insensitive`: Enable ASCII-aware case-insensitive matching.
+    ///   When this option is enabled, searching will be performed without respect to case for
+    ///   ASCII letters (a-z and A-Z) only.
+    /// - `overlapping`: Whether matches may overlap.
+    #[cfg(feature = "find_many")]
+    pub fn find_many(
+        self,
+        patterns: Expr,
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+        leftmost: bool,
+    ) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::BinaryExpr(BinaryFunction::FindMany {
+                ascii_case_insensitive,
+                overlapping,
+                leftmost,
+            }),
+            patterns,
+        )
+    }
+
     /// Check if a binary value ends with the given sequence.
     pub fn ends_with(self, sub: Expr) -> Expr {
         self.0

@@ -133,7 +133,7 @@ impl ExprIR {
                     out.output_name = OutputName::ColumnLhs(get_pl_element_name());
                     break;
                 },
-                AExpr::Column(name) => {
+                AExpr::Column(name) | AExpr::EvalColumn(name) => {
                     out.output_name = OutputName::ColumnLhs(name.clone());
                     break;
                 },

@@ -7,5 +7,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub mod expr;
+pub mod format_spec;
 pub mod join;
 pub mod time;

@@ -125,7 +125,7 @@ impl<T: Spillable> SpillTokenInner<T> {
         // while holding the lock to reduce critical section.
         let mut lock = self.lock.lock().unwrap();
         let waiters = core::mem::take(&mut lock.waiters);
-        self.state.fetch_sub(HAS_WAITERS_BIT, Ordering::Relaxed);
+        self.state.fetch_and(!HAS_WAITERS_BIT, Ordering::Relaxed);
         drop(lock);
 
         for w in waiters {

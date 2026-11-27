@@ -186,6 +186,16 @@ def test_lazyframe_resolver_slice_with_filter() -> None:
     assert kwargs["filters"] == []
 
 
+def test_lazyframe_resolver_open_ended_slice_has_no_limit() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3]})
+
+    resolver = InMemoryLazyFrameResolver(lf)
+    resolver.resolve_lazyframe = Mock(wraps=resolver.resolve_lazyframe)  # type: ignore[method-assign]
+
+    assert_frame_equal(resolver.lazy().slice(1).collect(), lf.collect().slice(1))
+    assert resolver.resolve_lazyframe.call_args.kwargs["limit"] is None
+
+
 def test_lazyframe_resolver_cse_gating(
     capfd: pytest.CaptureFixture[str],
     plmonkeypatch: PlMonkeyPatch,
@@ -570,3 +580,20 @@ def test_lazyframe_resolver_returns_sink_29910(engine: Any) -> None:
             match="resolver cannot return a sink",
         ):
             q.collect(engine=engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_lazyframe_resolver_row_index_then_projection(engine: Any) -> None:
+    # a node above the unresolved resolver (a row index) cached its full schema, while
+    # the resolved plan outputs only the projected columns, in projection order: the
+    # streaming projection picked columns by stale indices
+    df = pl.DataFrame({"id": [1, 2, 3], "g": [10, 20, 30], "d": ["x", "y", "z"]})
+    lf = InMemoryLazyFrameResolver(df.lazy()).lazy()
+    queries: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
+        lambda lf: lf.with_row_index("ri").select("ri", "d"),
+        lambda lf: lf.with_row_index("ri").select("g", "id", "ri"),
+        lambda lf: lf.with_row_index("ri").filter(pl.col("g") > 10).select("g", "ri"),
+        lambda lf: lf.with_row_index("ri").sort("g", descending=True).select("d", "ri"),
+    ]
+    for q in queries:
+        assert_frame_equal(q(lf).collect(engine=engine), q(df.lazy()).collect())

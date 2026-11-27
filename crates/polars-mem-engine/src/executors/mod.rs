@@ -26,6 +26,7 @@ use std::borrow::Cow;
 pub use executor::*;
 pub use filter::column_to_mask;
 use polars_core::runtime::RAYON;
+use polars_utils::slice_enum::Slice;
 use projection_utils::*;
 use rayon::prelude::*;
 

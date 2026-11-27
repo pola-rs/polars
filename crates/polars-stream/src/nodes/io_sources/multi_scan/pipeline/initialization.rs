@@ -112,6 +112,8 @@ async fn finish_initialize_multi_scan_pipeline(
             } = initialize_scan_predicate(
                 config.predicate.as_ref().map(|x| &x.scan_io_predicate),
                 config.hive_parts.as_deref(),
+                &config.sources,
+                config.include_file_paths.as_deref(),
                 config.table_statistics.as_ref(),
                 verbose,
             )?;
@@ -164,7 +166,7 @@ async fn finish_initialize_multi_scan_pipeline(
             if verbose {
                 eprintln!("[MultiScanTaskInit]: early return (filter excludes all files)")
             }
-        } else if config.pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
+        } else if config.pre_slice.as_ref().is_some_and(|x| x.is_empty()) {
             if cfg!(debug_assertions) {
                 panic!("should quit earlier");
             }
@@ -185,7 +187,10 @@ async fn finish_initialize_multi_scan_pipeline(
     let reader_capabilities = config.reader_capabilities()?;
 
     // Remote paths, or any path under `POLARS_FORCE_ASYNC`. Files and buffers never qualify.
-    let sources_run_async = config.sources.first().is_some_and(|x| x.run_async());
+    let sources_run_async = config
+        .file_reader_builder
+        .sources_are_remote()
+        .unwrap_or_else(|| config.sources.first().is_some_and(|x| x.run_async()));
 
     if sources_run_async && reader_capabilities.contains(ReaderCapabilities::NEEDS_FILE_CACHE_INIT)
     {
@@ -233,7 +238,7 @@ async fn finish_initialize_multi_scan_pipeline(
                     || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
                 && (config.deletion_files.is_none()
                     || reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
-                && (config.file_reader_builder.is_external_python_reader()
+                && (!config.file_reader_builder.may_be_compressed_file()
                     || !ASYNC
                         .spawn(is_compressed_source(
                             config.sources.get(0).unwrap().into_owned()?,
@@ -250,7 +255,7 @@ async fn finish_initialize_multi_scan_pipeline(
             ResolvedSliceInfo {
                 scan_source_idx: 0,
                 row_index: config.row_index.clone(),
-                pre_slice: config.pre_slice.clone(),
+                pre_slice: config.pre_slice,
                 initialized_readers: None,
                 row_deletions: Default::default(),
             }
@@ -507,6 +512,14 @@ async fn finish_initialize_multi_scan_pipeline(
         );
     }
 
+    // A reader's own cap (e.g. database sessions) is exact in ordered mode too: a started
+    // reader holds a slot until it has been joined. The started-reader channel alone
+    // admits one more (the reader being joined, a full channel, and one waiting to be
+    // sent), which deadlocks a reader that waits for a resource the later ones hold.
+    let ordered_reader_slots = (!unordered_files
+        && config.file_reader_builder.max_concurrent_scans().is_some())
+    .then(|| Arc::new(Semaphore::new(max_concurrent_scans)));
+
     let unordered_files = unordered_files.then(|| UnorderedFiles {
         reader_slots: Arc::new(Semaphore::new(max_concurrent_scans)),
         merge_capacity: num_pipelines,
@@ -524,6 +537,7 @@ async fn finish_initialize_multi_scan_pipeline(
             max_concurrent_scans,
             read_bytes_limit: ReadBytesLimit::new(calc_max_concurrent_scan_bytes(num_pipelines)),
             unordered_files: unordered_files.clone(),
+            ordered_reader_slots,
             skip_files_mask,
             extra_ops,
             constant_args: StartReaderArgsConstant {

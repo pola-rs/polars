@@ -1997,7 +1997,7 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
                 .with_maintain_order(true)
                 .with_nulls_last(true),
         )
-        .slice(0, 3)
+        .slice(Slice::head(3))
         .collect()?;
     assert!(res.equals(&df![
         "A" => [1, 1, 1],

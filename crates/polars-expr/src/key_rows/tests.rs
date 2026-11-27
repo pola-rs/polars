@@ -21,6 +21,7 @@ fn keys(df: &DataFrame, null_is_valid: bool, random_state: &PlRandomState) -> Ke
         Arc::new(layout.unwrap()),
         random_state,
         null_is_valid,
+        true,
     )
 }
 
@@ -142,7 +143,10 @@ fn colliding_new_keys_get_indices_in_order() {
     assert_eq!(groups, [0, 1, 2, 1]);
     let values: Vec<IdxSize> = (0..3).map(|g| unsafe { *map.value_unchecked(g) }).collect();
     assert_eq!(values, [0, 0, 1]);
-    assert!(map.keys_frame(df.schema()).equals(&df.slice(0, 3)));
+    assert!(
+        map.keys_frame(df.schema())
+            .equals(&df.slice(Slice::head(3)))
+    );
 }
 
 #[test]
@@ -153,7 +157,13 @@ fn columns_of_unequal_length_are_rejected() {
         Column::new("b".into(), [1i64]),
     ];
     let layout = KeyRowLayout::new(columns.iter().map(|c| c.dtype())).unwrap();
-    KeyRowKeys::from_columns(&columns, Arc::new(layout), &PlRandomState::default(), true);
+    KeyRowKeys::from_columns(
+        &columns,
+        Arc::new(layout),
+        &PlRandomState::default(),
+        true,
+        false,
+    );
 }
 
 #[test]

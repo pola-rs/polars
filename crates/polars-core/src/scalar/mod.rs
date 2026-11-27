@@ -88,6 +88,16 @@ impl Scalar {
     }
 
     pub fn into_series(self, name: PlSmallStr) -> Series {
+        // A Map scalar holds deduplicated keys, so its row skips deduplication.
+        // `from_any_values_and_dtype` can't skip it: Python dicts reach it with
+        // keys that collide after conversion (two NaNs, datetimes truncated to `ms`).
+        #[cfg(feature = "dtype-map")]
+        if let AnyValue::Map(entries) = &self.value
+            && let Some(map) =
+                crate::prelude::MapChunked::from_row_entries(name.clone(), &self.dtype, entries)
+        {
+            return crate::prelude::IntoSeries::into_series(map);
+        }
         Series::from_any_values_and_dtype(name, &[self.as_any_value()], &self.dtype, true).unwrap()
     }
 
