@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import re
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,7 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import IO
 
     from polars._typing import NdjsonCompression, PolarsDataType
     from tests.conftest import PlMonkeyPatch
@@ -217,6 +219,18 @@ def test_scan_ndjson_slicing(
         assert_frame_equal(
             q.collect(), q.collect(optimizations=pl.QueryOptFlags.none())
         )
+
+
+def test_scan_ndjson_slice_counts_skipped_rows() -> None:
+    # Blank lines aren't rows; a last line without a newline is one.
+    sources: list[IO[bytes]] = [
+        io.BytesIO(b'{"a": 0}\n{"a": 1}\n{"a": 2}'),
+        io.BytesIO(b'{"a": 3}\n{"a": 4}\n'),
+    ]
+    assert pl.scan_ndjson(sources).slice(3, 1).collect()["a"].to_list() == [3]
+    lf = pl.scan_ndjson(b'{"a": 0}\n\n{"a": 1}\n{"a": 2}\n\n\n')
+    assert lf.slice(2, 1).collect()["a"].to_list() == [2]
+    assert lf.slice(-2, 1).collect()["a"].to_list() == [1]
 
 
 @pytest.mark.parametrize(

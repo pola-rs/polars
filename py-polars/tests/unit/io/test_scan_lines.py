@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import io
+from typing import IO, TYPE_CHECKING, Any
 
 import pytest
 
@@ -212,6 +213,14 @@ def test_scan_lines_negative_slice_reversed_read(
     # This succeeds because the line counter simply counts '\n' bytes without
     # parsing to string.
     assert q.select(pl.len()).collect().item() == 5000
+
+
+def test_scan_lines_slice_counts_skipped_rows() -> None:
+    # A last line without a newline is a row, and so is an empty line.
+    sources: list[IO[bytes]] = [io.BytesIO(b"a\nb\nc"), io.BytesIO(b"d\ne\n")]
+    assert pl.scan_lines(sources).slice(3, 1).collect().to_series().to_list() == ["d"]
+    lf = pl.scan_lines(b"a\n\nb\n")
+    assert lf.slice(-2, 1).collect().to_series().to_list() == [""]
 
 
 def test_scan_source_shorter_than_compression_magic(tmp_path: Path) -> None:

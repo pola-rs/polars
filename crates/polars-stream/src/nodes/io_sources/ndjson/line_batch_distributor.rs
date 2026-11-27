@@ -331,9 +331,10 @@ impl RowSkipper {
     /// Takes `chunk` which contains N lines and consumes min(N, M) lines, where M is the number of
     /// lines that have not yet been skipped.
     ///
-    /// `chunk` is expected in the form "line_a\nline_b\nline_c(\n)?" regardless of `reverse`.
+    /// `chunk` is expected in the form "line_a\nline_b\nline_c(\n)?" regardless of `reverse`. The
+    /// returned bytes are whole lines with their `\n`.
     fn skip_rows(&mut self, chunk: Buffer<u8>) -> Buffer<u8> {
-        if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
+        if self.n_rows_skipped >= self.cfg_n_rows_to_skip || chunk.is_empty() {
             return chunk;
         }
 
@@ -346,48 +347,41 @@ impl RowSkipper {
 
     fn _skip_rows_forward(&mut self, chunk: Buffer<u8>) -> Buffer<u8> {
         let len = chunk.len();
-        let mut offset = 0;
+        // The last line of the input may have no `\n`.
+        let unterminated_end = (chunk.last() != Some(&LF)).then_some(len);
+        let mut start = 0;
 
-        while let Some(pos) = memchr::memchr(LF, &chunk[offset..]) {
-            let prev_offset = offset;
-            offset = cmp::min(offset + pos + 1, len);
+        for end in memchr::memchr_iter(LF, &chunk).chain(unterminated_end) {
+            if (self.is_line)(&chunk[start..end]) {
+                self.n_rows_skipped += 1;
 
-            if !(self.is_line)(&chunk[prev_offset..offset]) {
-                continue;
+                if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
+                    return chunk.sliced(cmp::min(end + 1, len)..len);
+                }
             }
-
-            self.n_rows_skipped += 1;
-
-            if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
-                return chunk.sliced(offset..len);
-            }
+            start = end + 1;
         }
 
         Buffer::new()
     }
 
     fn _skip_rows_backward(&mut self, chunk: Buffer<u8>) -> Buffer<u8> {
-        let len = chunk.len();
-        let mut offset = len.saturating_sub((chunk.last().copied() == Some(LF)) as usize);
+        // A final `\n` ends the last line.
+        let mut end = chunk.len() - (chunk.last() == Some(&LF)) as usize;
 
-        while let Some(pos) = memchr::memrchr(LF, &chunk[..offset]) {
-            let prev_offset = offset;
-            offset = pos;
+        for start in memchr::memrchr_iter(LF, &chunk[..end])
+            .map(|i| i + 1)
+            .chain([0])
+        {
+            if (self.is_line)(&chunk[start..end]) {
+                self.n_rows_skipped += 1;
 
-            if !(self.is_line)(&chunk[offset..prev_offset]) {
-                continue;
+                if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
+                    return chunk.sliced(0..start);
+                }
             }
-
-            self.n_rows_skipped += 1;
-
-            if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
-                return chunk.sliced(0..offset);
-            }
-
-            offset = offset.saturating_sub(1);
+            end = start.saturating_sub(1);
         }
-
-        self.n_rows_skipped += !chunk.is_empty() as usize;
 
         Buffer::new()
     }
