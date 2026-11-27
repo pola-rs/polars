@@ -403,6 +403,42 @@ def _raise_if_base_changed(
     raise refusal from error
 
 
+def _keep_ref_retention(
+    updates: tuple[TableUpdate, ...], tx: Transaction
+) -> tuple[TableUpdate, ...]:
+    """`updates`, with the retention of each ref that a new snapshot moves."""
+    from pyiceberg.table.update import AddSnapshotUpdate, SetSnapshotRefUpdate
+
+    added = {
+        u.snapshot.snapshot_id for u in updates if isinstance(u, AddSnapshotUpdate)
+    }
+    if not added:
+        return updates
+    metadata = tx.table_metadata
+
+    def kept(update: TableUpdate) -> TableUpdate:
+        if (
+            not isinstance(update, SetSnapshotRefUpdate)
+            or update.snapshot_id not in added
+            or update.max_ref_age_ms is not None
+            or update.max_snapshot_age_ms is not None
+            or update.min_snapshots_to_keep is not None
+        ):
+            return update
+        ref = metadata.refs.get(update.ref_name)
+        if ref is None or ref.snapshot_ref_type != update.type:
+            return update
+        return update.model_copy(
+            update={
+                "max_ref_age_ms": ref.max_ref_age_ms,
+                "max_snapshot_age_ms": ref.max_snapshot_age_ms,
+                "min_snapshots_to_keep": ref.min_snapshots_to_keep,
+            }
+        )
+
+    return tuple(kept(u) for u in updates)
+
+
 def _sink_transaction(
     table: pyiceberg.table.Table,
     sink_uuid: str | None,
@@ -422,6 +458,14 @@ def _sink_transaction(
     from pyiceberg.table.update import AssertCurrentSchemaId, AssertDefaultSpecId
 
     class _SinkTransaction(Transaction):  # type: ignore[misc]
+        def _stage(
+            self,
+            updates: tuple[TableUpdate, ...],
+            requirements: tuple[TableRequirement, ...] = (),
+        ) -> Transaction:
+            updates = _keep_ref_retention(updates, self)
+            return super()._stage(updates, requirements)
+
         # pyiceberg calls this after refreshing the table for a retry, before it
         # writes new manifests. A twin that lands after this check moves the branch
         # ref, so the next commit fails and `_SinkCatalog` finds the twin.
@@ -498,6 +542,14 @@ def _replace_transaction(
     base_snapshot_id = table.metadata.current_snapshot_id
 
     class _ReplaceTransaction(Transaction):  # type: ignore[misc]
+        def _stage(
+            self,
+            updates: tuple[TableUpdate, ...],
+            requirements: tuple[TableRequirement, ...] = (),
+        ) -> Transaction:
+            updates = _keep_ref_retention(updates, self)
+            return super()._stage(updates, requirements)
+
         def _rebuild_snapshot_updates(self) -> None:
             metadata = self._table.metadata
             if _already_committed(metadata, sink_uuid):
