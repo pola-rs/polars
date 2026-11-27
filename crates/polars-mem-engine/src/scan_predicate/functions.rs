@@ -233,6 +233,14 @@ fn create_staged_predicate(
             right,
         })
     });
+    let rest_columns = Arc::new(
+        rest.map(|rest| {
+            aexpr_to_leaf_names_iter(rest, expr_arena)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default(),
+    );
     if std::env::var("POLARS_OUTPUT_COLUMN_PREDS").as_deref() == Ok("1") {
         eprintln!("column_predicates: {{");
         for p in column_predicates.predicates.values() {
@@ -259,6 +267,7 @@ fn create_staged_predicate(
         }
     }
     Ok(StagedScanPredicate {
+        rest_columns,
         column_predicates: column_predicates
             .predicates
             .into_iter()

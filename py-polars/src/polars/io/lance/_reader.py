@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-import queue
 import threading
-from concurrent.futures import CancelledError, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import polars._utils.logging
@@ -15,8 +13,9 @@ from polars.io.external_reader import (
 from polars.io.external_reader._external_reader import ReaderCapabilities
 
 if TYPE_CHECKING:
+    import queue
     from collections.abc import Iterator, Sequence
-    from concurrent.futures import Future
+    from concurrent.futures import Future, ThreadPoolExecutor
 
     import lance
     import pyarrow as pa
@@ -111,6 +110,8 @@ class LanceFragmentReader(FileReader):
         self.this_reader_inflight_rows = 0
 
     def initialize_serial(self) -> None:
+        import queue
+
         with CX_LOCK:
             if CX_INFLIGHT_ROWS_KEY not in self.multi_scan_context:
                 self.multi_scan_context[CX_INFLIGHT_ROWS_KEY] = 0
@@ -149,6 +150,9 @@ class LanceFragmentReader(FileReader):
         filters: Sequence[FilterExpr] = (),
         num_pipelines: int,
     ) -> Iterator[pl.DataFrame]:
+        import queue
+        from concurrent.futures import CancelledError, ThreadPoolExecutor
+
         assert not filters
 
         slice_limit = None

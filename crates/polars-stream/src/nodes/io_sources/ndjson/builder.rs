@@ -4,13 +4,14 @@ use std::sync::Arc;
 use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+use polars_core::schema::SchemaRef;
 #[cfg(feature = "json")]
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 #[cfg(feature = "json")]
 use polars_io::metrics::IOMetrics;
-use polars_plan::dsl::{NDJsonReadOptions, ScanSource};
+use polars_plan::dsl::{ExtraColumnsPolicy, NDJsonReadOptions, ScanSource};
 #[cfg(feature = "json")]
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -23,6 +24,10 @@ use crate::nodes::io_sources::shared::file_init::CLOUD_PRE_INIT_LIMIT;
 
 pub struct NDJsonReaderBuilder {
     pub options: Arc<NDJsonReadOptions>,
+    /// The full file schema.
+    pub file_schema: SchemaRef,
+    /// Applies to keys at every level. Taken from the scan, since row-count reads pass defaults.
+    pub extra_columns_policy: ExtraColumnsPolicy,
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
@@ -108,6 +113,12 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
         let scan_source = source;
         let chunk_reader_builder = ChunkReaderBuilder::NDJson {
             ignore_errors: self.options.ignore_errors,
+            file_schema: self.file_schema.clone(),
+            raise_on_extra_keys: matches!(self.extra_columns_policy, ExtraColumnsPolicy::Raise),
+            source: match &scan_source {
+                ScanSource::Path(path) => Some(strip_url_secrets(path)),
+                ScanSource::File(_) | ScanSource::Buffer(_) => None,
+            },
         };
         let verbose = config::verbose();
 
@@ -139,4 +150,24 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
 
         Ok(Box::new(reader) as _)
     }
+}
+
+/// `path` without the query, fragment or HTTP credentials of a URL, for error messages.
+#[cfg(feature = "json")]
+fn strip_url_secrets(path: &polars_utils::pl_path::PlPath) -> PlSmallStr {
+    use polars_utils::pl_path::CloudScheme;
+
+    let Some(scheme) = path.scheme() else {
+        return path.as_str().into();
+    };
+    let rest = path.strip_scheme();
+    let prefix = &path.as_str()[..path.as_str().len() - rest.len()];
+    let rest = rest.split(['?', '#']).next().unwrap_or_default();
+    let (authority, tail) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+    // Elsewhere (e.g. `abfss://container@account`), the part before `@` isn't a credential.
+    let authority = match authority.rsplit_once('@') {
+        Some((_, host)) if matches!(scheme, CloudScheme::Http | CloudScheme::Https) => host,
+        _ => authority,
+    };
+    polars_utils::format_pl_smallstr!("{prefix}{authority}{tail}")
 }

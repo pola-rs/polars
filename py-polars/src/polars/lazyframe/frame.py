@@ -4,7 +4,6 @@ import contextlib
 import io
 import warnings
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, reduce
 from io import BytesIO, StringIO
@@ -187,8 +186,6 @@ if TYPE_CHECKING:
     T = TypeVar("T")
     P = ParamSpec("P")
 
-
-_COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
 # Name of the placeholder column used by `LazyFrame._with_height_column()`.
 _HEIGHT_COLUMN = "__POLARS_INTERNAL_HEIGHT_COLUMN"
@@ -3241,6 +3238,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         each new data file. Existing files are not rewritten. Sorting materializes
         the incoming data in memory. This does not guarantee a globally sorted table
         scan.
+
+        If the table's schema or partition spec changed after the table was loaded,
+        for example by another writer during the write, the commit raises a
+        `ValidationException`. A `Table` target then has the current state, so the
+        write can run again, with data for the current schema.
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
@@ -7363,7 +7365,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------

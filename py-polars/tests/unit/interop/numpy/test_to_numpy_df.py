@@ -29,6 +29,7 @@ def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
     assert s_ptr == arr_ptr
 
 
+@pytest.mark.slow
 @pytest.mark.may_fail_cloud
 @given(
     s=series(

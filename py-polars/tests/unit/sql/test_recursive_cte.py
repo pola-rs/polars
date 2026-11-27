@@ -530,6 +530,7 @@ def test_recursive_step_reads_parquet(tmp_path: Path) -> None:
     assert res.rows() == [(50, 51)]
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_recursive_spilled(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> None:
     # Spill everything the memory manager can, so every round reads its inputs back.

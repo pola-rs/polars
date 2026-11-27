@@ -1,3 +1,5 @@
+use polars_arrow::bitmap::Bitmap;
+
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::prelude::*;
@@ -13,7 +15,12 @@ where
             let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect_trusted();
             ca.into_inner()
         } else {
-            self.iter().rev().collect_trusted()
+            let chunks = self.downcast_iter().rev().map(|arr| {
+                let values: Vec<T::Native> = arr.values().iter().rev().copied().collect();
+                let validity = arr.validity().map(|v| v.iter().rev().collect::<Bitmap>());
+                PrimitiveArray::new(arr.dtype().clone(), values.into(), validity)
+            });
+            ChunkedArray::from_chunk_iter_like(self, chunks)
         };
         out.rename(self.name().clone());
 
@@ -42,7 +49,20 @@ macro_rules! impl_reverse {
     };
 }
 
-impl_reverse!(BooleanType, BooleanChunked);
+impl ChunkReverse for BooleanChunked {
+    fn reverse(&self) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        };
+        let chunks = self.downcast_iter().rev().map(|arr| {
+            let values = arr.values().iter().rev().collect::<Bitmap>();
+            let validity = arr.validity().map(|v| v.iter().rev().collect::<Bitmap>());
+            BooleanArray::new(arr.dtype().clone(), values, validity)
+        });
+        BooleanChunked::from_chunk_iter_like(self, chunks)
+    }
+}
+
 impl_reverse!(BinaryOffsetType, BinaryOffsetChunked);
 
 impl ChunkReverse for ListChunked {

@@ -76,6 +76,7 @@ _POLARS_CFG_ENV_VARS: Final[set[str]] = {
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
     "POLARS_IDEAL_MORSEL_SIZE",
+    "POLARS_OOC_MEMORY_BUDGET_MB",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
     "POLARS_MAX_EXPR_DEPTH",
@@ -151,6 +152,7 @@ class ConfigParameters(TypedDict, total=False):
     fmt_float: FloatFmt | None
     fmt_str_lengths: int | None
     fmt_table_cell_list_len: int | None
+    memory_budget: int | None
     streaming_chunk_size: int | None
     tbl_cell_alignment: Alignment | None
     tbl_cell_numeric_alignment: Alignment | None
@@ -178,6 +180,7 @@ class ConfigParameters(TypedDict, total=False):
     set_fmt_float: FloatFmt | None
     set_fmt_str_lengths: int | None
     set_fmt_table_cell_list_len: int | None
+    set_memory_budget: int | None
     set_streaming_chunk_size: int | None
     set_tbl_cell_alignment: Alignment | None
     set_tbl_cell_numeric_alignment: Alignment | None
@@ -955,6 +958,41 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
 
             os.environ["POLARS_IDEAL_MORSEL_SIZE"] = str(size)
         plr.config_reload_env_var("POLARS_IDEAL_MORSEL_SIZE")
+        return cls
+
+    @classmethod
+    @unstable()
+    def set_memory_budget(cls, mb: int | None) -> type[Config]:
+        """
+        Set the memory budget of the streaming engine in megabytes.
+
+        When the streaming engine uses more memory than this budget, it spills
+        data to disk. The effective budget is the smaller of this value and
+        `POLARS_OOC_MEMORY_BUDGET_FRACTION` (default 0.8) times the total memory.
+
+        This can also be triggered by setting the `POLARS_OOC_MEMORY_BUDGET_MB` env var.
+
+        Parameters
+        ----------
+        mb
+            Memory budget in megabytes (1 MB = 1,000,000 bytes). Set to `None`
+            to only use the fraction of the total memory.
+
+        Examples
+        --------
+        >>> pl.Config.set_memory_budget(4_000)  # doctest: +SKIP
+        >>> with pl.Config(memory_budget=4_000):  # doctest: +SKIP
+        ...     lf.collect(engine="streaming")
+        """
+        if mb is None:
+            os.environ.pop("POLARS_OOC_MEMORY_BUDGET_MB", None)
+        else:
+            if mb < 0:
+                msg = "memory budget must be >= 0"
+                raise ValueError(msg)
+
+            os.environ["POLARS_OOC_MEMORY_BUDGET_MB"] = str(mb)
+        plr.config_reload_env_var("POLARS_OOC_MEMORY_BUDGET_MB")
         return cls
 
     @classmethod

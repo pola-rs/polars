@@ -1400,6 +1400,7 @@ def test_join_asof_no_exact_matches() -> None:
     }
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 @given(
     df_left=dataframes(cols=1, allowed_dtypes=pl.Int32),
@@ -1770,6 +1771,7 @@ def test_join_asof_nans(strategy: AsofJoinStrategy) -> None:
     assert_frame_equal(actual, expected)
 
 
+@pytest.mark.slow
 @pytest.mark.filterwarnings(
     "ignore:Sortedness of columns cannot be checked when 'by' groups provided"
 )
@@ -1919,6 +1921,7 @@ def test_join_asof_maintain_order_left_27526() -> None:
     )
 
 
+@pytest.mark.slow
 def test_join_asof_buffer_ordering_27619() -> None:
     n = 10
     for n_dataframes in range(1, 20):

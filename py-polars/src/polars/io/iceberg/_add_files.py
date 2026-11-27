@@ -111,7 +111,6 @@ def add_files(
         ValidationException,
     )
     from pyiceberg.table import Table, TableProperties
-    from pyiceberg.table.update import AssertCurrentSchemaId
     from pyiceberg.utils.concurrent import ExecutorFactory
 
     from polars.exceptions import DuplicateError
@@ -176,11 +175,6 @@ def add_files(
             schema_id=schema.schema_id,
             check=same_mapping,
         ) as tx:
-            # the files were checked against this schema
-            tx._stage(
-                (),
-                (AssertCurrentSchemaId(current_schema_id=schema.schema_id),),  # type: ignore[call-arg]
-            )
             # files without field ids are read through the name mapping
             if sets_mapping:
                 tx.set_properties({mapping_key: new_mapping})
@@ -220,7 +214,7 @@ def add_files(
         if (
             sets_mapping
             and error is catalog._raised
-            and not isinstance(error, CommitFailedException)
+            and not isinstance(error, (CommitFailedException, ValidationException))
         ):
             error.add_note(
                 f"add_files also set the name mapping of table '{name}' "

@@ -172,6 +172,7 @@ def test_quantile_group_by_fixed(method: QuantileMethod, dtype: pl.DataType) -> 
         assert_frame_equal(run(df), expected)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("method", METHODS)
 def test_quantile_group_by_random(method: QuantileMethod) -> None:
     rng = random.Random(2)
@@ -235,6 +236,7 @@ def test_quantile_large_matches_sorted(method: QuantileMethod) -> None:
     assert_series_equal(_quantiles(s, qs, method), _quantiles(s.sort(), qs, method))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("method", METHODS)
 @pytest.mark.parametrize("kind", ["mostly_null", "two_values", "constant", "heavy"])
 def test_quantile_large_single_matches_sorted(

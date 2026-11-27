@@ -14,7 +14,6 @@ the same size owned by the process-wide cache here (see ``plugin_cache``).
 
 from __future__ import annotations
 
-import hashlib
 import io
 import itertools
 import os
@@ -26,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
+from polars._dependencies import hashlib
 from polars._utils.various import qualified_type_name
 
 if TYPE_CHECKING:

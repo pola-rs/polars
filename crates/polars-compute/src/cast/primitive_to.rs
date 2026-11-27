@@ -8,7 +8,7 @@ use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::compute::arity::unary;
 use polars_arrow::datatypes::{ArrowDataType, TimeUnit};
 use polars_arrow::offset::{Offset, Offsets};
-use polars_arrow::types::NativeType;
+use polars_arrow::types::{NativeType, PrimitiveType};
 use polars_error::PolarsResult;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -235,10 +235,43 @@ where
     I: NativeType + num_traits::NumCast,
     O: NativeType + num_traits::NumCast,
 {
+    if is_integer(I::PRIMITIVE) && is_integer(O::PRIMITIVE) {
+        let all_fit = from.values().chunks(1024).all(|chunk| {
+            chunk.iter().fold(true, |fit, x| {
+                fit & num_traits::cast::cast::<I, O>(*x).is_some()
+            })
+        });
+        if all_fit {
+            // SAFETY: every value was checked to fit in O.
+            let values = from
+                .values()
+                .iter()
+                .map(|x| unsafe { num_traits::cast::cast::<I, O>(*x).unwrap_unchecked() })
+                .collect::<Vec<O>>();
+            return PrimitiveArray::<O>::new(
+                to_type.clone(),
+                values.into(),
+                from.validity().cloned(),
+            );
+        }
+    }
+
     let iter = from
         .iter()
         .map(|v| v.and_then(|x| num_traits::cast::cast::<I, O>(*x)));
     PrimitiveArray::<O>::from_trusted_len_iter(iter).to(to_type.clone())
+}
+
+fn is_integer(ptype: PrimitiveType) -> bool {
+    !matches!(
+        ptype,
+        PrimitiveType::Float16
+            | PrimitiveType::Float32
+            | PrimitiveType::Float64
+            | PrimitiveType::DaysMs
+            | PrimitiveType::MonthDayNano
+            | PrimitiveType::MonthDayMillis
+    )
 }
 
 /// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow

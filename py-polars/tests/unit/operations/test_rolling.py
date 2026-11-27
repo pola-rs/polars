@@ -653,6 +653,97 @@ def test_rolling_unsupported_22065() -> None:
         pl.Series("a", [[None]], pl.List(pl.Null)).rolling_sum(10)
 
 
+@pytest.mark.parametrize(
+    ("values", "expr"),
+    [
+        (["1", "2"], pl.col("x").rolling_mean(2)),
+        (["1", "2"], pl.col("x").rolling_quantile(0.5, window_size=2)),
+        (["1", "2"], pl.col("x").rolling_std(2)),
+        (["1", "2"], pl.col("x").rolling_mean_by("t", window_size="2i")),
+        (["1", "2"], pl.col("x").rolling_sum(2, weights=[1.0, 1.0])),
+        ([[1], [2]], pl.col("x").rolling_std(2)),
+        ([[1], [2]], pl.col("x").rolling_mean(2)),
+        ([date(2020, 1, 1), date(2020, 1, 2)], pl.col("x").rolling_var(2)),
+        ([date(2020, 1, 1), date(2020, 1, 2)], pl.col("x").rolling_std(2)),
+        (
+            [datetime(2020, 1, 1), datetime(2020, 1, 2)],
+            pl.col("x").rolling_std_by("t", window_size="2i"),
+        ),
+        (
+            [date(2020, 1, 1), date(2020, 1, 2)],
+            pl.col("x").rolling_min(2, weights=[1.0, 1.0]),
+        ),
+        (
+            [timedelta(1), timedelta(2)],
+            pl.col("x").rolling_sum(2, weights=[1.0, 1.0]),
+        ),
+        (pl.Series([1, 2], dtype=pl.Decimal(10, 2)), pl.col("x").rolling_sum(2)),
+        (pl.Series([1, 2], dtype=pl.Decimal(10, 2)), pl.col("x").rolling_max(2)),
+        ([True, False], pl.col("x").rolling_skew(2)),
+    ],
+)
+def test_rolling_unsupported_dtype_raises_at_planning(
+    values: Any, expr: pl.Expr
+) -> None:
+    lf = pl.LazyFrame({"x": values, "t": [0, 1]}).select(expr)
+    with pytest.raises(InvalidOperationError, match="operation not supported"):
+        lf.collect_schema()
+    with pytest.raises(InvalidOperationError, match="operation not supported"):
+        lf.collect()
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").rolling_mean(2),
+        pl.col("x").rolling_median(2),
+        pl.col("x").rolling_var(2),
+        pl.col("x").rolling_std(2),
+        pl.col("x").rolling_mean_by("t", window_size="2i"),
+        pl.col("x").rolling_quantile_by("t", window_size="2i", quantile=0.5),
+        pl.col("x").rolling_var_by("t", window_size="2i"),
+        pl.col("x").rolling_std_by("t", window_size="2i"),
+        pl.col("x").rolling_mean(2, weights=[1.0, 2.0]),
+        pl.col("x").rolling_std(2, weights=[1.0, 2.0]),
+        pl.col("x").rolling_sum(2, weights=[1.0, 2.0]),
+        pl.col("x").rolling_min(2, weights=[1.0, 2.0]),
+        pl.col("x").rolling_max(2, weights=[1.0, 2.0]),
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype", [pl.Float16, pl.Float32, pl.Int64, pl.Boolean, pl.Decimal(10, 2)]
+)
+def test_rolling_dtype_matches_schema(expr: pl.Expr, dtype: pl.DataType) -> None:
+    values = [True, False, True] if dtype == pl.Boolean else [1, 2, 4]
+    lf = pl.LazyFrame({"x": pl.Series(values, dtype=dtype), "t": [0, 1, 2]})
+    lf = lf.select(expr)
+    out = lf.collect()
+    assert lf.collect_schema() == out.schema
+    expected = dtype if dtype in (pl.Float16, pl.Float32) else pl.Float64
+    assert out.schema["x"] == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "expr", "expected"),
+    [
+        # The variance 65536 is out of Float16 range, the standard deviation isn't.
+        ([0, 512], pl.col("x").rolling_std(2, ddof=0), 256.0),
+        ([0, 512], pl.col("x").rolling_std(2, ddof=0, weights=[1.0, 1.0]), 256.0),
+        ([0, 512], pl.col("x").rolling_std_by("t", window_size="2i", ddof=0), 256.0),
+        # The sum 120000 is out of Float16 range, the mean isn't.
+        ([60000, 60000], pl.col("x").rolling_mean(2), 60000.0),
+        ([60000, 60000], pl.col("x").rolling_mean_by("t", window_size="2i"), 60000.0),
+    ],
+)
+def test_rolling_float16_intermediate_out_of_range(
+    values: list[int], expr: pl.Expr, expected: float
+) -> None:
+    lf = pl.LazyFrame({"x": pl.Series(values, dtype=pl.Float16), "t": [0, 1]})
+    out = lf.select(expr).collect().to_series()
+    assert out.dtype == pl.Float16
+    assert out[-1] == expected
+
+
 def test_rolling_mean_f32_22936() -> None:
     arr = np.array(
         [

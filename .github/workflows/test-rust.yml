@@ -2,10 +2,17 @@ name: Test Rust
 
 on:
   pull_request:
+    types:
+      - opened
+      - ready_for_review
+      - reopened
+      - synchronize
     paths:
       - crates/**
       - examples/**
       - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
       - .github/workflows/test-rust.yml
   push:
     branches:
@@ -15,6 +22,8 @@ on:
       - crates/**
       - examples/**
       - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
       - .github/workflows/test-rust.yml
 
 concurrency:
@@ -27,6 +36,7 @@ env:
 
 jobs:
   test:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -93,6 +103,7 @@ jobs:
           -p polars-utils
 
   integration-test:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
@@ -123,6 +134,7 @@ jobs:
         run: cargo test --all-features -p polars --test it
 
   check-features:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -151,6 +163,7 @@ jobs:
         run: cargo check -p pyo3-polars --no-default-features --features pyo3-polars/derive,polars/bigidx
 
   check-dsl-schema:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
