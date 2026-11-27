@@ -157,6 +157,26 @@ def test_replace_strict_str_to_cat() -> None:
     assert_series_equal(result, expected, categorical_as_str=True)
 
 
+@pytest.mark.parametrize("with_default", [False, True])
+def test_replace_strict_only_adds_used_output_categories(
+    with_default: bool,
+) -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    dtype = pl.Categorical(cats)
+    seed = pl.Series([f"c{i}" for i in range(254)], dtype=dtype)
+    s = pl.Series([1])
+    mapping = {1: "used", 2: "unused"}
+
+    if with_default:
+        result = s.replace_strict(mapping, default=None, return_dtype=dtype)
+    else:
+        result = s.replace_strict(mapping, return_dtype=dtype)
+
+    assert_series_equal(result, pl.Series(["used"], dtype=dtype))
+    assert "unused" not in cats
+    assert cats.to_series().len() == seed.len() + 1
+
+
 def test_replace_strict_enum_to_new_enum() -> None:
     s = pl.Series(["a", "b", "c"], dtype=pl.Enum(["a", "b", "c", "d"]))
     old = ["a", "b"]
@@ -562,3 +582,81 @@ def test_replace_strict_categorical_validates_all_numeric_replacements(
                 {"a": "1", "absent": "bad"}, return_dtype=pl.UInt8
             )
         ).collect(engine=engine)
+
+
+@pytest.mark.parametrize("register_absent", [False, True])
+def test_replace_strict_categorical_validates_boolean_replacements(
+    register_absent: bool,
+) -> None:
+    dtype = pl.Categorical(pl.Categories.random())
+    s = pl.Series(["a"], dtype=dtype)
+    if register_absent:
+        pl.Series(["absent"], dtype=dtype)
+
+    with pytest.raises(
+        InvalidOperationError, match="casting from Utf8View to Boolean not supported"
+    ):
+        s.replace_strict({"absent": "yes"}, default=False, return_dtype=pl.Boolean)
+
+
+def test_replace_strict_validates_non_categorical_struct_fields() -> None:
+    cats = pl.Categories.random()
+    dtype = pl.Struct({"code": pl.Categorical(cats), "n": pl.UInt8})
+    s = pl.Series(["a"], dtype=pl.Categorical)
+    new = pl.Series([{"code": "used", "n": "1"}, {"code": "unused", "n": "bad"}])
+
+    with pytest.raises(
+        InvalidOperationError, match="conversion from `str` to `u8` failed"
+    ):
+        s.replace_strict(["a", "absent"], new, return_dtype=dtype)
+    assert "used" not in cats
+
+
+def test_replace_strict_validates_non_categorical_map_fields() -> None:
+    dtype = pl.Map(
+        pl.String,
+        pl.Struct({"code": pl.Categorical(pl.Categories.random()), "n": pl.UInt8}),
+    )
+    new = pl.Series(
+        [
+            [{"key": "x", "value": {"code": "used", "n": "1"}}],
+            [{"key": "y", "value": {"code": "unused", "n": "bad"}}],
+        ]
+    )
+
+    with pytest.raises(
+        InvalidOperationError, match="conversion from `str` to `u8` failed"
+    ):
+        pl.Series([1]).replace_strict([1, 2], pl.lit(new).implode(), return_dtype=dtype)
+
+
+def test_replace_strict_only_adds_used_map_key_categories() -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    seed = pl.Series([f"c{i}" for i in range(254)], dtype=pl.Categorical(cats))
+    dtype = pl.Map(pl.Categorical(cats), pl.String)
+    new = pl.Series(
+        [
+            [{"key": "used", "value": "v"}],
+            [{"key": "unused", "value": "w"}],
+        ]
+    )
+
+    result = pl.Series([1]).replace_strict(
+        [1, 2], pl.lit(new).implode(), return_dtype=dtype
+    )
+
+    assert result.dtype == dtype
+    assert "used" in cats
+    assert "unused" not in cats
+    assert cats.to_series().len() == seed.len() + 1
+
+
+def test_replace_strict_validates_array_categorical_cast() -> None:
+    source_dtype = pl.Array(pl.Categorical(pl.Categories.random()), 1)
+    return_dtype = pl.Array(pl.Categorical(pl.Categories.random()), 1)
+    new = pl.Series([["x"]], dtype=source_dtype)
+
+    with pytest.raises(InvalidOperationError, match="cannot cast Array inner type"):
+        pl.Series([1]).replace_strict(
+            [2], pl.lit(new).implode(), default=None, return_dtype=return_dtype
+        )
