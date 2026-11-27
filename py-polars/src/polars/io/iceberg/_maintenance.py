@@ -10,6 +10,7 @@ import struct
 import uuid
 from collections import Counter
 from dataclasses import dataclass
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -973,16 +974,7 @@ def expire_snapshots(
 
     properties = table.metadata.properties
     _refuse_without_gc(table.metadata, name)
-    if (
-        str(table.catalog.properties.get("snapshot-loading-mode", "all")).lower()
-        == "refs"
-    ):
-        msg = (
-            f"snapshots of table '{name}' cannot be expired: the catalog sends only the "
-            "snapshots of branches and tags; attach it with the property "
-            "`snapshot-loading-mode` = `all`"
-        )
-        raise InvalidOperationError(msg)
+    _refuse_refs_loading(table, name)
     for snapshot_id in snapshot_ids:
         if table.metadata.snapshot_by_id(snapshot_id) is None:
             msg = f"snapshot {snapshot_id} of table '{name}' not found"
@@ -1051,15 +1043,35 @@ def expire_snapshots(
     return _delete_expired_files(table, before, expiry.snapshot_ids, name)
 
 
-def _refuse_without_gc(metadata: TableMetadata, name: str) -> None:
+def _refuse_without_gc(
+    metadata: TableMetadata,
+    name: str,
+    refused: str = "snapshots of table '{}' cannot be expired",
+) -> None:
     from pyiceberg.utils.properties import property_as_bool
 
     from polars.exceptions import InvalidOperationError
 
     if not property_as_bool(metadata.properties, "gc.enabled", True):
         msg = (
-            f"snapshots of table '{name}' cannot be expired: its property gc.enabled is "
-            "false (its files may belong to other tables)"
+            f"{refused.format(name)}: its property gc.enabled is false (its files may "
+            "belong to other tables)"
+        )
+        raise InvalidOperationError(msg)
+
+
+def _refuse_refs_loading(
+    table: pyiceberg.table.Table,
+    name: str,
+    refused: str = "snapshots of table '{}' cannot be expired",
+) -> None:
+    from polars.exceptions import InvalidOperationError
+
+    mode = table.catalog.properties.get("snapshot-loading-mode", "all")
+    if str(mode).lower() == "refs":
+        msg = (
+            f"{refused.format(name)}: the catalog sends only the snapshots of branches "
+            "and tags; attach it with the property `snapshot-loading-mode` = `all`"
         )
         raise InvalidOperationError(msg)
 
@@ -1424,6 +1436,7 @@ def _path_names(path: str) -> frozenset[str]:
     its names is a kept file's: more names only keep more files.
     """
     import posixpath
+    import unicodedata
     from pathlib import Path
     from urllib.parse import unquote, urlparse
 
@@ -1462,10 +1475,618 @@ def _path_names(path: str) -> frozenset[str]:
             loose = posixpath.normpath(f"/{netloc}/{key}").lstrip("/")
             names.add(f"{canonical}:{loose}")
         return frozenset(names)
+    locals_ += [str(Path(p).expanduser()) for p in locals_ if p.startswith("~")]
+    local_names = set()
     for local in [*locals_, *map(unquote, locals_)]:
         if re.match(r"^/[A-Za-z]:", local):
             local = local[1:]
-        names.add(local)
+        local_names.add(local)
         with contextlib.suppress(OSError, ValueError):
-            names.add(str(Path(local).resolve()))
-    return frozenset(names)
+            local_names.add(str(Path(local).resolve()))
+    # A case-insensitive disk opens `A.parquet` as `a.parquet`, and some disks open a
+    # name in any Unicode normalization.
+    local_names |= {unicodedata.normalize("NFC", n) for n in local_names}
+    return frozenset(names | local_names | {n.casefold() for n in local_names})
+
+
+# Java's `remove_orphan_files` defaults and floor.
+_ORPHAN_AGE_DEFAULT_MS = 3 * 24 * 60 * 60 * 1000
+_ORPHAN_AGE_FLOOR_MS = 24 * 60 * 60 * 1000
+_ORPHANS_REFUSED = "orphan files of table '{}' cannot be removed"
+
+
+@dataclass(frozen=True)
+class _Listed:
+    """A file the listing found."""
+
+    # The URI, the table location's scheme and authority with the listed key.
+    uri: str
+    # The path the listing's filesystem names it by, for an exact delete.
+    fs_path: str
+    # Modification time in milliseconds (UTC), None when unknown.
+    mtime_ms: int | None
+
+
+def remove_orphan_files(
+    table: pyiceberg.table.Table,
+    *,
+    older_than_ms: int | None,
+    location: str | None,
+    dry_run: bool,
+    equal_schemes: dict[str, str],
+    equal_authorities: dict[str, str],
+    prefix_mismatch_mode: str,
+    name: str,
+) -> list[str]:
+    """
+    Delete the files under the table location that the table does not reference.
+
+    As Iceberg's `remove_orphan_files`, plus: a directory without referenced files keeps
+    its files while one of them is newer than `older_than` (a write still running).
+    Returns the URIs of the orphans, deleted or, with `dry_run`, found.
+    """
+    from polars._warnings import issue_warning
+    from polars.exceptions import InvalidOperationError
+
+    _refuse_without_gc(table.metadata, name, _ORPHANS_REFUSED)
+    _refuse_refs_loading(table, name, _ORPHANS_REFUSED)
+    now = _now_ms()
+    older = now - _ORPHAN_AGE_DEFAULT_MS if older_than_ms is None else older_than_ms
+    if not dry_run and older > now - _ORPHAN_AGE_FLOOR_MS:
+        msg = (
+            f"{_ORPHANS_REFUSED.format(name)} with an `older_than` less than 24 hours "
+            "ago: files of writes still running may not be referenced yet; use "
+            "`dry_run => true` to list them"
+        )
+        raise InvalidOperationError(msg)
+    table_location = table.location().rstrip("/")
+    root = table_location if location is None else location.rstrip("/")
+    _check_location(table.io, root, table_location, name)
+
+    before = table.metadata
+    # The files referenced before the listing must all be in it.
+    referenced = _readable_references(table, name)
+    referenced_location = table.metadata_location
+    try:
+        listed = _list_files(table.io, root)
+    except NotImplementedError:
+        raise
+    except Exception as error:
+        msg = f"{_ORPHANS_REFUSED.format(name)}: listing '{root}' failed ({error})"
+        raise InvalidOperationError(msg) from error
+    _check_listing(
+        table.io,
+        listed,
+        referenced,
+        table.metadata_location,
+        root,
+        table_location,
+        name,
+    )
+    retries = 3
+    for attempt in range(retries + 1):
+        # The valid set also from metadata loaded after the listing: a file listed and
+        # committed meanwhile is referenced.
+        current_table = table.catalog.load_table(table.name())
+        current = current_table.metadata
+        if current.table_uuid != before.table_uuid:
+            msg = f"{_ORPHANS_REFUSED.format(name)}: another table has its name now"
+            raise InvalidOperationError(msg)
+        _refuse_without_gc(current, name, _ORPHANS_REFUSED)
+        if current_table.metadata_location != referenced_location:
+            referenced = referenced | _readable_references(current_table, name)
+            referenced_location = current_table.metadata_location
+        orphans = _orphans(
+            table.io,
+            listed,
+            referenced,
+            current,
+            older,
+            root,
+            equal_schemes,
+            equal_authorities,
+            prefix_mismatch_mode,
+            name,
+        )
+        # Plan again if a commit landed meanwhile: it may reference a listed file.
+        latest = table.catalog.load_table(table.name())
+        if latest.metadata_location == current_table.metadata_location:
+            break
+        if attempt == retries:
+            msg = (
+                f"{_ORPHANS_REFUSED.format(name)}: the table changed during each of "
+                f"{retries + 1} attempts"
+            )
+            raise InvalidOperationError(msg)
+
+    orphans = _without_local_links(orphans, root)
+    if dry_run:
+        return sorted(f.uri for f in orphans)
+    from pyiceberg.utils.concurrent import ExecutorFactory
+
+    deleted = ExecutorFactory.get_or_create().map(
+        lambda f: _delete_listed(table.io, root, f), orphans
+    )
+    failed = sum(not done for done in deleted)
+    if failed:
+        issue_warning(
+            f"removed orphan files of table '{name}', but {failed} of them could not "
+            "be deleted",
+            UserWarning,
+        )
+    return sorted(f.uri for f in orphans)
+
+
+def _list_files(io: Any, root: str) -> list[_Listed]:
+    """Every file under `root`, through `io`'s own filesystem (PyArrow or fsspec)."""
+    from pyiceberg.io.fsspec import FsspecFileIO
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    if isinstance(io, PyArrowFileIO):
+        from pyarrow.fs import FileSelector, FileType
+
+        scheme, netloc, _ = io.parse_location(root, io.properties)
+        fs = io.fs_by_scheme(scheme, netloc)
+        base = _fs_base(io, root)
+        infos = fs.get_file_info(
+            FileSelector(base, recursive=True, allow_not_found=True)
+        )
+        files = []
+        for info in infos:
+            if info.type != FileType.File or not info.path.startswith(f"{base}/"):
+                continue
+            mtime = info.mtime
+            files.append(
+                _Listed(
+                    uri=f"{root}/{info.path[len(base) + 1 :]}",
+                    fs_path=info.path,
+                    mtime_ms=None if mtime is None else _datetime_ms(mtime),
+                )
+            )
+        return files
+
+    if isinstance(io, FsspecFileIO):
+        fs = _fsspec_fs(io, root)
+        base = fs._strip_protocol(root).rstrip("/")
+        # A cached listing would hide files committed since (and after this one).
+        fs.invalidate_cache()
+        # A listing error must not shorten the listing silently: fsspec's own walk
+        # omits errors below the top level, backends with their own `find` raise them.
+        from fsspec.asyn import AsyncFileSystem
+        from fsspec.spec import AbstractFileSystem
+
+        walks = (
+            type(fs)._find is AsyncFileSystem._find
+            if isinstance(fs, AsyncFileSystem)
+            else type(fs).find is AbstractFileSystem.find
+        )
+        try:
+            found = (
+                _fsspec_walk(fs, base)
+                if walks
+                else fs.find(base, withdirs=False, detail=True)
+            )
+        finally:
+            fs.invalidate_cache()
+        files = []
+        for path, info in found.items():
+            if info.get("type") != "file" or path.endswith("/"):
+                continue
+            if not path.startswith(f"{base}/"):
+                continue
+            files.append(
+                _Listed(
+                    uri=f"{root}/{path[len(base) + 1 :]}",
+                    fs_path=path,
+                    mtime_ms=_fsspec_mtime_ms(info),
+                )
+            )
+        return files
+
+    msg = f"listing files with {type(io).__name__} (PyArrowFileIO or FsspecFileIO)"
+    raise NotImplementedError(msg)
+
+
+def _fsspec_walk(fs: Any, base: str) -> dict[str, dict[str, Any]]:
+    """The files below `base`, raising on any error; symbolic links are not followed."""
+    found: dict[str, dict[str, Any]] = {}
+    pending = [base]
+    while pending:
+        for info in fs.ls(pending.pop(), detail=True):
+            if info.get("type") == "directory":
+                if not info.get("islink"):
+                    pending.append(info["name"].rstrip("/"))
+            else:
+                found[info["name"]] = info
+    return found
+
+
+def _fsspec_fs(io: Any, location: str) -> Any:
+    """The fsspec filesystem of `location` (a one-letter scheme is a Windows drive)."""
+    from urllib.parse import urlparse
+
+    uri = urlparse(location)
+    scheme = uri.scheme if len(uri.scheme) > 1 else "file"
+    return io.get_fs(scheme, uri.hostname if len(uri.scheme) > 1 else None)
+
+
+def _exists(io: Any, path: str) -> bool:
+    """Whether `path` exists, as the listing's filesystem sees it; unsure is yes."""
+    from pyiceberg.io.fsspec import FsspecFileIO
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    try:
+        if isinstance(io, PyArrowFileIO):
+            from pyarrow.fs import FileType
+
+            scheme, netloc, _ = io.parse_location(path, io.properties)
+            info = io.fs_by_scheme(scheme, netloc).get_file_info(_fs_base(io, path))
+            return bool(info.type != FileType.NotFound)
+        if isinstance(io, FsspecFileIO):
+            # `exists` answers no on any error: ask for the entry instead.
+            _fsspec_fs(io, path).info(_fs_base(io, path))
+            return True
+    except FileNotFoundError:
+        return False
+    except Exception:
+        return True
+    return True
+
+
+def _fs_scheme(io: Any, location: str) -> str:
+    """The scheme `io` reads `location` with (a default for a scheme-less one)."""
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    if isinstance(io, PyArrowFileIO):
+        return io.parse_location(location, io.properties)[0]
+    return "file"
+
+
+def _fs_base(io: Any, location: str) -> str:
+    """`location` as the path `io`'s filesystem reads it."""
+    from pyiceberg.io.fsspec import FsspecFileIO
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    if isinstance(io, PyArrowFileIO):
+        # The filesystem's own form: forward slashes on Windows too.
+        scheme, netloc, path = io.parse_location(location, io.properties)
+        return str(io.fs_by_scheme(scheme, netloc).normalize_path(path)).rstrip("/")
+    if isinstance(io, FsspecFileIO):
+        return _fsspec_fs(io, location)._strip_protocol(location).rstrip("/")
+    msg = f"listing files with {type(io).__name__} (PyArrowFileIO or FsspecFileIO)"
+    raise NotImplementedError(msg)
+
+
+def _datetime_ms(value: Any) -> int | None:
+    from datetime import datetime
+
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            # A naive time from a listing: UTC, as PyArrow's.
+            value = value.replace(tzinfo=UTC)
+        return int(value.timestamp() * 1000)
+    return None
+
+
+def _fsspec_mtime_ms(info: dict[str, Any]) -> int | None:
+    """The modification time of an fsspec listing entry, None when unknown."""
+    for key in ("mtime", "LastModified", "last_modified"):
+        value = info.get(key)
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, (int, float)):
+            return int(value * 1000)
+        if (ms := _datetime_ms(value)) is not None:
+            return ms
+    return None
+
+
+def _delete_listed(io: Any, root: str, file: _Listed) -> bool:
+    """Delete `file` exactly, through the listing's filesystem."""
+    from pyiceberg.io.fsspec import FsspecFileIO
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    try:
+        if isinstance(io, PyArrowFileIO):
+            scheme, netloc, _ = io.parse_location(root, io.properties)
+            io.fs_by_scheme(scheme, netloc).delete_file(file.fs_path)
+        elif isinstance(io, FsspecFileIO):
+            # Object store backends read `?versionId=` and the like out of a key.
+            if not _is_local(root) and any(c in file.fs_path for c in "?#"):
+                return False
+            _fsspec_fs(io, root).rm_file(file.fs_path)
+        else:
+            return False
+    except Exception:
+        return False
+    return True
+
+
+def _readable_references(table: pyiceberg.table.Table, name: str) -> set[str]:
+    from polars.exceptions import InvalidOperationError
+
+    try:
+        return _referenced_files(table)
+    except Exception as error:
+        msg = (
+            f"{_ORPHANS_REFUSED.format(name)}: a manifest list or manifest could not "
+            f"be read ({error})"
+        )
+        raise InvalidOperationError(msg) from error
+
+
+def _referenced_files(table: pyiceberg.table.Table) -> set[str]:
+    """
+    Every path the table references, as Iceberg's orphan removal counts them.
+
+    Live content files of every manifest of every snapshot, the manifests, the manifest
+    lists, the current metadata file and those of its log, `version-hint.text`, and
+    statistics and partition statistics files. An unreadable file raises.
+    """
+    from pyiceberg.utils.concurrent import ExecutorFactory
+
+    metadata = table.metadata
+    io = table.io
+    paths: set[str] = set()
+    manifests: dict[str, Any] = {}
+    for snapshot in metadata.snapshots:
+        paths.add(snapshot.manifest_list)
+        for manifest in snapshot.manifests(io):
+            manifests.setdefault(manifest.manifest_path, manifest)
+    paths |= set(manifests)
+
+    def live(manifest: Any) -> list[str]:
+        return [
+            e.data_file.file_path
+            for e in manifest.fetch_manifest_entry(io, discard_deleted=True)
+        ]
+
+    executor = ExecutorFactory.get_or_create()
+    for entries in executor.map(live, list(manifests.values())):
+        paths.update(entries)
+    if table.metadata_location:
+        paths.add(table.metadata_location)
+    paths |= {entry.metadata_file for entry in metadata.metadata_log}
+    paths.add(f"{table.location().rstrip('/')}/metadata/version-hint.text")
+    paths |= {
+        s.statistics_path
+        for s in [*metadata.statistics, *metadata.partition_statistics]
+    }
+    return paths
+
+
+def _check_location(io: Any, root: str, table_location: str, name: str) -> None:
+    """Refuse a `location` that a listing could read as another directory."""
+    import os
+    from pathlib import Path
+    from urllib.parse import urlparse
+
+    from polars.exceptions import InvalidOperationError
+
+    def refuse(why: str) -> None:
+        msg = f"{_ORPHANS_REFUSED.format(name)} under '{root}': {why}"
+        raise InvalidOperationError(msg)
+
+    if root != table_location and not root.startswith(f"{table_location}/"):
+        refuse(f"`location` must be the table location '{table_location}' or below it")
+    if any(c in root for c in "?#"):
+        refuse("a location with `?` or `#` names another directory to file IOs")
+    relative = [p for p in root[len(table_location) :].split("/") if p]
+    if any(part in (".", "..") for part in relative):
+        refuse("a location with `.` or `..` may leave the table location")
+    uri = urlparse(root)
+    if not _scheme(root) and (scheme := _fs_scheme(io, root)) != "file":
+        # References may use either form: no name rule covers both.
+        refuse(
+            f"the file IO reads this location without a scheme as a '{scheme}' one; "
+            "orphan files are removed only from tables whose location has a scheme"
+        )
+    if not _is_local(root):
+        return
+    # Local: the path as the file IO reads it (a drive kept, `~` expanded) must be the
+    # one the URI names, and reach the table location without a link.
+    base = _fs_base(io, root)
+    literal = f"{uri.netloc}{uri.path}" if uri.scheme.lower() == "file" else root
+    if re.match(r"^/[A-Za-z]:", literal):
+        literal = literal[1:]
+    if os.path.normpath(base) != os.path.normpath(literal):
+        refuse(f"the file IO reads it as '{base}'")
+    table_base = _fs_base(io, table_location)
+    if Path(base).resolve() != Path(table_base).resolve().joinpath(*relative):
+        refuse("a location through a symbolic link may leave the table location")
+    # On a case-insensitive disk `DATA` opens `data`, under names no reference has.
+    parent = Path(table_base)
+    for part in relative:
+        if not parent.is_dir() or part not in {p.name for p in parent.iterdir()}:
+            refuse(
+                f"'{part}' is not a directory of '{parent}' (names are case-sensitive)"
+            )
+        parent = parent / part
+
+
+def _scheme(location: str) -> str:
+    """The scheme of `location`, as PyIceberg reads it (a Windows drive is none)."""
+    import os
+    from urllib.parse import urlparse
+
+    return "" if os.path.splitdrive(location)[0] else urlparse(location).scheme
+
+
+def _is_local(location: str) -> bool:
+    """Whether `location` is a local path: no scheme, `file:`, or a Windows drive."""
+    from urllib.parse import urlparse
+
+    scheme = urlparse(location).scheme.lower()
+    return scheme in ("", "file") or len(scheme) == 1
+
+
+def _without_local_links(files: list[_Listed], root: str) -> list[_Listed]:
+    """`files` without local files reached through a symbolic link below `root`."""
+    from pathlib import Path
+
+    if not _is_local(root):
+        return files
+    kept = []
+    for f in files:
+        base = f.fs_path[: len(f.fs_path) - len(f.uri) + len(root)]
+        relative = f.uri[len(root) + 1 :].split("/")
+        if Path(f.fs_path).resolve() == Path(base).resolve().joinpath(*relative):
+            kept.append(f)
+    return kept
+
+
+def _check_listing(
+    io: Any,
+    listed: list[_Listed],
+    referenced: set[str],
+    metadata_file: str | None,
+    root: str,
+    table_location: str,
+    name: str,
+) -> None:
+    """
+    Refuse when the listing misses a file the table references under `root`.
+
+    Such a listing would make every file an orphan. A dangling reference does not count.
+    """
+    from polars.exceptions import InvalidOperationError
+
+    version_hint = f"{table_location}/metadata/version-hint.text"
+    uris = {f.uri for f in listed}
+    rest = [
+        p
+        for p in referenced
+        if p.startswith(f"{root}/") and p != version_hint and p not in uris
+    ]
+    if not rest:
+        return
+    names = {n for f in listed for n in _path_names(f.uri)}
+    missing = sorted(p for p in rest if _path_names(p).isdisjoint(names))
+    # The current metadata file exists; others may be dangling references.
+    present = next((p for p in missing if p == metadata_file or _exists(io, p)), None)
+    if present is not None:
+        msg = (
+            f"{_ORPHANS_REFUSED.format(name)}: the listing of '{root}' misses "
+            f"'{present}', which the table references and exists"
+        )
+        raise InvalidOperationError(msg)
+
+
+def _orphans(
+    io: Any,
+    listed: list[_Listed],
+    referenced: set[str],
+    metadata: TableMetadata,
+    older: int,
+    root: str,
+    equal_schemes: dict[str, str],
+    equal_authorities: dict[str, str],
+    prefix_mismatch_mode: str,
+    name: str,
+) -> list[_Listed]:
+    """The listed files to delete."""
+    import posixpath
+    from urllib.parse import urlparse
+
+    from polars.exceptions import InvalidOperationError
+
+    hidden_ok = tuple(
+        f"{field.name}="
+        for spec in metadata.partition_specs
+        for field in spec.fields
+        if field.name.startswith(("_", "."))
+    )
+
+    def hidden(file: _Listed) -> bool:
+        parts = file.uri[len(root) + 1 :].split("/")
+        return any(
+            part.startswith(("_", "."))
+            and not (i < len(parts) - 1 and part.startswith(hidden_ok))
+            for i, part in enumerate(parts)
+        )
+
+    def mapped(path: str) -> str:
+        """`path` with the scheme and authority `equal_schemes` and co. map it to."""
+        scheme, sep, rest = path.partition("://")
+        if not sep:
+            return path
+        authority, slash, key = rest.partition("/")
+        scheme = schemes.get(scheme.lower(), scheme)
+        authority = authorities.get(authority, authority)
+        return f"{scheme}://{authority}{slash}{key}"
+
+    schemes = {
+        s.strip().lower(): target
+        for sources, target in equal_schemes.items()
+        for s in sources.split(",")
+    }
+    authorities = {
+        a.strip(): target
+        for sources, target in equal_authorities.items()
+        for a in sources.split(",")
+    }
+
+    def all_names(path: str) -> frozenset[str]:
+        names = _path_names(path)
+        for alias in (mapped(path), qualified(path), mapped(qualified(path))):
+            if alias != path:
+                names |= _path_names(alias)
+        return names
+
+    def qualified(path: str) -> str:
+        """A path without a scheme, as the file IO reads it (`DEFAULT_SCHEME`)."""
+        if _scheme(path) or (scheme := _fs_scheme(io, path)) == "file":
+            return path
+        return f"{scheme}://{_fs_base(io, path)}"
+
+    # Unreferenced: not referenced exactly, then by no name (aliases).
+    files = [f for f in listed if not hidden(f) and f.uri not in referenced]
+    if files:
+        names: set[str] = set()
+        for path in referenced:
+            names |= all_names(path)
+        files = [f for f in files if all_names(f.uri).isdisjoint(names)]
+
+    # A directory without referenced files where an unreferenced file is new (or of
+    # unknown age): a write still running there. Its files are kept.
+    unreferenced = {f.uri for f in files}
+    referencing: set[str] = set()
+    busy: set[str] = set()
+    for f in listed:
+        if hidden(f):
+            continue
+        directory = posixpath.dirname(f.uri)
+        if f.uri not in unreferenced:
+            referencing.add(directory)
+        elif f.mtime_ms is None or f.mtime_ms >= older:
+            busy.add(directory)
+    candidates = [
+        f
+        for f in files
+        if f.mtime_ms is not None
+        and f.mtime_ms < older
+        and (
+            posixpath.dirname(f.uri) in referencing
+            or posixpath.dirname(f.uri) not in busy
+        )
+    ]
+
+    # The path of a referenced file under another scheme or authority: Java's conflict.
+    if candidates:
+
+        def path_of(uri: str) -> str:
+            return posixpath.normpath(urlparse(qualified(uri)).path or "/")
+
+        paths = {path_of(p) for p in referenced}
+        conflicts = [f for f in candidates if path_of(f.uri) in paths]
+        if conflicts and prefix_mismatch_mode == "ERROR":
+            msg = (
+                f"{_ORPHANS_REFUSED.format(name)}: {len(conflicts)} listed file(s) have "
+                "the path of a referenced file under another scheme or authority, such "
+                f"as '{conflicts[0].uri}'; map them with `equal_schemes` or "
+                "`equal_authorities`, or keep them with `prefix_mismatch_mode => 'IGNORE'`"
+            )
+            raise InvalidOperationError(msg)
+        conflicting = {f.uri for f in conflicts}
+        candidates = [f for f in candidates if f.uri not in conflicting]
+    return candidates

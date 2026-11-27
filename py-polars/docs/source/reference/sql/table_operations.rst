@@ -286,6 +286,58 @@ warning.
       retain_last => 10
     )
 
+**remove_orphan_files**
+
+Deletes the files under the table location that the table no longer references, such as
+files of failed writes. A file is referenced if a snapshot uses it (data and delete files,
+manifests, manifest lists), or it is a metadata file of the log or a statistics file.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 60
+
+   * - Argument
+     - Description
+   * - ``table``
+     - The table. Required.
+   * - ``older_than``
+     - Only files modified before this go. A timestamp, as in ``FOR TIMESTAMP AS OF``:
+       without an offset, UTC. Default: 3 days ago. It must be at least 24 hours ago,
+       except with ``dry_run``.
+   * - ``location``
+     - The directory to clean: the table location or a directory below it. Default: the
+       table location.
+   * - ``dry_run``
+     - ``true`` lists the files that would go, and deletes nothing. Default: ``false``.
+   * - ``equal_schemes``, ``equal_authorities``
+     - Schemes and authorities that name the same storage, such as
+       ``map('s3a,s3n', 's3')`` (the default for ``equal_schemes``).
+   * - ``prefix_mismatch_mode``
+     - For a file with the path of a referenced file under another scheme or authority:
+       ``'ERROR'`` (the default) refuses the ``CALL``, ``'IGNORE'`` keeps the file.
+   * - ``max_concurrent_deletes``, ``prefix_listing``, ``stream_results``
+     - Accepted. Have no effect.
+
+Files and directories whose names start with ``_`` or ``.`` are kept. A table with
+``gc.enabled`` set to false is refused. Keep ``older_than`` before the start of any write
+still running on the table, and do not run ``add_files`` while orphan files are removed:
+their files may not be referenced yet.
+
+It returns ``orphan_file_location``: one row per file deleted, or with ``dry_run``, per
+file that would be. A file that cannot be deleted is left in place, with a warning.
+
+**Example:**
+
+.. code-block:: sql
+
+    -- List what would go, then delete the files of `sales.orders` that it does not use
+    -- and that are older than a week.
+    CALL lake.system.remove_orphan_files(table => 'sales.orders', dry_run => true)
+    CALL lake.system.remove_orphan_files(
+      table => 'sales.orders',
+      older_than => TIMESTAMP '2026-11-19 00:00:00'
+    )
+
 **rewrite_data_files**
 
 Compacts the data files of a table in one commit, as a ``replace`` snapshot. Small files
