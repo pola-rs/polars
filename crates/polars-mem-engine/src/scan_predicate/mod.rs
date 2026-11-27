@@ -13,7 +13,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{PhysicalExpr, phys_expr_to_io_expr};
 use polars_io::predicates::{
-    ColumnPredicate, DynamicColumnPredicate, DynamicPredicateSource, RuntimeRangeHint,
+    ColumnPath, ColumnPredicate, DynamicColumnPredicate, DynamicPredicateSource, RuntimeRangeHint,
     ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicate, StagedScanIOPredicate,
 };
 use polars_plan::plans::expr_ir::ExprIR;
@@ -22,7 +22,7 @@ use polars_utils::pl_str::PlSmallStr;
 /// [`ScanPredicate::predicate`] split per column, see [`StagedScanIOPredicate`].
 #[derive(Clone)]
 pub struct StagedScanPredicate {
-    pub column_predicates: PlIndexMap<PlSmallStr, PhysicalColumnPredicate>,
+    pub column_predicates: PlIndexMap<ColumnPath, PhysicalColumnPredicate>,
     pub rest: Option<Arc<dyn PhysicalExpr>>,
 }
 

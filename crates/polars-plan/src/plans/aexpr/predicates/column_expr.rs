@@ -5,7 +5,7 @@ use polars_core::prelude::AnyValue;
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_defs::expr::ClosedInterval;
-use polars_io::predicates::SpecializedColumnPredicate;
+use polars_io::predicates::{ColumnPath, SpecializedColumnPredicate};
 use polars_utils::aliases::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -28,7 +28,7 @@ pub struct ColumnPredicate {
 
 /// A row predicate split into the conjuncts that read a single column and the rest.
 pub struct ColumnPredicates {
-    pub predicates: PlIndexMap<PlSmallStr, ColumnPredicate>,
+    pub predicates: PlIndexMap<ColumnPath, ColumnPredicate>,
     /// The conjuncts that read no or several columns.
     pub rest: Vec<Node>,
 }
@@ -38,7 +38,7 @@ pub fn aexpr_to_column_predicates(
     expr_arena: &mut Arena<AExpr>,
     schema: &Schema,
 ) -> ColumnPredicates {
-    let mut predicates = PlIndexMap::<PlSmallStr, ColumnPredicate>::default();
+    let mut predicates = PlIndexMap::<ColumnPath, ColumnPredicate>::default();
     let mut rest = Vec::new();
 
     let minterms = MintermIter::new(root, expr_arena).collect::<Vec<_>>();
@@ -59,8 +59,23 @@ pub fn aexpr_to_column_predicates(
             continue;
         };
 
-        let dtype = dtype.clone();
-        let entry = predicates.entry(column).or_insert_with(|| ColumnPredicate {
+        let mut path = ColumnPath {
+            root: column,
+            path: Box::default(),
+        };
+        let mut dtype = dtype.clone();
+        #[cfg(feature = "dtype-struct")]
+        if let Some((leaf_path, leaf_dtype)) = scalar_path(minterm, expr_arena, schema) {
+            path = leaf_path;
+            dtype = leaf_dtype;
+        }
+        let minterm = if path.path.is_empty() {
+            minterm
+        } else {
+            replace_path(minterm, &path, expr_arena)
+        };
+        let leaf_schema = Schema::from_iter([(path.root.clone(), dtype.clone())]);
+        let entry = predicates.entry(path).or_insert_with(|| ColumnPredicate {
             predicate: None,
             specialized: None,
             dynamic: Vec::new(),
@@ -71,7 +86,7 @@ pub fn aexpr_to_column_predicates(
         }
         entry.predicate = Some(match entry.predicate {
             None => {
-                entry.specialized = specialize(minterm, expr_arena, schema, dtype);
+                entry.specialized = specialize(minterm, expr_arena, &leaf_schema, dtype);
                 minterm
             },
             Some(left) => {
@@ -86,6 +101,91 @@ pub fn aexpr_to_column_predicates(
     }
 
     ColumnPredicates { predicates, rest }
+}
+
+/// Recognize a complete struct-field chain, stopping before any other operation.
+#[cfg(feature = "dtype-struct")]
+fn field_chain(mut node: Node, arena: &Arena<AExpr>) -> Option<ColumnPath> {
+    let mut fields = Vec::new();
+    loop {
+        match arena.get(node) {
+            AExpr::Column(root) => {
+                fields.reverse();
+                return Some(ColumnPath {
+                    root: root.clone(),
+                    path: fields.into_boxed_slice(),
+                });
+            },
+            AExpr::Function {
+                input,
+                function:
+                    IRFunctionExpr::StructExpr(crate::plans::IRStructFunction::FieldByName(name)),
+                ..
+            } if input.len() == 1 => {
+                fields.push(name.clone());
+                node = input[0].node();
+            },
+            _ => return None,
+        }
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+fn scalar_path(
+    node: Node,
+    arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> Option<(ColumnPath, DataType)> {
+    #[recursive::recursive]
+    fn visit(node: Node, arena: &Arena<AExpr>, found: &mut Option<ColumnPath>) -> Option<()> {
+        if let Some(path) = field_chain(node, arena) {
+            if found.as_ref().is_some_and(|p| p != &path) {
+                return None;
+            }
+            *found = Some(path);
+        } else {
+            let mut inputs = vec![];
+            arena.get(node).inputs_rev(&mut inputs);
+            for input in inputs {
+                visit(input, arena, found)?;
+            }
+        }
+        Some(())
+    }
+    let mut path = None;
+    visit(node, arena, &mut path)?;
+    let path = path?;
+    if path.path.is_empty() {
+        return None;
+    }
+    let mut dtype = schema.get(&path.root)?;
+    for name in &path.path {
+        let DataType::Struct(fields) = dtype else {
+            return None;
+        };
+        dtype = fields.iter().find(|f| f.name() == name)?.dtype();
+    }
+    (!dtype.is_nested()).then(|| (path, dtype.clone()))
+}
+
+#[recursive::recursive]
+fn replace_path(node: Node, path: &ColumnPath, arena: &mut Arena<AExpr>) -> Node {
+    #[cfg(feature = "dtype-struct")]
+    if field_chain(node, arena).as_ref() == Some(path) {
+        return arena.add(AExpr::Column(path.root.clone()));
+    }
+    let mut inputs = vec![];
+    arena.get(node).inputs_rev(&mut inputs);
+    if inputs.is_empty() {
+        return node;
+    }
+    let inputs = inputs
+        .into_iter()
+        .rev()
+        .map(|n| replace_path(n, path, arena))
+        .collect::<Vec<_>>();
+    let expr = arena.get(node).clone().replace_inputs(&inputs);
+    arena.add(expr)
 }
 
 fn is_dynamic(node: Node, expr_arena: &Arena<AExpr>) -> bool {
@@ -381,7 +481,8 @@ mod tests {
         let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
         assert_eq!(column_predicates.predicates.len(), 1);
         let (col_name2, predicate) = column_predicates.predicates.into_iter().next().unwrap();
-        assert_eq!(col_name, col_name2);
+        assert_eq!(col_name, col_name2.root);
+        assert!(col_name2.path.is_empty());
         Ok(predicate.specialized)
     }
 

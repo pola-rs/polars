@@ -38,6 +38,19 @@ impl BitmapBuilder {
         self.bit_cap
     }
 
+    /// The number of bits that can still be added without allocating more word storage.
+    ///
+    /// The partially filled word in `buf` is held outside of `bytes`, and
+    /// [`Self::extend_constant`] may fill it without reserving, so `len()` can exceed
+    /// `capacity()` by up to 63 bits (e.g. a fresh builder after `extend_constant(10, _)`).
+    /// Only completing a word needs backing storage, which is why this is not
+    /// `capacity() - len()`, and cannot underflow.
+    #[inline(always)]
+    pub fn remaining_capacity(&self) -> usize {
+        // `bit_len < bit_cap + 64` always holds: every other method reserves before a flush.
+        self.bit_cap + 63 - self.bit_len
+    }
+
     #[inline(always)]
     pub fn set_bits(&self) -> usize {
         self.set_bits_in_bytes + self.buf.count_ones() as usize

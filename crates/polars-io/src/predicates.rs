@@ -15,6 +15,38 @@ pub trait PhysicalIoExpr: Send + Sync {
     fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series>;
 }
 
+/// A scan column, or a scalar field reached through struct fields only.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ColumnPath {
+    pub root: PlSmallStr,
+    pub path: Box<[PlSmallStr]>,
+}
+
+/// Adapt a predicate compiled against a scalar field to its containing column.
+pub struct PathExtractIoExpr {
+    pub path: ColumnPath,
+    pub child: Arc<dyn PhysicalIoExpr>,
+}
+
+impl PhysicalIoExpr for PathExtractIoExpr {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
+        let mut column = df.column(&self.path.root)?.clone();
+        for name in &self.path.path {
+            #[cfg(feature = "dtype-struct")]
+            {
+                column = column.struct_()?.field_by_name(name)?.into_column();
+            }
+            #[cfg(not(feature = "dtype-struct"))]
+            {
+                let _ = name;
+                unreachable!("struct paths require dtype-struct");
+            }
+        }
+        column.rename(self.path.root.clone());
+        self.child.evaluate_io(&column.into_frame())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum SpecializedColumnPredicate {
     Equal(Scalar),
@@ -421,7 +453,7 @@ pub struct DynamicColumnPredicate {
 }
 
 /// `a AND b`.
-struct AndIoExpr(Arc<dyn PhysicalIoExpr>, Arc<dyn PhysicalIoExpr>);
+pub struct AndIoExpr(pub Arc<dyn PhysicalIoExpr>, pub Arc<dyn PhysicalIoExpr>);
 
 impl PhysicalIoExpr for AndIoExpr {
     fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
@@ -472,7 +504,7 @@ impl PhysicalIoExpr for PhysicalExprWithConstCols<Arc<dyn PhysicalIoExpr>> {
 /// The row predicate split into the conjuncts that read a single column and the rest.
 #[derive(Clone)]
 pub struct StagedScanIOPredicate {
-    pub column_predicates: Arc<PlIndexMap<PlSmallStr, ColumnPredicate>>,
+    pub column_predicates: Arc<PlIndexMap<ColumnPath, ColumnPredicate>>,
     /// The conjuncts that read no or several columns, conjoined.
     pub rest: Option<Arc<dyn PhysicalIoExpr>>,
 }
@@ -483,8 +515,18 @@ impl StagedScanIOPredicate {
         let mut column_predicates = self.column_predicates.as_ref().clone();
         let mut rest = self.rest.clone();
         for (c, _) in constants {
-            if let Some(p) = column_predicates.shift_remove(c) {
-                let p = p.conjoined();
+            let paths = column_predicates
+                .keys()
+                .filter(|p| p.root == *c)
+                .cloned()
+                .collect::<Vec<_>>();
+            for path in paths {
+                let p = column_predicates.shift_remove(&path).unwrap().conjoined();
+                let p: Arc<dyn PhysicalIoExpr> = if path.path.is_empty() {
+                    p
+                } else {
+                    Arc::new(PathExtractIoExpr { path, child: p })
+                };
                 rest = Some(match rest {
                     None => p,
                     Some(rest) => Arc::new(AndIoExpr(rest, p)),
@@ -620,8 +662,12 @@ impl RuntimeRangeHint {
         let column = Column::new_scalar(self.column.clone(), value.clone(), 1);
         let df = DataFrame::new(1, vec![column]).ok()?;
         let out = expr.evaluate_io(&df).ok()?;
-        let value = out.get(0).ok()?.into_static();
-        Some(Scalar::new(out.dtype().clone(), value))
+        let out_value = out.get(0).ok()?.into_static();
+        // `expr` gives null for a non-null value only where it overflows.
+        if out_value.is_null() && !value.is_null() {
+            return None;
+        }
+        Some(Scalar::new(out.dtype().clone(), out_value))
     }
 }
 

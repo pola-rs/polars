@@ -184,7 +184,7 @@ impl utils::Decoded for DecodedState {
 
     fn remaining_capacity(&self) -> usize {
         (self.binview.capacity() - self.binview.len())
-            .min(self.validity.capacity() - self.validity.len())
+            .min(self.validity.remaining_capacity())
     }
 }
 

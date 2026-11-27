@@ -475,6 +475,16 @@ def test_struct_field_pruning_iceberg_default_validity_from_pruned_partition_fie
     assert_engines_equal(q, expected)
     assert_same_as_without_pushdown(lf.select("id", c.is_null()).sort("id"))
     assert_same_as_without_pushdown(lf.select("id", c.struct.field("a")).sort("id"))
+    # The non-null missing-field default still inherits the enclosing struct's
+    # nulls when a staged leaf predicate falls back through the mapped root.
+    for predicate in [c.struct.field("b") == 9, c.struct.field("b").is_null()]:
+        query = lf.filter(predicate).select("id", c.struct.field("b")).sort("id")
+        expected = query.collect(
+            optimizations=pl.QueryOptFlags(
+                predicate_pushdown=False, projection_pushdown=False
+            )
+        )
+        assert_engines_equal(query, expected)
 
 
 @pytest.mark.write_disk
