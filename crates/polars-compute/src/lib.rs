@@ -40,6 +40,7 @@ pub mod size;
 pub mod sum;
 pub mod trim_lists_to_normalized_offsets;
 pub mod unique;
+pub mod utf8;
 
 // Trait to enable the scalar blanket implementation.
 pub trait NotSimdPrimitive: NativeType {}

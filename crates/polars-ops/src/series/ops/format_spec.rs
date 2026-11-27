@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use polars_compute::utf8::utf8_len;
 use polars_core::prelude::*;
 use polars_defs::format_spec::{Align, FormatKind, FormatSpec};
 use polars_error::{PolarsResult, polars_bail};
@@ -10,7 +11,7 @@ fn write_str(spec: &FormatSpec, out: &mut String, s: &str) {
         None => s,
     };
     let pad = if spec.width > 0 {
-        spec.width.saturating_sub(s.chars().count())
+        spec.width.saturating_sub(utf8_len(s.as_bytes()))
     } else {
         0
     };
@@ -40,7 +41,7 @@ fn write_number(
         _ => "",
     };
     let int_len = digits.len();
-    let rest_len = rest.chars().count();
+    let rest_len = utf8_len(rest.as_bytes());
     let fill = spec.fill();
     let align = spec.align.unwrap_or(if spec.zero {
         Align::AfterSign

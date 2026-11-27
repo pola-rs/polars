@@ -100,7 +100,7 @@ rle = ["dtype-struct"]
 timezones = ["chrono", "polars-core/temporal", "polars-core/timezones", "polars-core/dtype-datetime"]
 random = ["rand", "rand_distr", "polars-defs/random"]
 rank = ["rand"]
-find_many = ["aho-corasick", "polars-arrow/strings"]
+find_many = ["aho-corasick"]
 serde = [
   "dep:serde",
   "polars-buffer/serde",
