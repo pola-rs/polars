@@ -835,13 +835,17 @@ class Categories:
         """Returns whether this refers to the global categories."""
         return self._categories.is_global()
 
+    def _cat_to_str(self, cat: int) -> str | None:
+        # category ids are u32; anything outside that range cannot be one
+        return self._categories.cat_to_str(cat) if 0 <= cat < 2**32 else None
+
     def __getitem__(self, key: str | int) -> str | int:
         if isinstance(key, str):
             if (cat := self._categories.get_cat(key)) is None:
                 raise KeyError(key)
             return cat
         elif isinstance(key, int):
-            if (s := self._categories.cat_to_str(key)) is None:
+            if (s := self._cat_to_str(key)) is None:
                 msg = f"category index out of range: {key}"
                 raise IndexError(msg)
             return s
@@ -853,7 +857,7 @@ class Categories:
         if isinstance(item, str):
             return self._categories.get_cat(item) is not None
         elif isinstance(item, int):
-            return self._categories.cat_to_str(item) is not None
+            return self._cat_to_str(item) is not None
         else:
             return False
 

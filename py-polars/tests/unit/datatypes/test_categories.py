@@ -98,6 +98,15 @@ def test_categories_lookup_raises(cats: pl.Categories) -> None:
         cats[None]  # type: ignore[index]
 
 
+@pytest.mark.parametrize("cats", CATS)
+@pytest.mark.parametrize("key", [-1, -(2**63), 2**32 - 1, 2**32, 2**63, 2**64])
+def test_categories_lookup_out_of_range(cats: pl.Categories, key: int) -> None:
+    msg = f"category index out of range: {key}"
+    with pytest.raises(IndexError, match=re.escape(msg)):
+        cats[key]
+    assert key not in cats
+
+
 def test_concat_cat_mismatch() -> None:
     dt1 = pl.Categorical(pl.Categories.random())
     dt2 = pl.Categorical(pl.Categories.random())
