@@ -33,6 +33,8 @@ pub(super) struct MemberCollector {
     /// A left, semi or anti join.
     pub(crate) has_preserving_join: bool,
     pub(crate) has_sink_multiple: bool,
+    /// File sinks run on the streaming engine, also when the query runs in-memory.
+    pub(crate) has_file_sink: bool,
     pub(crate) has_filter_with_join_input: bool,
     pub(crate) has_distinct: bool,
     pub(crate) has_sort: bool,
@@ -53,6 +55,7 @@ impl MemberCollector {
             has_unions: false,
             has_preserving_join: false,
             has_sink_multiple: false,
+            has_file_sink: false,
             has_filter_with_join_input: false,
             has_distinct: false,
             has_sort: false,
@@ -80,6 +83,10 @@ impl MemberCollector {
         for (_node, alp) in lp_arena.iter(root) {
             match alp {
                 SinkMultiple { .. } => self.has_sink_multiple = true,
+                Sink {
+                    payload: SinkTypeIR::File(_) | SinkTypeIR::Partitioned(_),
+                    ..
+                } => self.has_file_sink = true,
                 Join { options, .. } => {
                     self.has_joins = true;
                     self.has_preserving_join |= matches!(options.args.how, JoinType::Left)

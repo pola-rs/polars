@@ -8,7 +8,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::constants::CSE_REPLACED;
-use crate::plans::aexpr::is_inherently_nondeterministic_excluding_udfs_top_level;
+use crate::plans::aexpr::{is_inherently_nondeterministic_excluding_udfs_top_level, is_scalar_ae};
 use crate::plans::projection_height::{
     ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec,
     aexpr_projection_height_rec_with,
@@ -18,8 +18,8 @@ use crate::plans::visitor::{
     Visitor,
 };
 use crate::plans::{
-    AExpr, CanonicalExprId, CanonicalExprMap, ExprIR, IR, IRBuilder, IRFunctionExpr, LiteralValue,
-    OutputName,
+    AExpr, CanonicalExprId, CanonicalExprMap, ExprIR, IR, IRAggExpr, IRBuilder, IRFunctionExpr,
+    LiteralValue, OutputName,
 };
 use crate::prelude::ProjectionOptions;
 use crate::prelude::visitor::AexprNode;
@@ -155,7 +155,7 @@ impl ExprCandidateVisitor<'_> {
 }
 
 /// Classifies how a visited node may participate in CSE.
-fn classify(ae: &AExpr, is_group_by: bool) -> NodeRole {
+fn classify(ae: &AExpr, arena: &Arena<AExpr>, is_group_by: bool) -> NodeRole {
     match ae {
         // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
         // TODO! Add a typed null
@@ -174,6 +174,10 @@ fn classify(ae: &AExpr, is_group_by: bool) -> NodeRole {
         },
         AExpr::Literal(_) => NodeRole::Member,
         AExpr::Column(_) => NodeRole::Member,
+        // A scalar replaced by CSE.
+        AExpr::Agg(IRAggExpr::Item { input, .. }) if matches!(arena.get(*input), AExpr::Column(name) if name.starts_with(CSE_REPLACED)) => {
+            NodeRole::Member
+        },
         AExpr::Len => {
             if is_group_by {
                 NodeRole::Refuse
@@ -237,7 +241,7 @@ impl Visitor for ExprCandidateVisitor<'_> {
         let ae = node.to_aexpr(arena);
         let subtree_is_valid = self.validity_stack.pop().unwrap();
 
-        let role = classify(ae, self.is_group_by);
+        let role = classify(ae, arena, self.is_group_by);
 
         if !subtree_is_valid || role == NodeRole::Refuse {
             self.invalidate_parent();
@@ -360,7 +364,20 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             .expect("mutated node was not a CSE candidate");
         debug_assert!(count > 1);
 
-        node.assign(AExpr::col(cse_column_name(id)), arena);
+        let column = AExpr::col(cse_column_name(id));
+        // A scalar must stay scalar, so that the expressions using it broadcast it.
+        if !self.is_group_by && is_scalar_ae(self.canonical_map.representative(id), arena) {
+            let input = arena.add(column);
+            node.assign(
+                AExpr::Agg(IRAggExpr::Item {
+                    input,
+                    allow_empty: false,
+                }),
+                arena,
+            );
+        } else {
+            node.assign(column, arena);
+        }
         self.rewritten = true;
 
         Ok(node)
