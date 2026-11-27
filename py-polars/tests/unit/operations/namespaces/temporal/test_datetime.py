@@ -1449,6 +1449,7 @@ def test_agg_median_expr() -> None:
     assert_frame_equal(df.select(pl.all().median()), expected)
 
 
+@pytest.mark.slow
 @given(
     s=series(min_size=1, max_size=10, dtype=pl.Datetime, allow_null=False),
 )

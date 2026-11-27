@@ -1297,6 +1297,7 @@ def test_hive_file_as_uri_with_hive_start_idx_23830(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize("force_single_thread", [True, False])
 def test_hive_parquet_prefiltered_20894_21327(

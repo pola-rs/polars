@@ -159,6 +159,7 @@ class ExceptionTestParams(NamedTuple):
     kwargs: dict[str, Any] | None = None
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     (

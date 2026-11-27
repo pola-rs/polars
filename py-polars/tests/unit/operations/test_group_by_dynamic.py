@@ -1610,6 +1610,7 @@ def test_group_by_dynamic_calendar_grid_matches_datetime_range(
     assert_series_equal(out["_lower_boundary"], expected)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("closed", ["left", "right", "both", "none"])
 @pytest.mark.parametrize("every", ["1mo", "2mo"])

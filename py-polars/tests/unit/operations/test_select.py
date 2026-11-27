@@ -81,3 +81,24 @@ def test_select_duplicate_name() -> None:
         DuplicateError, match="projections contained duplicate output name 'x'"
     ):
         pl.LazyFrame({"x": 1}).select("x", "x").collect()
+
+
+def test_select_scalars_multiple_chunks() -> None:
+    # Large enough for the chunks to be selected in parallel.
+    n = 2 * pl.thread_pool_size()
+    df = pl.concat([pl.DataFrame({"a": range(n)})] * 2, rechunk=False)
+    assert df.n_chunks() == 2
+    exprs = [
+        pl.lit(1).alias("lit"),
+        pl.lit("x").str.to_uppercase().alias("upper"),
+        pl.lit(1).is_in(pl.Series([1, 2]).implode()).alias("is_in"),
+    ]
+    expected = pl.select(exprs)
+    assert_frame_equal(df.select(exprs), expected)
+    assert_frame_equal(
+        df.lazy()
+        .select(exprs)
+        .collect(engine="in-memory", optimizations=pl.QueryOptFlags.none()),
+        expected,
+    )
+    assert_frame_equal(df.select("a", *exprs[:2]), df.select_seq("a", *exprs[:2]))

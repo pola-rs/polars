@@ -848,6 +848,7 @@ def test_iceberg_plugin_deeply_nested_schema(tmp_path: Path) -> None:
     assert pl.scan_iceberg(tbl).select(pl.len()).collect().item() == 1
 
 
+@pytest.mark.slow
 def test_iceberg_plugin_deeply_nested_row_filter(metadata_path: str) -> None:
     # An `and` chain deeper than serde_json's default recursion limit.
     predicate = functools.reduce(

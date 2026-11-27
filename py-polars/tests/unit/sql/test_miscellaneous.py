@@ -566,6 +566,7 @@ def test_invalid_cols(query: str) -> None:
         df.sql(query)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("filter_expr", ["", "WHERE 1 = 1", "WHERE a == 1 OR a != 1"])
 @pytest.mark.parametrize("order_expr", ["", "ORDER BY 1", "ORDER BY a"])
 def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) -> None:

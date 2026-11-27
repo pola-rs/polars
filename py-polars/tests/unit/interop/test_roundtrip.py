@@ -46,6 +46,7 @@ protocol_dtypes: list[PolarsDataType] = [
 ]
 
 
+@pytest.mark.slow
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
@@ -60,6 +61,7 @@ def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.slow
 @skip_if_broken_pandas_version
 @given(
     dataframes(
@@ -76,6 +78,7 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.slow
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,

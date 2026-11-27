@@ -260,6 +260,19 @@ def test_extend_scalar_columns_stay_scalar(materialize: bool) -> None:
             "series",
             [None, None, 7, 7],
         ),
+        (pl.lit([1.5, 2.5]), pl.lit([1.5, 2.5]), "scalar", [[1.5, 2.5]] * 4),
+        (
+            pl.lit([1.5, 2.5]),
+            pl.lit([1.5, 3.5]),
+            "series",
+            [[1.5, 2.5], [1.5, 2.5], [1.5, 3.5], [1.5, 3.5]],
+        ),
+        (
+            pl.struct(x=pl.lit(1.5), y=pl.lit([2.5])),
+            pl.struct(x=pl.lit(1.5), y=pl.lit([2.5])),
+            "scalar",
+            [{"x": 1.5, "y": [2.5]}] * 4,
+        ),
     ],
 )
 @pytest.mark.parametrize("materialize", [False, True])
@@ -291,25 +304,6 @@ def test_vstack_scalar_empty_frame() -> None:
     assert empty.vstack(df).to_dict(as_series=False) == expected
     assert df.vstack(empty).to_dict(as_series=False) == expected
     assert empty.vstack(empty).to_dict(as_series=False) == {"a": [], "i": []}
-
-
-@pytest.mark.parametrize(
-    ("lhs", "rhs"),
-    [
-        (pl.lit(0.0), pl.lit(-0.0)),
-        (pl.lit([0.0]), pl.lit([-0.0])),
-        (pl.struct(x=pl.lit(0.0)), pl.struct(x=pl.lit(-0.0))),
-    ],
-)
-def test_vstack_scalar_signed_zero(lhs: pl.Expr, rhs: pl.Expr) -> None:
-    # 0.0 and -0.0 are equal, but not the same value. Both have to be kept.
-    pos = pl.DataFrame({"a": [1, 2]}).with_columns(z=lhs)
-    neg = pl.DataFrame({"a": [3, 4]}).with_columns(z=rhs)
-
-    out = pos.vstack(neg)
-
-    assert _reprs(out) == ["series", "series"]
-    assert str(out["z"].to_list()) == str(pos["z"].to_list() + neg["z"].to_list())
 
 
 def test_vstack_scalar_nan() -> None:

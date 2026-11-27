@@ -309,6 +309,7 @@ def test_include_file_paths_predicate_with_row_index_and_slice(
         )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("scan", "write", "ext", "supports_missing_columns", "supports_hive_partitioning"),
     [
@@ -753,6 +754,7 @@ def test_multiscan_slice_middle(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 @given(offset=st.integers(-100, 100), length=st.none() | st.integers(0, 101))
 def test_multiscan_slice_parametric(

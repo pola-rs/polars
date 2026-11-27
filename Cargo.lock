@@ -3153,6 +3153,7 @@ name = "polars-cli"
 version = "0.55.1"
 dependencies = [
  "clap",
+ "libc",
  "polars",
  "polars-arrow",
  "polars-ooc",

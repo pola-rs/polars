@@ -872,6 +872,10 @@ def corr(
     """
     Compute the Pearson's or Spearman rank correlation between two columns.
 
+    .. engine-support:: in-memory, partially-streaming, partially-distributed
+        :partially-streaming: The "spearman" method runs on the in-memory engine.
+        :partially-distributed: The "spearman" method runs on a single node.
+
     Parameters
     ----------
     a
@@ -991,6 +995,8 @@ def cov(
 ) -> Expr | Series:
     """
     Compute the covariance between two columns/ expressions.
+
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------
@@ -2455,6 +2461,8 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     """
     Return indices where `condition` evaluates `True`.
 
+    .. engine-support:: in-memory, streaming, distributed
+
     Parameters
     ----------
     condition
@@ -2859,6 +2867,8 @@ def row_index(name: str = "index") -> pl.Expr:
     .. warning::
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
+
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------

@@ -562,12 +562,14 @@ pub struct SinkedPathInfo {
 
 /// Calls `commit(files)` on a Python sink state, with each file as a tuple of
 /// `(path, num_rows, num_bytes, parquet_metadata, partition_keys)`.
+///
+/// Returns the frame that `commit` returns.
 #[cfg(feature = "python")]
-fn commit_sinked_files(
+pub(crate) fn commit_sinked_files(
     format: &str,
-    py_sink_state: pyo3::Py<pyo3::PyAny>,
+    py_sink_state: &pyo3::Py<pyo3::PyAny>,
     args: SinkedPathsCallbackArgs,
-) -> PolarsResult<()> {
+) -> PolarsResult<DataFrame> {
     use pyo3::Python;
 
     Python::attach(|py| {
@@ -611,9 +613,9 @@ fn commit_sinked_files(
             ))?;
         }
 
-        py_sink_state.call_method1(py, intern!(py, "commit"), (py_files,))?;
+        let result = py_sink_state.call_method1(py, intern!(py, "commit"), (py_files,))?;
 
-        PolarsResult::Ok(())
+        crate::plans::python::python_df_to_rust(py, result.into_bound(py))
     })
 }
 
@@ -623,22 +625,10 @@ impl SinkedPathsCallback {
 
         match self {
             Self::IcebergCommit(sink_state) => {
-                feature_gated!("python", {
-                    commit_sinked_files(
-                        "Iceberg",
-                        sink_state.as_ref().clone().into_sink_state_obj()?,
-                        args,
-                    )
-                })
+                feature_gated!("python", sink_state.commit(args).map(drop))
             },
             Self::DeltaCommit(sink_state) => {
-                feature_gated!("python", {
-                    commit_sinked_files(
-                        "Delta",
-                        sink_state.as_ref().clone().into_sink_state_obj()?,
-                        args,
-                    )
-                })
+                feature_gated!("python", sink_state.commit(args).map(drop))
             },
             Self::Callback(CB::Rust(func)) => (func)(args),
             #[cfg(feature = "python")]

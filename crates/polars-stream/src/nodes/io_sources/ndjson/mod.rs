@@ -294,7 +294,7 @@ impl FileReader for NDJsonFileReader {
             None
         };
 
-        let chunk_reader = self.chunk_reader_builder.build(schema);
+        let chunk_reader = self.chunk_reader_builder.build(schema, pre_slice.is_some());
 
         let (line_batch_distribute_tx, line_batch_distribute_receivers) =
             distributor_channel(num_pipelines, 1);
