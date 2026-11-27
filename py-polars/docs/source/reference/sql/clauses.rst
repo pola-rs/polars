@@ -255,11 +255,12 @@ branches are made with :ref:`ALTER TABLE <alter_table>`.
   the commit times in the table's metadata log. A time without a time zone is UTC. For
   a UTC offset, use ``TIMESTAMPTZ '...'`` or a string.
 
-Every spelling means the same. The snapshot's schema is used. A time is refused when
-its snapshot has expired, or when it is older than the metadata log
-(``write.metadata.previous-versions-max``). Only reads can travel: a ``MERGE`` that
-reads its own table as of a version uses those rows as they were, so it can bring back
-deleted rows or overwrite newer values.
+Every spelling means the same. A branch is read with the table's current schema, the
+one writes to it use. A snapshot id, a tag or a time is read with the schema of its
+snapshot. A time is refused when its snapshot has expired, or when it is older than the
+metadata log (``write.metadata.previous-versions-max``). Only reads can travel: a
+``MERGE`` that reads its own table as of a version uses those rows as they were, so it
+can bring back deleted rows or overwrite newer values.
 
 .. code-block:: sql
 

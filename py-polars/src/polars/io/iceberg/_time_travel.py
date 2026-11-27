@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import pyiceberg.schema
     import pyiceberg.table
     from pyiceberg.table.metadata import TableMetadata
 
@@ -43,6 +44,25 @@ def resolve_version(table: pyiceberg.table.Table, version: TableVersion) -> int:
             msg += f" (it expired, {_NOT_SENT})"
         raise ValueError(msg)
     return snapshot_id
+
+
+def version_schema(
+    table: pyiceberg.table.Table, version: TableVersion
+) -> pyiceberg.schema.Schema | None:
+    """
+    The schema `version` reads with, or None for its snapshot's schema.
+
+    A branch is read with the table's current schema, the one writes to it use. A tag,
+    a snapshot id or a time is read with the schema of its snapshot.
+    """
+    from pyiceberg.table.refs import SnapshotRefType
+
+    kind, value = version
+    if kind == "ref":
+        ref = table.metadata.refs.get(str(value))
+        if ref is not None and ref.snapshot_ref_type == SnapshotRefType.BRANCH:
+            return table.schema()
+    return None
 
 
 def _snapshot_as_of(table: pyiceberg.table.Table, micros: int) -> int:

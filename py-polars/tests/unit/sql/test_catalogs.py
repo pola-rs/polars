@@ -7120,6 +7120,80 @@ def test_catalog_time_travel_in_statements(
     assert sorted(ctx.execute("SELECT k FROM hist", eager=True)["k"]) == [0, 1, 2, 10]
 
 
+@pytest.mark.write_disk
+@pytest.mark.parametrize("mode", ["pyiceberg", "default", "pyiceberg-reader", "plugin"])
+def test_catalog_time_travel_branch_schema(
+    lake: CountingCatalog, plmonkeypatch: PlMonkeyPatch, mode: str
+) -> None:
+    if mode in ("default", "plugin"):
+        pytest.importorskip("polars_iceberg")
+    plmonkeypatch.delenv("POLARS_ICEBERG_PLANNER", raising=False)
+    if mode in ("pyiceberg", "plugin"):
+        plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", mode)
+    elif mode == "pyiceberg-reader":
+        plmonkeypatch.setenv("POLARS_ICEBERG_READER_OVERRIDE", "pyiceberg")
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE t (k INT, gone INT, s VARCHAR)")
+    # Dictionary strings, which PyArrow reads back as such.
+    rows = pl.DataFrame(
+        {"k": [1, 2], "gone": [10, 20], "s": ["a", "b"]},
+        schema={"k": pl.Int32, "gone": pl.Int32, "s": pl.Categorical},
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        lake.load_table(("tpch", "t")).append(rows.to_arrow())
+    for statement in [
+        "ALTER TABLE t CREATE TAG v1",
+        "ALTER TABLE t CREATE BRANCH b1",
+        "INSERT INTO t VALUES (3, 30, 'c')",
+        # Schema changes add no snapshot: the heads of `b1` and `main` keep `k`.
+        "ALTER TABLE t RENAME COLUMN k TO key",
+        "ALTER TABLE t DROP COLUMN gone",
+        "ALTER TABLE t ADD COLUMN note VARCHAR",
+    ]:
+        ctx.execute(statement)
+    head = lake.load_table(("tpch", "t")).snapshot_by_name("b1")
+    assert head is not None
+
+    # A tag or a snapshot id reads with its snapshot's schema.
+    old = pl.DataFrame(
+        {"k": [1, 2], "gone": [10, 20], "s": ["a", "b"]},
+        schema_overrides={"k": pl.Int32, "gone": pl.Int32},
+    )
+    for version in ["'v1'", head.snapshot_id]:
+        query = f"SELECT * FROM t FOR VERSION AS OF {version} ORDER BY k"
+        assert_frame_equal(ctx.execute(query, eager=True), old)
+
+    # A branch reads with the table's schema, as `main` does.
+    query = "SELECT * FROM t FOR VERSION AS OF '{}' WHERE key > 1 ORDER BY key"
+    branches = {"b1": ([2], ["b"]), "main": ([2, 3], ["b", "c"])}
+    if mode == "plugin":
+        # The plugin reads a snapshot with its own schema: only `main`'s is current.
+        with pytest.raises(NotImplementedError, match="another schema than its head"):
+            ctx.execute(query.format("b1"), eager=True)
+        del branches["b1"]
+    for branch, (keys, values) in branches.items():
+        new = pl.DataFrame(
+            {"key": keys, "s": values, "note": None},
+            schema={"key": pl.Int32, "s": pl.String, "note": pl.String},
+        )
+        lf = ctx.execute(query.format(branch))
+        assert_frame_equal(lf.collect(), new)
+        assert_frame_equal(pickle.loads(pickle.dumps(lf)).collect(), new)
+        aggregates = f"SELECT max(key), count(note) FROM t FOR VERSION AS OF '{branch}'"
+        assert ctx.execute(aggregates, eager=True).row(0) == (keys[-1], 0)
+    if mode == "plugin":
+        return
+
+    # A MERGE reading its own table on a branch reads it the same way.
+    ctx.execute(
+        "MERGE INTO t USING (SELECT key FROM t FOR VERSION AS OF 'b1') AS s "
+        "ON t.key = s.key + 10 WHEN NOT MATCHED THEN INSERT (key) VALUES (s.key + 10)"
+    )
+    merged = ctx.execute("SELECT key FROM t", eager=True)["key"]
+    assert sorted(merged) == [1, 2, 3, 11, 12]
+
+
 @pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(

@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     import pyiceberg.table
     import pyiceberg.typedef
     from pyiceberg.table import FileScanTask
+    from pyiceberg.table.snapshots import Snapshot
 
     from polars._typing import StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
@@ -358,13 +359,60 @@ class IcebergScanResolver:
     file_tasks: list[FileScanTask] | None = field(default=None, repr=False)
     # A SQL time travel version, resolved to `snapshot_id` where the table loads.
     version: TableVersion | None = field(default=None, repr=False)
+    # The schema `version` reads with, pinned with `snapshot_id` (None: the snapshot's).
+    read_schema: pyiceberg.schema.Schema | None = field(default=None, repr=False)
 
     def _pin_version(self) -> None:
         """Resolve `version` once, so that the schema and the scan read one snapshot."""
         if self.version is not None and self.snapshot_id is None:
-            from polars.io.iceberg._time_travel import resolve_version
+            from polars.io.iceberg._time_travel import resolve_version, version_schema
 
-            self.snapshot_id = resolve_version(self.table.get(), self.version)
+            tbl = self.table.get()
+            # Set first: a set `snapshot_id` marks the version as pinned.
+            self.read_schema = version_schema(tbl, self.version)
+            self.snapshot_id = resolve_version(tbl, self.version)
+
+    def _snapshot_schema(
+        self, tbl: pyiceberg.table.Table
+    ) -> tuple[Snapshot, pyiceberg.schema.Schema]:
+        """The snapshot `snapshot_id` and the schema the scan reads it with."""
+        assert self.snapshot_id is not None
+        snapshot = tbl.snapshot_by_id(self.snapshot_id)
+
+        if snapshot is None:
+            msg = f"iceberg snapshot ID not found: {self.snapshot_id}"
+            raise ValueError(msg)
+
+        if self.read_schema is not None:
+            return snapshot, self.read_schema
+
+        schema_id = snapshot.schema_id
+
+        if schema_id is None:
+            msg = (
+                f"IcebergScanResolver: requested snapshot {self.snapshot_id} "
+                "did not contain a schema ID"
+            )
+            raise ValueError(msg)
+        return snapshot, tbl.schemas()[schema_id]
+
+    def _plugin_snapshot_id(
+        self, tbl: pyiceberg.table.Table, schema_id: int, *, newer_schema: bool
+    ) -> int | None:
+        """The snapshot the plugin reads, with that snapshot's schema."""
+        if not newer_schema:
+            return self.snapshot_id
+        if (
+            self.snapshot_id == tbl.metadata.current_snapshot_id
+            and schema_id == tbl.metadata.current_schema_id
+        ):
+            # The table's current state.
+            return None
+        msg = (
+            "iceberg: unsupported: a branch read with another schema than its head "
+            "snapshot's (unset POLARS_ICEBERG_PLANNER to plan it with PyIceberg)"
+        )
+        raise NotImplementedError(msg)
 
     #
     # PythonDatasetProvider interface functions
@@ -381,21 +429,7 @@ class IcebergScanResolver:
 
             return schema_to_pyarrow(self.schema_at_creation)
 
-        snapshot = self.table.get().snapshot_by_id(self.snapshot_id)
-
-        if snapshot is None:
-            msg = f"iceberg snapshot ID not found: {self.snapshot_id}"
-            raise ValueError(msg)
-
-        schema_id = snapshot.schema_id
-
-        if schema_id is None:
-            msg = (
-                f"IcebergScanResolver: requested snapshot {self.snapshot_id} "
-                "did not contain a schema ID"
-            )
-            raise ValueError(msg)
-        return schema_to_pyarrow(self.table.get().schemas()[schema_id])
+        return schema_to_pyarrow(self._snapshot_schema(self.table.get())[1])
 
     def has_tight_statistics(self) -> bool:
         """Whether aggregates may be answered from the statistics. No I/O."""
@@ -455,26 +489,15 @@ class IcebergScanResolver:
         schema_id = None
 
         if snapshot_id is not None:
-            snapshot = tbl.snapshot_by_id(snapshot_id)
-
-            if snapshot is None:
-                msg = f"iceberg snapshot ID not found: {snapshot_id}"
-                raise ValueError(msg)
-
-            schema_id = snapshot.schema_id
-
-            if schema_id is None:
-                msg = (
-                    f"IcebergScanResolver: requested snapshot {snapshot_id} "
-                    "did not contain a schema ID"
-                )
-                raise ValueError(msg)
-
-            iceberg_schema = tbl.schemas()[schema_id]
+            snapshot, iceberg_schema = self._snapshot_schema(tbl)
+            schema_id = iceberg_schema.schema_id
+            # A branch is read with the table's schema, newer than its head's.
+            newer_schema = schema_id != snapshot.schema_id
             snapshot_id_key = f"{snapshot.snapshot_id}"
         else:
             iceberg_schema = tbl.schema()
             schema_id = tbl.metadata.current_schema_id
+            newer_schema = False
 
             if (
                 self.schema_at_creation is not None
@@ -594,7 +617,9 @@ class IcebergScanResolver:
             try:
                 lf = plugin_scan(
                     tbl,
-                    snapshot_id=self.snapshot_id,
+                    snapshot_id=self._plugin_snapshot_id(
+                        tbl, schema_id, newer_schema=newer_schema
+                    ),
                     from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
                     to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
                     projection=projection,
@@ -1008,6 +1033,7 @@ class IcebergScanResolver:
             snapshot_id=snapshot_id,
             from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
             to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
+            read_schema=iceberg_schema if newer_schema else None,
             n_rows=limit,
             with_columns=projection,
             iceberg_table_filter=(

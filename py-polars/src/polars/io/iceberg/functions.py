@@ -435,6 +435,21 @@ def _catalog_table_wrap(
     )
 
 
+def _scan_loaded_table(
+    table: pyiceberg.table.Table,
+    storage_options: StorageOptionsDict | None,
+    version: TableVersion | None = None,
+) -> LazyFrame:
+    """Lazily scan a loaded table, as of `version`."""
+    wrap = IcebergTableWrap(
+        table_=NoPickleOption(table),
+        table_descriptor_=None,
+        serializer=IcebergScanTableSerializer(),
+        iceberg_storage_properties=storage_options,
+    )
+    return _scan_catalog_table(wrap, version)
+
+
 def _scan_catalog_table(
     table: IcebergTableWrap, version: TableVersion | None = None
 ) -> LazyFrame:
