@@ -46,6 +46,7 @@ features = [
   "json",
   "parquet",
   "aws",
+  "aws-config",
   "azure",
   "gcp",
   "http",

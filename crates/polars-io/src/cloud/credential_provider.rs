@@ -154,23 +154,11 @@ impl AutoInitConfig {
         }
 
         // Without Python, fall back to the object_store's own environment-based credentials, as
-        // when the Python provider's dependencies are not installed. A requested profile cannot
-        // be loaded that way.
+        // when the Python provider's dependencies are not installed. A requested AWS profile is
+        // read from the AWS files when the store is built.
         #[cfg(not(feature = "python"))]
         {
             let _ = clear_cached_credentials;
-
-            if let Self::Aws {
-                profile_name: Some(profile_name),
-                ..
-            } = &self
-            {
-                polars_bail!(
-                    ComputeError:
-                    "cannot load requested aws_profile '{profile_name}': requires Python"
-                )
-            }
-
             Ok(None)
         }
     }

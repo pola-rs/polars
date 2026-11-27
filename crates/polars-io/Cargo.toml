@@ -23,6 +23,9 @@ polars-utils = { workspace = true, features = ['mmap', 'sysinfo'] }
 
 async-trait = { workspace = true, optional = true }
 atoi_simd = { workspace = true, optional = true }
+aws-config = { workspace = true, optional = true }
+aws-credential-types = { workspace = true, optional = true }
+aws-runtime = { workspace = true, optional = true }
 blake3 = { workspace = true, optional = true }
 bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
@@ -158,6 +161,8 @@ cloud = [
 ]
 file_cache = ["async", "dep:blake3", "dep:fs4", "dep:parking_lot", "serde_json", "cloud"]
 aws = ["object_store/aws", "cloud", "reqwest"]
+# AWS profiles with SSO, a role, web identity or `credential_process`, without Python.
+aws-config = ["aws", "dep:aws-config", "dep:aws-credential-types", "dep:aws-runtime"]
 azure = ["object_store/azure", "cloud"]
 gcp = ["object_store/gcp", "cloud"]
 http = ["object_store/http", "cloud"]

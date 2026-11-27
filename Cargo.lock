@@ -3427,6 +3427,9 @@ version = "0.55.1"
 dependencies = [
  "async-trait",
  "atoi_simd",
+ "aws-config",
+ "aws-credential-types",
+ "aws-runtime",
  "blake3",
  "bytes",
  "chrono",
