@@ -137,6 +137,36 @@ def test_df_describe_nested() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Categorical(),
+        pl.Categorical(pl.Categories.random()),
+        pl.Enum(["usd", "eur"]),
+    ],
+)
+def test_df_describe_categorical(dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"e": pl.Series(["usd", "eur", None], dtype=dtype)})
+    result = df.describe()
+    expected = pl.DataFrame(
+        {
+            "statistic": [
+                "count",
+                "null_count",
+                "mean",
+                "std",
+                "min",
+                "25%",
+                "50%",
+                "75%",
+                "max",
+            ],
+            "e": ["2", "1", None, None, None, None, None, None, None],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_df_describe_custom_percentiles() -> None:
     df = pl.DataFrame({"numeric": [1, 2, 1, None]})
     result = df.describe(percentiles=(0.2, 0.4, 0.5, 0.6, 0.8))

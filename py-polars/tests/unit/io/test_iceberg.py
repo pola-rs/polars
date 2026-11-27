@@ -1756,6 +1756,12 @@ def test_sink_iceberg_create_if_not_exists_dtypes(
         "dec": ([D("1.25")], pl.Decimal(38, 2), "decimal(38, 2)", pl.Decimal(38, 2)),
         "str": (["x"], pl.String(), "string", pl.String()),
         "cat": (["x"], pl.Categorical(), "string", pl.String()),
+        "cat_own": (
+            ["x"],
+            pl.Categorical(pl.Categories.random()),
+            "string",
+            pl.String(),
+        ),
         "enum": (["x"], pl.Enum(["x", "y"]), "string", pl.String()),
         "bin": ([b"x"], pl.Binary(), "binary", pl.Binary()),
         "date": ([date(2020, 1, 1)], pl.Date(), "date", pl.Date()),
