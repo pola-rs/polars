@@ -593,6 +593,7 @@ impl ParquetReadImpl {
                                 arrow_field.dtype.clone(),
                                 predicate.clone(),
                                 p.specialized.clone(),
+                                p.fallible,
                             );
                             // Flat integer decoders can produce the null mask from page validity.
                             let mask_only = matches!(

@@ -14,7 +14,8 @@ use super::get_binary_expr_col_and_lv;
 use crate::dsl::Operator;
 use crate::plans::aexpr::evaluate::{constant_evaluate, into_column};
 use crate::plans::{
-    AExpr, IRBooleanFunction, IRFunctionExpr, MintermIter, aexpr_to_leaf_names_iter,
+    AExpr, ExprPushdownGroup, IRBooleanFunction, IRFunctionExpr, MintermIter,
+    aexpr_to_leaf_names_iter,
 };
 
 /// The conjuncts of a row predicate that read one column: the static ones
@@ -23,6 +24,8 @@ use crate::plans::{
 pub struct ColumnPredicate {
     pub predicate: Option<Node>,
     pub specialized: Option<SpecializedColumnPredicate>,
+    /// Whether a static conjunct can raise on some value, e.g. a strict cast.
+    pub fallible: bool,
     pub dynamic: Vec<Node>,
 }
 
@@ -63,12 +66,14 @@ pub fn aexpr_to_column_predicates(
         let entry = predicates.entry(column).or_insert_with(|| ColumnPredicate {
             predicate: None,
             specialized: None,
+            fallible: false,
             dynamic: Vec::new(),
         });
         if is_dynamic(minterm, expr_arena) {
             entry.dynamic.push(minterm);
             continue;
         }
+        entry.fallible |= is_fallible(minterm, expr_arena);
         entry.predicate = Some(match entry.predicate {
             None => {
                 entry.specialized = specialize(minterm, expr_arena, schema, dtype);
@@ -86,6 +91,14 @@ pub fn aexpr_to_column_predicates(
     }
 
     ColumnPredicates { predicates, rest }
+}
+
+/// Whether evaluating `node` can raise on some value, e.g. a strict cast. Overflow is not counted,
+/// as it wraps.
+fn is_fallible(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let mut group = ExprPushdownGroup::Pushable;
+    group.update_with_expr_rec(expr_arena.get(node), expr_arena, None);
+    !matches!(group, ExprPushdownGroup::Pushable)
 }
 
 fn is_dynamic(node: Node, expr_arena: &Arena<AExpr>) -> bool {

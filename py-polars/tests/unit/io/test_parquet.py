@@ -4417,6 +4417,47 @@ def test_prefiltering_null_predicate_fails(dtype: pl.DataType, has_nulls: bool) 
         assert_frame_equal(q.collect(), df.filter(expr))
 
 
+@pytest.mark.parametrize("null_rows", [[0], [1], [3], [0, 1, 3]])
+@pytest.mark.parametrize("use_dictionary", [False, True])
+def test_prefiltering_fallible_predicate_skips_null_slots_28521(
+    null_rows: list[int], use_dictionary: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "d": [None if i in null_rows else "2021-06-15" for i in range(4)],
+            "n": [None if i in null_rows else "7" for i in range(4)],
+        }
+    )
+    f = io.BytesIO()
+    pq.write_table(df.to_arrow(), f, use_dictionary=use_dictionary)
+
+    # These raise on the values under null rows, e.g. "".
+    parsed = pl.col("d").str.strptime(pl.Date, "%Y-%m-%d", strict=True)
+    for expr in [
+        parsed.is_not_null(),
+        parsed.is_null(),
+        parsed > date(2021, 1, 1),
+        pl.col("d").str.to_date("%Y-%m-%d") > date(2021, 1, 1),
+        pl.col("n").str.to_integer() > 5,
+        pl.col("n").cast(pl.Int64) > 5,
+    ]:
+        f.seek(0)
+        q = pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+        assert_frame_equal(q.filter(expr).collect(), df.filter(expr))
+
+
+def test_prefiltering_fallible_predicate_raises_on_invalid_value_28521() -> None:
+    df = pl.DataFrame({"d": ["2021-06-15", "invalid", None]})
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    expr = pl.col("d").str.strptime(pl.Date, "%Y-%m-%d", strict=True).is_not_null()
+    f.seek(0)
+    q = pl.scan_parquet(f, parallel="prefiltered", use_statistics=False).filter(expr)
+    with pytest.raises(pl.exceptions.PolarsError):
+        q.collect()
+
+
 def test_parquet_read_timezone_22506() -> None:
     f = io.BytesIO()
 

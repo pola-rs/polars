@@ -6,6 +6,7 @@ use std::ops::Range;
 use std::sync::OnceLock;
 
 use polars_arrow::array::{Array, IntoBoxedArray, Splitable};
+use polars_arrow::bitmap::bitmask::BitMask;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::pushable::Pushable;
@@ -423,16 +424,7 @@ pub(super) trait Decoder: Sized {
                 .predicate
                 .evaluate_null()
                 .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
-            let mut valid_mask = valid_mask.iter();
-            let mut mask = BitmapBuilder::with_capacity(validity.len());
-            for is_valid in validity.iter() {
-                mask.push(if is_valid {
-                    valid_mask.next().unwrap()
-                } else {
-                    null_is_true
-                });
-            }
-            mask.freeze()
+            scatter_to_valid(&valid_mask, validity, null_is_true)
         } else {
             predicate
                 .predicate
@@ -1044,4 +1036,149 @@ pub(crate) fn decode_page_validity(
 
     decode_hybrid_rle_into_bitmap(page_validity, None, &mut bm)?;
     Ok(Some(bm.freeze()))
+}
+
+/// Spreads `values` over the set positions of `validity`, in order, and sets the other positions
+/// to `fill`. `values` holds one bit per set bit of `validity`.
+fn scatter_to_valid(values: &Bitmap, validity: &Bitmap, fill: bool) -> Bitmap {
+    #[cfg(target_arch = "x86_64")]
+    if polars_utils::cpuid::has_fast_bmi2() {
+        return scatter_to_valid_kernel(values, validity, fill, |v, m| {
+            // SAFETY: has_fast_bmi2 ensures this is a legal instruction.
+            unsafe { core::arch::x86_64::_pdep_u64(v, m) }
+        });
+    }
+    scatter_to_valid_kernel(values, validity, fill, pdep64_polyfill)
+}
+
+/// Does 64 rows per step: `pdep` places the next `valid.count_ones()` values at the set bits of
+/// the validity word `valid`.
+#[inline(always)]
+fn scatter_to_valid_kernel(
+    values: &Bitmap,
+    validity: &Bitmap,
+    fill: bool,
+    pdep: impl Fn(u64, u64) -> u64,
+) -> Bitmap {
+    assert_eq!(values.len(), validity.set_bits());
+    let values = BitMask::from_bitmap(values);
+    let validity_mask = BitMask::from_bitmap(validity);
+    // The 64 bits from idx on, zero past the end.
+    let get_u64 =
+        |m: BitMask<'_>, idx: usize| m.get_u32(idx) as u64 | ((m.get_u32(idx + 32) as u64) << 32);
+
+    let len = validity.len();
+    let mut out = BitmapBuilder::with_capacity(len);
+    let mut value_idx = 0;
+    for idx in (0..len).step_by(64) {
+        let word_len = (len - idx).min(64);
+        let valid = get_u64(validity_mask, idx);
+        // pdep reads only the lowest valid.count_ones() bits of its source.
+        let mut word = pdep(get_u64(values, value_idx), valid);
+        if fill {
+            word |= !valid & (u64::MAX >> (64 - word_len));
+        }
+        value_idx += valid.count_ones() as usize;
+        // SAFETY: the capacity is len, and the bits past word_len are zero.
+        unsafe { out.push_word_with_len_unchecked(word, word_len) };
+    }
+    out.freeze()
+}
+
+/// Portable `pdep`: places the low bits of `v` at the set bits of `m`, lowest first. Loops over
+/// the set bits of `m` or over its unset bits, whichever are fewer.
+fn pdep64_polyfill(mut v: u64, mut m: u64) -> u64 {
+    if m.count_ones() <= 32 {
+        let mut out = 0;
+        while m != 0 {
+            let lowest = m.isolate_lowest_one();
+            out |= lowest & (v & 1).wrapping_neg();
+            v >>= 1;
+            m &= m - 1;
+        }
+        out
+    } else {
+        // Insert a zero at each unset bit, lowest first, shifting the bits above it up by one.
+        let mut unset = !m;
+        while unset != 0 {
+            let lowest = unset.isolate_lowest_one();
+            let below = lowest - 1;
+            v = (v & below) | ((v << 1) & !(below | lowest));
+            unset &= unset - 1;
+        }
+        v
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::bitmap::proptest::bitmap;
+    use proptest::prelude::*;
+
+    use super::*;
+
+    fn naive_pdep64(v: u64, m: u64) -> u64 {
+        let (mut out, mut k) = (0, 0);
+        for i in 0..64 {
+            if (m >> i) & 1 == 1 {
+                out |= ((v >> k) & 1) << i;
+                k += 1;
+            }
+        }
+        out
+    }
+
+    fn naive_scatter_to_valid(values: &Bitmap, validity: &Bitmap, fill: bool) -> Bitmap {
+        let mut values = values.iter();
+        validity
+            .iter()
+            .map(|is_valid| {
+                if is_valid {
+                    values.next().unwrap()
+                } else {
+                    fill
+                }
+            })
+            .collect()
+    }
+
+    /// A validity of any density, starting at a bit offset, and one value per valid row.
+    fn validity_and_values() -> impl Strategy<Value = (Bitmap, Bitmap)> {
+        (
+            prop_oneof![Just(0.0), Just(1.0), 0.0..=1.0],
+            0..300usize,
+            0..70usize,
+        )
+            .prop_flat_map(|(density, len, offset)| {
+                prop::collection::vec(prop::bool::weighted(density), offset + len)
+                    .prop_map(move |bits| Bitmap::from_iter(bits).sliced(offset, len))
+            })
+            .prop_flat_map(|validity| {
+                let num_values = validity.set_bits();
+                (Just(validity), bitmap(num_values))
+            })
+    }
+
+    proptest! {
+        #[test]
+        fn test_pdep64_polyfill(v in any::<u64>(), m in any::<u64>(), r in any::<u64>()) {
+            // Sparse and dense masks as well as random ones.
+            for m in [m, m & r, m | r, 0, u64::MAX] {
+                prop_assert_eq!(pdep64_polyfill(v, m), naive_pdep64(v, m));
+            }
+        }
+
+        #[test]
+        fn test_scatter_to_valid(
+            (ref validity, ref values) in validity_and_values(),
+            fill in any::<bool>(),
+        ) {
+            let expected = naive_scatter_to_valid(values, validity, fill);
+            prop_assert_eq!(&scatter_to_valid(values, validity, fill), &expected);
+            prop_assert_eq!(
+                &scatter_to_valid_kernel(values, validity, fill, pdep64_polyfill),
+                &expected
+            );
+        }
+    }
 }

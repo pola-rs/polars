@@ -32,6 +32,8 @@ pub struct StagedScanPredicate {
 pub struct PhysicalColumnPredicate {
     pub predicate: Option<Arc<dyn PhysicalExpr>>,
     pub specialized: Option<SpecializedColumnPredicate>,
+    /// Whether `predicate` can raise on some value, e.g. a strict cast.
+    pub fallible: bool,
     pub dynamic: Vec<(Arc<dyn PhysicalExpr>, Arc<dyn DynamicPredicateSource>)>,
 }
 
@@ -47,6 +49,7 @@ impl StagedScanPredicate {
                             ColumnPredicate {
                                 predicate: p.predicate.clone().map(phys_expr_to_io_expr),
                                 specialized: p.specialized.clone(),
+                                fallible: p.fallible,
                                 dynamic: p
                                     .dynamic
                                     .iter()
