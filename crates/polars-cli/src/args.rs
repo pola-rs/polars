@@ -76,6 +76,22 @@ pub struct Args {
     /// Show the plan and the context of an error
     #[arg(long)]
     verbose: bool,
+
+    // `-o`, the output option of the old `polars-cli` (up to 0.9.0), is refused with a pointer to
+    // `--format`.
+    #[arg(short = 'o', hide = true, value_parser = old_output)]
+    #[allow(dead_code)]
+    output: Option<String>,
+}
+
+fn old_output(mode: &str) -> Result<String, String> {
+    let format = match mode {
+        "json" => "ndjson",
+        "arrow" => "arrow-stream",
+        "markdown" | "md" => "table",
+        mode => mode,
+    };
+    Err(format!("-o is now --format; use --format {format}"))
 }
 
 /// Where the SQL script comes from.
@@ -205,6 +221,7 @@ mod tests {
             // Nothing on the command line turns it off again.
             &["--read-only=false"],
             &["query.sql"],
+            &["-o", "csv"],
         ] {
             assert_eq!(parse(args).unwrap_err().exit_code(), 2, "{args:?}");
         }
