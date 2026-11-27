@@ -200,6 +200,43 @@ def test_scan_csv_schema_new_columns_dtypes(
         ).collect()
 
 
+@pytest.mark.parametrize(
+    ("has_header", "null_names"),
+    [
+        (True, ["a", "b"]),
+        (True, ["A", "B"]),
+        (False, ["column_0", "column_1"]),
+        (False, ["COLUMN_0", "COLUMN_1"]),
+    ],
+)
+def test_scan_csv_with_column_names_named_nulls(
+    has_header: bool, null_names: list[str]
+) -> None:
+    # named null values can refer to either the original or the new column names
+    data = b"a,b\n1,NA\nNA,2\n" if has_header else b"1,NA\nNA,2\n"
+    lf = pl.scan_csv(
+        data,
+        has_header=has_header,
+        with_column_names=lambda cols: [col.upper() for col in cols],
+        null_values=dict.fromkeys(null_names, "NA"),
+    )
+    names = ["A", "B"] if has_header else ["COLUMN_0", "COLUMN_1"]
+    expected = pl.DataFrame(dict(zip(names, [[1, None], [None, 2]], strict=True)))
+    assert lf.collect_schema() == expected.schema
+    assert_frame_equal(lf.collect(), expected)
+
+
+def test_scan_csv_with_column_names_named_nulls_prefer_new_names() -> None:
+    # "a" is both an original and a new column name; it refers to the new one
+    lf = pl.scan_csv(
+        b"a,b\n1,NA\nNA,2\n",
+        with_column_names=lambda cols: cols[::-1],
+        null_values={"a": "NA"},
+    )
+    expected = pl.DataFrame({"b": ["1", "NA"], "a": [None, 2]})
+    assert_frame_equal(lf.collect(), expected)
+
+
 def test_scan_csv_headers_but_no_data_13770() -> None:
     schema = {"name": pl.String, "age": pl.Int32}
     df = (
