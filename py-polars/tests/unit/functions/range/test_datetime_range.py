@@ -244,6 +244,25 @@ def test_tzaware_datetime_range_crossing_dst_weekly() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("start", "end", "interval", "days"),
+    [
+        (datetime(2021, 3, 13), datetime(2021, 3, 15), "1d", [13, 14, 15]),
+        (datetime(2021, 3, 8), datetime(2021, 3, 15), "1w", [8, 15]),
+    ],
+)
+def test_tzaware_datetime_range_crossing_dst_spring_forward(
+    start: datetime, end: datetime, interval: str, days: list[int]
+) -> None:
+    # note: the local day of the DST change is 23 hours, so the range
+    # spans less time than its number of intervals suggests
+    result = pl.datetime_range(
+        start, end, interval, time_zone="America/Chicago", eager=True
+    )
+    tz = ZoneInfo("America/Chicago")
+    assert result.to_list() == [datetime(2021, 3, d, tzinfo=tz) for d in days]
+
+
 def test_tzaware_datetime_range_crossing_dst_monthly() -> None:
     result = pl.datetime_range(
         datetime(2021, 11, 7),
