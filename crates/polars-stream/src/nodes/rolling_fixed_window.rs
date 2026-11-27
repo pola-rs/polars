@@ -115,7 +115,7 @@ impl RollingFixedWindowNode {
             .max(self.buf_start);
         self.buf = self
             .buf
-            .slice((keep_start - self.buf_start) as i64, usize::MAX);
+            .slice((keep_start - self.buf_start) as usize..self.buf.height());
         self.buf_start = keep_start;
 
         Some((batch, out_offset, num_ready as usize))
@@ -131,7 +131,7 @@ impl RollingFixedWindowNode {
         let mut columns = batch.into_columns();
         let out = func.call_udf(&mut columns)?;
         Ok(out
-            .slice(out_offset as i64, out_len)
+            .slice((out_offset, out_len))
             .with_name(output_name.clone())
             .into_frame())
     }

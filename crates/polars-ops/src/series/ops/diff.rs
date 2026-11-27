@@ -15,12 +15,12 @@ pub fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsResult<Ser
         NullBehavior::Drop if n < 0 => {
             let n = -n as usize;
             let len = s.len() - n;
-            &s.slice(0, len) - &s.slice(n as i64, len)
+            &s.slice(Slice::head(len)) - &s.slice((n, len))
         },
         NullBehavior::Drop => {
             let n = n as usize;
             let len = s.len() - n;
-            &s.slice(n as i64, len) - &s.slice(0, len)
+            &s.slice((n, len)) - &s.slice(Slice::head(len))
         },
     }
 }

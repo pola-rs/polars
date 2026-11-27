@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -562,10 +565,9 @@ def test_window_frame_validation() -> None:
         ]
         assert_sql_matches(df, query=query, compare_with="sqlite")
 
-    # Rejected: offsets in RANGE and GROUPS frames, and FOLLOWING offsets
+    # Rejected: offsets in GROUPS frames, and FOLLOWING offsets
     for frame in (
         "ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING",
-        "RANGE BETWEEN 1 PRECEDING AND CURRENT ROW",
         "GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW",
     ):
         with pytest.raises(
@@ -573,6 +575,11 @@ def test_window_frame_validation() -> None:
             match=f"SUM with window frame '{frame}' is not supported",
         ):
             df.sql(f"SELECT SUM(value) OVER (ORDER BY lbl {frame}) FROM self")
+    with pytest.raises(
+        SQLInterfaceError,
+        match="RANGE window frame with an offset needs an integer, date or timestamp",
+    ):
+        df.sql("SELECT SUM(value) OVER (ORDER BY lbl RANGE 1 PRECEDING) FROM self")
 
 
 @pytest.mark.parametrize(
@@ -1209,8 +1216,8 @@ def test_window_last_value_frame_ends_at_current_row(
         ),
         ("AVG(DISTINCT x) OVER w", r"AVG\(DISTINCT ...\) is not supported"),
         (
-            "COUNT(x) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)",
-            "COUNT with window frame 'ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING' "
+            "COUNT(x) OVER (ORDER BY id ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING)",
+            "COUNT with window frame 'ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING' "
             "is not supported",
         ),
         (
@@ -1442,6 +1449,123 @@ def test_window_value_frames(
 @pytest.mark.parametrize(
     "frame",
     [
+        "RANGE 1 PRECEDING",
+        "RANGE BETWEEN CURRENT ROW AND 2 FOLLOWING",
+        "RANGE BETWEEN 1 PRECEDING AND 3 FOLLOWING",
+        "RANGE BETWEEN UNBOUNDED PRECEDING AND 1 FOLLOWING",
+        "RANGE BETWEEN 3 PRECEDING AND UNBOUNDED FOLLOWING",
+    ],
+)
+@pytest.mark.parametrize("order", ["o", "o DESC NULLS LAST", "o NULLS FIRST"])
+def test_window_range_offsets(df_frames: pl.DataFrame, frame: str, order: str) -> None:
+    assert_sql_matches(
+        {"t": df_frames},
+        query=f"""
+            SELECT
+              id,
+              SUM(x) OVER (PARTITION BY g ORDER BY {order} {frame}) AS s,
+              AVG(x) OVER (PARTITION BY g ORDER BY {order} {frame}) AS a,
+              COUNT(x) OVER (ORDER BY {order} {frame}) AS c,
+              COUNT(*) OVER (ORDER BY {order} {frame}) AS n,
+              MIN(f) OVER (PARTITION BY g ORDER BY {order} {frame}) AS lo,
+              MAX(x) OVER (ORDER BY {order} {frame}) AS hi
+            FROM t ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "RANGE BETWEEN INTERVAL 2 DAY PRECEDING AND CURRENT ROW",
+        "RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND INTERVAL 1 WEEK FOLLOWING",
+        "RANGE BETWEEN CURRENT ROW AND INTERVAL 2 DAY FOLLOWING",
+    ],
+)
+@pytest.mark.parametrize("order", ["d", "d DESC", "ts", "ts DESC"])
+def test_window_range_interval_offsets(frame: str, order: str) -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "d": [
+                date(2024, 1, 1),
+                date(2024, 1, 3),
+                date(2024, 1, 3),
+                None,
+                date(2024, 1, 9),
+            ],
+            "x": [1, 2, 4, 8, 16],
+        }
+    ).with_columns(ts=pl.col("d").cast(pl.Datetime("us")))
+    assert_sql_matches(
+        {"t": df},
+        query=f"SELECT id, SUM(x) OVER (ORDER BY {order} {frame}) AS s FROM t ORDER BY id",
+        compare_with="duckdb",
+    )
+
+
+def test_window_range_calendar_offsets() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "d": [date(2024, 1, 31), date(2024, 2, 29), None, date(2024, 3, 30)],
+            "x": [1, 2, 4, 8],
+        }
+    )
+    assert_sql_matches(
+        {"t": df},
+        query="""
+            SELECT id, SUM(x) OVER (ORDER BY d RANGE INTERVAL 1 MONTH PRECEDING) AS s
+            FROM t ORDER BY id
+        """,
+        compare_with="duckdb",
+    )
+    with pytest.raises(SQLInterfaceError, match="INTERVAL offset is not supported"):
+        df.sql(
+            "SELECT SUM(x) OVER (ORDER BY d RANGE BETWEEN CURRENT ROW "
+            "AND INTERVAL 1 MONTH FOLLOWING) FROM self"
+        )
+
+
+def test_window_range_offset_edges() -> None:
+    def sums(k: pl.Series | list[int], frame: str) -> list[int]:
+        df = pl.DataFrame({"k": k, "v": [1, 2, 4]})
+        return df.sql(f"SELECT SUM(v) OVER (ORDER BY k {frame}) AS s FROM self")[
+            "s"
+        ].to_list()
+
+    lowest = -(2**63)
+    frame = "DESC RANGE 1 PRECEDING"
+    assert sums([lowest, lowest + 1, 0], frame) == [3, 2, 4]
+    # an interval below the precision of the key reaches the peers only
+    ms = pl.Series([0, 0, 1], dtype=pl.Datetime("ms"))
+    frame = "RANGE BETWEEN CURRENT ROW AND INTERVAL 1 MICROSECOND FOLLOWING"
+    assert sums(ms, frame) == [3, 3, 4]
+
+    df = pl.DataFrame({"k": [1, 2], "s": ["b", "a"]})
+    with pytest.raises(SQLInterfaceError, match="needs a number value"):
+        df.sql("SELECT MIN(s) OVER (ORDER BY k RANGE 1 PRECEDING) FROM self")
+    with pytest.raises(SQLInterfaceError, match="INTERVAL offset is not supported"):
+        sums(ms, "RANGE INTERVAL 1 MONTH PRECEDING")
+    # a calendar day in a time zone is not a fixed duration
+    with pytest.raises(SQLInterfaceError, match="INTERVAL offset is not supported"):
+        sums(
+            ms.dt.replace_time_zone("Europe/Amsterdam"),
+            "RANGE INTERVAL 1 DAY PRECEDING",
+        )
+    tz_sums = sums(
+        ms.dt.replace_time_zone("Europe/Amsterdam"), "RANGE INTERVAL 1 HOUR PRECEDING"
+    )
+    assert tz_sums == [3, 3, 7]
+    with pytest.raises(SQLInterfaceError, match="number offset over a number"):
+        sums([0, 1, 2], "RANGE INTERVAL 1 DAY PRECEDING")
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
         "GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW",
         "RANGE BETWEEN 2 PRECEDING AND CURRENT ROW",
     ],
@@ -1598,3 +1722,53 @@ def test_window_rolling_min_of_strings_unsupported(df_frames: pl.DataFrame) -> N
     query = "SELECT MIN(s) OVER (ORDER BY id ROWS 2 PRECEDING) FROM t"
     with pytest.raises(InvalidOperationError, match="rolling_min"):
         pl.SQLContext(t=df_frames).execute(query, eager=True)
+
+
+EMPTY_FRAME = (None, 0, 0, None, None)
+
+
+@pytest.mark.parametrize(
+    ("frame", "expected"),
+    [
+        (
+            "ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING",
+            [
+                EMPTY_FRAME,
+                (10, 1, 1, 10, 10.0),
+                (10, 1, 2, 10, 10.0),
+                (40, 2, 3, 30, 20.0),
+                EMPTY_FRAME,
+                (5, 1, 1, 5, 5.0),
+            ],
+        ),
+        (
+            "ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING",
+            [
+                EMPTY_FRAME,
+                (10, 1, 1, 10, 10.0),
+                (10, 1, 2, 10, 10.0),
+                (30, 1, 2, 30, 30.0),
+                EMPTY_FRAME,
+                (5, 1, 1, 5, 5.0),
+            ],
+        ),
+        # a frame that starts after it ends holds no row
+        ("ROWS BETWEEN 1 PRECEDING AND 2 PRECEDING", [EMPTY_FRAME] * 6),
+    ],
+)
+def test_window_frame_ending_before_the_row(
+    frame: str, expected: list[tuple[Any, ...]]
+) -> None:
+    # the rows before the current one, with the values Postgres gives
+    df = pl.DataFrame(
+        {"g": [1, 1, 1, 1, 2, 2], "t": [1, 2, 3, 4, 1, 2], "v": [10, None, 30, 4, 5, 7]}
+    )
+    over = f"OVER (PARTITION BY g ORDER BY t {frame})"
+    res = df.sql(
+        f"""
+        SELECT SUM(v) {over} AS s, COUNT(v) {over} AS c, COUNT(*) {over} AS n,
+          MAX(v) {over} AS m, AVG(v) {over} AS a
+        FROM self ORDER BY g, t
+        """
+    )
+    assert res.rows() == expected

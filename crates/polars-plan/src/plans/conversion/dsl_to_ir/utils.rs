@@ -11,6 +11,10 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) pushdown_maintain_errors: bool,
     pub(super) verbose: bool,
     pub(super) seen_caches: PlIndexMap<UniqueId, Node>,
+    /// Shares encryption and decryption configurations that have the same ID, which are
+    /// separate objects after a plan is deserialized.
+    #[cfg(feature = "parquet")]
+    pub(super) encryption_sharing: polars_io::parquet::encryption::EncryptionSharing,
     /// The `Recursive` nodes whose step is being converted, with their working table schema.
     pub(super) recursions: Vec<(UniqueId, SchemaRef)>,
 }

@@ -63,6 +63,53 @@ def test_series_table_function_temporal() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "step",
+    [
+        "2 * INTERVAL '1 day'",
+        "INTERVAL '1 day' * 2",
+        "(1 + 1) * INTERVAL '1 day'",
+    ],
+)
+def test_series_interval_step_expression_31042(step: str) -> None:
+    res = pl.sql(
+        f"""
+        SELECT * FROM generate_series(
+          TIMESTAMP '2024-01-01', TIMESTAMP '2024-01-05', {step}
+        )
+        """,
+        eager=True,
+    )
+    expected = [datetime(2024, 1, 1), datetime(2024, 1, 3), datetime(2024, 1, 5)]
+    assert res["generate_series"].to_list() == expected
+
+    df = pl.DataFrame({"start": [date(2024, 1, 1)], "stop": [date(2024, 1, 5)]})
+    res = pl.sql(f"SELECT range(start, stop, {step}) AS d FROM df", eager=True)
+    assert res["d"].to_list() == [expected[:2]]
+
+
+def test_series_null_interval_step() -> None:
+    res = pl.sql(
+        """
+        SELECT * FROM generate_series(
+          DATE '2024-01-01', DATE '2024-01-03', CAST(NULL AS INTERVAL)
+        )
+        """,
+        eager=True,
+    )
+    assert res.schema == {"generate_series": pl.Datetime("us")}
+    assert res.height == 0
+
+    df = pl.DataFrame({"stop": [date(2024, 1, 3)] * 3})
+    res = pl.sql(
+        "SELECT range(DATE '2024-01-01', MAX(stop), CAST(NULL AS INTERVAL)) AS d FROM df",
+        eager=True,
+    )
+    assert_frame_equal(
+        res, pl.DataFrame({"d": [None]}, schema={"d": pl.List(pl.Datetime("us"))})
+    )
+
+
 def test_series_table_function_in_query() -> None:
     df = pl.DataFrame({"n": [2, 4]})
     res = pl.sql(
@@ -140,3 +187,13 @@ def test_series_errors() -> None:
             "SELECT * FROM range(DATE '2026-01-02', DATE '2026-01-01', -INTERVAL 1 DAY)",
             eager=True,
         )
+    with pytest.raises(SQLInterfaceError, match="negative INTERVAL steps"):
+        pl.sql(
+            "SELECT * FROM range(DATE '2026-01-02', DATE '2026-01-01', -2 * INTERVAL '1 day')",
+            eager=True,
+        )
+    df = pl.DataFrame(
+        {"start": [date(2026, 1, 1)], "stop": [date(2026, 1, 2)], "a": [1]}
+    )
+    with pytest.raises(SQLInterfaceError, match="constant INTERVAL step"):
+        pl.sql("SELECT range(start, stop, a * INTERVAL '1 hour') FROM df", eager=True)

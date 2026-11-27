@@ -107,7 +107,7 @@ impl AggregationContext<'_> {
                     match g {
                         GroupsIndicator::Idx(_) => unreachable!(),
                         GroupsIndicator::Slice(s) => Some(
-                            col.slice(s[0] as i64, s[1] as usize)
+                            col.slice((s[0] as usize, s[1] as usize))
                                 .into_materialized_series()
                                 .clone(),
                         ),
@@ -137,7 +137,7 @@ impl AggregationContext<'_> {
                     match g {
                         GroupsIndicator::Idx(_) => unreachable!(),
                         GroupsIndicator::Slice(s) => Some(
-                            col.slice(s[0] as i64, s[1] as usize)
+                            col.slice((s[0] as usize, s[1] as usize))
                                 .into_materialized_series()
                                 .clone(),
                         ),

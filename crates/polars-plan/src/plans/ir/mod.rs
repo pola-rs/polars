@@ -24,6 +24,7 @@ pub use hash::ExpressionHasher;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -60,8 +61,7 @@ pub enum IR {
     },
     Slice {
         input: Node,
-        offset: i64,
-        len: IdxSize,
+        slice: Slice,
     },
     Filter {
         input: Node,
@@ -106,7 +106,7 @@ pub enum IR {
     Sort {
         input: Node,
         by_column: Vec<ExprIR>,
-        slice: Option<(i64, usize, Option<DynamicPred>)>,
+        slice: Option<(Slice, Option<DynamicPred>)>,
         sort_options: SortMultipleOptions,
     },
     Cache {
@@ -225,7 +225,7 @@ pub enum IR {
         resolver_schema: SchemaRef,
 
         projection: Option<Buffer<PlSmallStr>>,
-        slice: Option<(i64, u64)>,
+        slice: Option<Slice>,
         filters: Buffer<ExprIR>,
         filter_drop_columns_idx: Option<usize>,
 

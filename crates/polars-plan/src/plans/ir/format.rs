@@ -148,7 +148,9 @@ fn write_scan(
 
         for (k, v) in props {
             writeln!(f)?;
-            write!(EscapeLabel(f), "{:indent$}{k}: {v}", "")?;
+            // One line per property. This is text, not a graph label: quotes stay as they are.
+            let v = v.replace('\n', "\\n");
+            write!(f, "{:indent$}{k}: {v}", "")?;
         }
     }
 
@@ -248,8 +250,9 @@ impl<'a> IRDisplay<'a> {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 let name = if let Some(slice) = options.slice {
                     format!(
-                        "SLICED UNION[maintain_order: {0}]: {slice:?}",
-                        options.maintain_order
+                        "SLICED UNION[maintain_order: {0}]: {1}",
+                        options.maintain_order,
+                        slice.fmt_tuple()
                     )
                 } else {
                     format!("UNION[maintain_order: {0}]", options.maintain_order)
@@ -528,7 +531,7 @@ impl Display for ExprIRDisplay<'_> {
                 }
                 f.write_char(')')
             },
-            Column(name) => write!(f, "col(\"{name}\")"),
+            Column(name) | EvalColumn(name) => write!(f, "col(\"{name}\")"),
             #[cfg(feature = "dtype-struct")]
             StructField(name) => write!(f, "field(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
@@ -757,6 +760,7 @@ impl Display for ExprIRDisplay<'_> {
                 expr,
                 evaluation,
                 variant,
+                columns: _,
             } => {
                 let expr = self.with_root(expr).parenthesize_if_binexpr();
                 let evaluation = self.with_root(evaluation);
@@ -957,12 +961,8 @@ pub fn write_ir_non_recursive(
 
             Ok(())
         },
-        IR::Slice {
-            input: _,
-            offset,
-            len,
-        } => {
-            write!(f, "{:indent$}SLICE[offset: {offset}, len: {len}]", "")
+        IR::Slice { input: _, slice } => {
+            write!(f, "{:indent$}SLICE[{slice}]", "")
         },
         IR::Filter {
             input: _,
@@ -1005,7 +1005,7 @@ pub fn write_ir_non_recursive(
                 unified_scan_args.field_selection.as_deref(),
                 row_estimation,
                 &predicate,
-                unified_scan_args.pre_slice.clone(),
+                unified_scan_args.pre_slice,
                 unified_scan_args.row_index.as_ref(),
                 unified_scan_args.deletion_files.as_ref(),
             )
@@ -1077,11 +1077,10 @@ pub fn write_ir_non_recursive(
                 f.write_char('[')?;
 
                 let mut comma = false;
-                if let Some((o, l, dyn_pred)) = slice {
+                if let Some((s, dyn_pred)) = slice {
+                    write!(f, "slice: {}", s.fmt_tuple())?;
                     if let Some(dyn_pred) = &dyn_pred {
-                        write!(f, "slice: ({o}, {l}, {dyn_pred:?})")?;
-                    } else {
-                        write!(f, "slice: ({o}, {l})")?;
+                        write!(f, ", {dyn_pred:?}")?;
                     }
                     comma = true;
                 }
@@ -1218,8 +1217,9 @@ pub fn write_ir_non_recursive(
         IR::Union { inputs: _, options } => {
             let name = if let Some(slice) = options.slice {
                 format!(
-                    "SLICED UNION[maintain_order: {0}]: {slice:?}",
-                    options.maintain_order
+                    "SLICED UNION[maintain_order: {0}]: {1}",
+                    options.maintain_order,
+                    slice.fmt_tuple()
                 )
             } else {
                 format!("UNION[maintain_order: {0}]", options.maintain_order)

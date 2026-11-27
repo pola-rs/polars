@@ -612,8 +612,8 @@ impl SinkState {
                         if hot_idxs.is_empty() {
                             evictions_before = slice_evictions_before;
                         }
-                        let slice_keys = keys.slice(offset as i64, slice_size);
-                        let hash_keys = params.key_encoder.try_hash_keys(
+                        let slice_keys = keys.slice((offset, slice_size));
+                        let hash_keys = params.key_encoder.try_hash_keys_for_hot_grouper(
                             &slice_keys,
                             random_state.clone(),
                             true,
@@ -654,7 +654,7 @@ impl SinkState {
                             local
                                 .store_cold_rows(
                                     input_idx,
-                                    df.slice(offset as i64, slice_size),
+                                    df.slice((offset, slice_size)),
                                     hash_keys,
                                     Some(&cold_idxs),
                                     !fast_growth,
@@ -666,7 +666,7 @@ impl SinkState {
 
                         if reduce_per_slice || offset + slice_size >= df.height() {
                             let reduce_df = if reduce_per_slice {
-                                &df.slice(offset as i64, slice_size)
+                                &df.slice((offset, slice_size))
                             } else {
                                 &df
                             };

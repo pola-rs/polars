@@ -28,6 +28,8 @@ mod strip;
 mod substring;
 #[cfg(feature = "strings")]
 mod unicode_internals;
+#[cfg(any(feature = "strings", feature = "find_many"))]
+mod utf8;
 
 #[cfg(feature = "strings")]
 pub use concat::*;

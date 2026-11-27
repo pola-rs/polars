@@ -20,6 +20,11 @@ pub(crate) const MAX_GROUPING_ARGS: usize = 63;
 
 const PLACEHOLDER_PREFIX: &str = "__POLARS_GROUPING_";
 
+/// Whether `name` is the placeholder column of a `GROUPING()` call.
+pub(crate) fn is_grouping_placeholder(name: &str) -> bool {
+    name.starts_with(PLACEHOLDER_PREFIX)
+}
+
 const GLOBAL_COUNT_COL: &str = "__POLARS_GSET_COUNT";
 
 /// A `GROUPING(...)` call parsed in the current query block.

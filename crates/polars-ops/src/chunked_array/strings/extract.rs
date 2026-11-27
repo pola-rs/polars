@@ -4,6 +4,7 @@ use std::iter::zip;
 use polars_arrow::array::{Array, StructArray};
 use polars_arrow::array::{MutablePlString, Utf8ViewArray};
 use polars_core::prelude::arity::{try_binary_mut_with_options, try_unary_mut_with_options};
+use polars_utils::regex_cache::with_regex_cache;
 use regex::Regex;
 
 use super::*;
@@ -99,19 +100,22 @@ fn extract_group_array_lit(
 ) -> PolarsResult<Utf8ViewArray> {
     let mut builder = MutablePlString::with_capacity(pat.len());
 
-    for opt_pat in pat {
-        if let Some(pat) = opt_pat {
-            let reg = polars_utils::regex_cache::compile_regex(pat)?;
-            let mut locs = reg.capture_locations();
-            if reg.captures_read(&mut locs, s).is_some() {
-                builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
-                continue;
+    with_regex_cache(|cache| {
+        for opt_pat in pat {
+            if let Some(pat) = opt_pat {
+                let reg = cache.compile(pat)?;
+                let mut locs = reg.capture_locations();
+                if reg.captures_read(&mut locs, s).is_some() {
+                    builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
+                    continue;
+                }
             }
-        }
 
-        // Push null if either the pat is null or there was no match.
-        builder.push_null();
-    }
+            // Push null if either the pat is null or there was no match.
+            builder.push_null();
+        }
+        PolarsResult::Ok(())
+    })?;
 
     Ok(builder.into())
 }
@@ -123,21 +127,24 @@ fn extract_group_binary(
 ) -> PolarsResult<Utf8ViewArray> {
     let mut builder = MutablePlString::with_capacity(arr.len());
 
-    for (opt_s, opt_pat) in zip(arr, pat) {
-        match (opt_s, opt_pat) {
-            (Some(s), Some(pat)) => {
-                let reg = polars_utils::regex_cache::compile_regex(pat)?;
-                let mut locs = reg.capture_locations();
-                if reg.captures_read(&mut locs, s).is_some() {
-                    builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
-                    continue;
-                }
-                // Push null if there was no match.
-                builder.push_null()
-            },
-            _ => builder.push_null(),
+    with_regex_cache(|cache| {
+        for (opt_s, opt_pat) in zip(arr, pat) {
+            match (opt_s, opt_pat) {
+                (Some(s), Some(pat)) => {
+                    let reg = cache.compile(pat)?;
+                    let mut locs = reg.capture_locations();
+                    if reg.captures_read(&mut locs, s).is_some() {
+                        builder.push(locs.get(group_index).map(|(start, stop)| &s[start..stop]));
+                        continue;
+                    }
+                    // Push null if there was no match.
+                    builder.push_null()
+                },
+                _ => builder.push_null(),
+            }
         }
-    }
+        PolarsResult::Ok(())
+    })?;
 
     Ok(builder.into())
 }

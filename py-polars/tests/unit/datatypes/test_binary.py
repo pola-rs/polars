@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -37,3 +39,21 @@ def test_string_to_binary() -> None:
 
     assert s.cast(pl.Binary).to_list() == [b"", None, b"\x01\x02"]
     assert s.cast(pl.Binary).cast(pl.Utf8).to_list() == ["", None, "\x01\x02"]
+
+
+def test_binary_to_string_ignores_bytes_under_nulls() -> None:
+    pa = pytest.importorskip("pyarrow")
+    offsets = pa.array([0, 1, 2], pa.int32()).buffers()[1]
+    validity = pa.py_buffer(bytes([0b01]))
+    arr = pa.Array.from_buffers(
+        pa.binary(), 2, [validity, offsets, pa.py_buffer(b"a\xff")]
+    )
+    df = pl.from_arrow(pa.table({"b": arr}))
+    assert isinstance(df, pl.DataFrame)
+    lf = df.lazy()
+    q = lf.select(pl.col("b").cast(pl.String), f=pl.format("{:s}", "b"))
+    for engine in ("in-memory", "streaming"):
+        assert q.collect(engine=engine).rows() == [("a", "a"), (None, None)]
+
+    with pytest.raises(pl.exceptions.ComputeError, match="invalid utf8"):
+        pl.Series([b"\xff", None]).cast(pl.String)

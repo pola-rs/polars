@@ -173,9 +173,9 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
         self.0.storage_mut().chunks_mut()
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Series {
+    fn slice(&self, slice: Slice) -> Series {
         // SAFETY: a slice is a contiguous range of whole rows.
-        unsafe { self.apply_on_storage(|s| s.slice(offset, length)) }
+        unsafe { self.apply_on_storage(|s| s.slice(slice)) }
     }
 
     fn split_at(&self, offset: i64) -> (Series, Series) {

@@ -100,7 +100,7 @@ impl ShiftState {
             self.rows_received += morsel.height();
             if shift_needed > 0 {
                 morsel = morsel
-                    .map(|df| df.slice(shift_needed.min(df.height()) as i64, df.height()))
+                    .map(|df| df.slice((shift_needed.min(df.height()), df.height())))
                     .await;
             }
             if morsel.height() == 0 {

@@ -32,7 +32,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable
+    from collections.abc import Callable, Collection, Iterable
 
     import pyarrow as pa
     import pyiceberg.catalog
@@ -116,6 +116,10 @@ class _HandBack:
     files: list[_IcebergSinkedFile] | None = None
     sort_order_id: int | None = None
 
+    def __init__(self, max_rows_per_file: int | None = None) -> None:
+        # files sized by rows instead of estimated bytes (compaction)
+        self.max_rows_per_file = max_rows_per_file
+
     def __getstate__(self) -> tuple[()]:
         msg = "a sink that hands back its files cannot be serialized"
         raise TypeError(msg)
@@ -170,9 +174,18 @@ def _copy_table_state(src: pyiceberg.table.Table, dst: pyiceberg.table.Table) ->
 
 
 def _already_committed(metadata: TableMetadata, sink_uuid: str) -> bool:
-    return any(
-        s.summary is not None and s.summary.get(_SINK_UUID_PROPERTY) == sink_uuid
-        for s in metadata.snapshots
+    return _committed_snapshot_id(metadata, sink_uuid) is not None
+
+
+def _committed_snapshot_id(metadata: TableMetadata, sink_uuid: str) -> int | None:
+    """The id of the newest snapshot the sink committed, or None if it has none."""
+    return next(
+        (
+            s.snapshot_id
+            for s in reversed(metadata.snapshots)
+            if s.summary is not None and s.summary.get(_SINK_UUID_PROPERTY) == sink_uuid
+        ),
+        None,
     )
 
 
@@ -344,9 +357,19 @@ def _raise_if_spec_changed(
 
 
 def _sink_transaction(
-    table: pyiceberg.table.Table, sink_uuid: str, spec_id: int | None
+    table: pyiceberg.table.Table,
+    sink_uuid: str,
+    spec_id: int | None,
+    *,
+    schema_id: int | None = None,
+    check: Callable[[TableMetadata], None] | None = None,
 ) -> Transaction:
-    """A transaction that commits only while `spec_id` (written for) is the default."""
+    """
+    A transaction that commits only while `spec_id` (written for) is the default.
+
+    With `schema_id`, also only while that schema is the current one. `check` is
+    called with the table's metadata before each retry, and may raise.
+    """
     from pyiceberg.exceptions import ValidationException
     from pyiceberg.table import Transaction
     from pyiceberg.table.update import AssertDefaultSpecId
@@ -361,6 +384,14 @@ def _sink_transaction(
             # pyiceberg would write the files' partition values under the new spec
             if spec_id is not None and self._table.metadata.default_spec_id != spec_id:
                 raise ValidationException(_SPEC_CHANGED)
+            if (
+                schema_id is not None
+                and self._table.metadata.current_schema_id != schema_id
+            ):
+                msg = "the table schema changed during the write"
+                raise ValidationException(msg)
+            if check is not None:
+                check(self._table.metadata)
             super()._rebuild_snapshot_updates()
 
     if spec_id is None:
@@ -1672,6 +1703,11 @@ class IcebergSinkState:
             self.sort_order_id = sort_order.order_id
 
         approximate_bytes_per_file = 2 * 1024 * 1024 * 1024
+        max_rows_per_file = (
+            self.replace_files.max_rows_per_file
+            if isinstance(self.replace_files, _HandBack)
+            else None
+        )
 
         if v := property_as_int(
             properties=table_metadata.properties,
@@ -1707,7 +1743,10 @@ class IcebergSinkState:
                 ),
                 key=partition_key_exprs,
                 include_key=False if partition_key_exprs is not None else None,
-                approximate_bytes_per_file=approximate_bytes_per_file,
+                max_rows_per_file=max_rows_per_file,
+                approximate_bytes_per_file=(
+                    approximate_bytes_per_file if max_rows_per_file is None else None
+                ),
             ),
             arrow_schema=arrow_schema,
             compression=self.compression,
@@ -1718,6 +1757,13 @@ class IcebergSinkState:
             credential_provider=credential_provider,
             lazy=True,
         )._ldf
+
+    def committed_snapshot_id(self) -> int | None:
+        """The id of the newest snapshot this sink committed, after `commit()`.
+
+        None when the commit created no snapshot, or when that snapshot has expired.
+        """
+        return _committed_snapshot_id(self.table().metadata, self.sink_uuid_str)
 
     def commit(self, sinked_files: list[_IcebergSinkedFile]) -> pl.DataFrame:
         """Commit the sinked files to the table.

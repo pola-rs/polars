@@ -96,7 +96,7 @@ impl PhysicalExpr for SortExpr {
                         GroupsType::Slice { groups, .. } => groups
                             .par_iter()
                             .map(|&[first, len]| {
-                                let group = series.slice(first as i64, len as usize);
+                                let group = series.slice((first as usize, len as usize));
                                 let sorted_idx = group.arg_sort(sort_options);
                                 let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
                                 (new_idx.first().copied().unwrap_or(first), new_idx)

@@ -16,9 +16,9 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, FunctionArg, FunctionArgExpr,
-    FunctionArguments, GroupByExpr, Ident, OrderBy, OrderByKind, Query, Select, SelectItem,
-    SetExpr, TableAlias, TableFactor, TableWithJoins, Visitor, VisitorMut,
+    AccessExpr, BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, FunctionArg,
+    FunctionArgExpr, FunctionArguments, GroupByExpr, Ident, OrderBy, OrderByKind, Query, Select,
+    SelectItem, SetExpr, TableAlias, TableFactor, TableWithJoins, Visitor, VisitorMut,
 };
 
 use crate::context::{RelationName, combine_conditions, match_qualifier};
@@ -137,8 +137,54 @@ impl Inner<'_> {
             | (SQLExpr::CompoundIdentifier(parts), SQLExpr::Identifier(column)) => {
                 qualified_by_only_relation(parts, column)
             },
+            // `(t.s).f` and `t.s.f` read the same struct field.
+            (
+                SQLExpr::CompoundFieldAccess { .. } | SQLExpr::CompoundIdentifier(_),
+                SQLExpr::CompoundFieldAccess { .. } | SQLExpr::CompoundIdentifier(_),
+            ) => match (self.column_path(a), self.column_path(b)) {
+                (Some((a_parts, a_qualifier_len)), Some((b_parts, b_qualifier_len))) => {
+                    let same = |a: &[&Ident], b: &[&Ident]| {
+                        a.len() == b.len() && a.iter().zip(b).all(|(a, b)| a.value == b.value)
+                    };
+                    let (a_qualifier, a_path) = a_parts.split_at(a_qualifier_len);
+                    let (b_qualifier, b_path) = b_parts.split_at(b_qualifier_len);
+                    // Both read the same column of the same relation. Without a qualifier,
+                    // that is the only relation.
+                    same(a_path, b_path)
+                        && (same(a_qualifier, b_qualifier)
+                            || ((a_qualifier.is_empty() || b_qualifier.is_empty())
+                                && self.names.len() == 1))
+                },
+                _ => false,
+            },
             _ => false,
         }
+    }
+
+    /// The names of a column of the subquery and the struct fields read from it, as in a
+    /// compound identifier, and how many of them name the column's relation.
+    fn column_path<'a>(&self, expr: &'a SQLExpr) -> Option<(Vec<&'a Ident>, usize)> {
+        match strip_nested(expr) {
+            SQLExpr::CompoundFieldAccess { root, access_chain } => {
+                let (mut parts, qualifier_len) = self.column_path(root)?;
+                for access in access_chain {
+                    let AccessExpr::Dot(SQLExpr::Identifier(field)) = access else {
+                        return None;
+                    };
+                    parts.push(field);
+                }
+                Some((parts, qualifier_len))
+            },
+            column @ SQLExpr::Identifier(ident) if self.is_column(column) => Some((vec![ident], 0)),
+            column @ SQLExpr::CompoundIdentifier(idents) if self.is_column(column) => {
+                Some((idents.iter().collect(), self.qualifier_len(idents)))
+            },
+            _ => None,
+        }
+    }
+
+    fn qualifier_len(&self, parts: &[Ident]) -> usize {
+        match_qualifier(parts, self.names.iter()).map_or(0, |(_, len)| len)
     }
 }
 

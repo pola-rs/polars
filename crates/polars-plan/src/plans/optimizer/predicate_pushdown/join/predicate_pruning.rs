@@ -717,30 +717,32 @@ pub fn try_rewrite_join_type(
         // We are in a cross join + filter
         // Try converting to inner join
         assert!(matches!(options.args.how, JoinType::Cross));
-        let equality_conditions = take_equi_join_keys(
-            acc_predicates,
-            expr_arena,
-            schema_left,
-            schema_right,
-            output_schema,
-            &suffix,
-            Operator::Eq,
-        )?;
-
-        if !equality_conditions.is_empty() {
-            let join_options = Arc::make_mut(options);
-            join_options.args.how = JoinType::Inner;
-            join_options.args.coalesce = JoinCoalesce::KeepColumns;
-            join_options.args.nulls_equal = false;
-            push_equi_join_keys(
-                equality_conditions,
+        for key_op in [Operator::Eq, Operator::EqValidity] {
+            let equality_conditions = take_equi_join_keys(
+                acc_predicates,
                 expr_arena,
+                schema_left,
                 schema_right,
+                output_schema,
                 &suffix,
-                left_on,
-                right_on,
-            );
-            return Ok(());
+                key_op,
+            )?;
+
+            if !equality_conditions.is_empty() {
+                let join_options = Arc::make_mut(options);
+                join_options.args.how = JoinType::Inner;
+                join_options.args.coalesce = JoinCoalesce::KeepColumns;
+                join_options.args.nulls_equal = key_op == Operator::EqValidity;
+                push_equi_join_keys(
+                    equality_conditions,
+                    expr_arena,
+                    schema_right,
+                    &suffix,
+                    left_on,
+                    right_on,
+                );
+                return Ok(());
+            }
         }
 
         // Try converting cross join to double-bounded RangeJoin.
@@ -967,20 +969,36 @@ pub fn try_rewrite_join_type(
         return Ok(None);
     };
 
-    let options = Arc::make_mut(options);
-    // Ensure JoinSpecific is materialized to a specific config option, as we change the join type.
-    options.args.coalesce = if options.args.should_coalesce() {
+    // Materialize JoinSpecific before changing the join type.
+    let coalesce = if should_coalesce {
         JoinCoalesce::CoalesceColumns
     } else {
         JoinCoalesce::KeepColumns
     };
-    let original_join_type = std::mem::replace(&mut options.args.how, new_join_type.clone());
-    let original_output_schema = match (&original_join_type, &new_join_type) {
-        (JoinType::Right, _) | (_, JoinType::Right) => std::mem::replace(
-            output_schema,
-            det_join_schema(schema_left, schema_right, options).unwrap(),
-        ),
-        _ => {
+    let original_join_type = options.args.how.clone();
+
+    // A coalescing right join keeps the right keys and drops the left keys, which can
+    // introduce a suffix collision when changing to or from that join type.
+    let new_output_schema = if matches!(original_join_type, JoinType::Right)
+        || matches!(new_join_type, JoinType::Right)
+    {
+        let mut candidate = (**options).clone();
+        candidate.args.how = new_join_type.clone();
+        candidate.args.coalesce = coalesce;
+        match det_join_schema(schema_left, schema_right, &candidate) {
+            Err(PolarsError::Duplicate(_)) => return Ok(None),
+            result => Some(result?),
+        }
+    } else {
+        None
+    };
+
+    let options = Arc::make_mut(options);
+    options.args.how = new_join_type.clone();
+    options.args.coalesce = coalesce;
+    let original_output_schema = match new_output_schema {
+        Some(schema) => std::mem::replace(output_schema, schema),
+        None => {
             debug_assert_eq!(
                 output_schema,
                 &det_join_schema(schema_left, schema_right, options).unwrap()

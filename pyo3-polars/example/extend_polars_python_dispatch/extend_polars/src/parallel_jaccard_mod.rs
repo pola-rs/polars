@@ -60,7 +60,7 @@ pub(super) fn parallel_jaccard(df: DataFrame, col_a: &str, col_b: &str) -> Polar
     let dfs = offsets
         .par_iter()
         .map(|(offset, len)| {
-            let sub_df = df.slice(*offset as i64, *len);
+            let sub_df = df.slice((*offset, *len));
             let a = sub_df.column(col_a)?;
             let b = sub_df.column(col_b)?;
 

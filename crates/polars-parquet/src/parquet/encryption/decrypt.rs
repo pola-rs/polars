@@ -768,6 +768,127 @@ impl FileDecryptor {
     }
 }
 
+/// Serialization of [`FileDecryptionProperties`], including the decryption keys.
+///
+/// Properties that use a [`KeyRetriever`] cannot be serialized.
+#[cfg(any(feature = "serde", feature = "dsl-schema"))]
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+mod serialization {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    // Column keys are sorted by name so that serialization is deterministic.
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[cfg_attr(feature = "dsl-schema", schemars(rename = "FileDecryptionProperties"))]
+    struct SerializableFileDecryptionProperties {
+        footer_key: Vec<u8>,
+        column_keys: BTreeMap<String, Vec<u8>>,
+        aad_prefix: Option<Vec<u8>>,
+        footer_signature_verification: bool,
+    }
+
+    #[cfg(feature = "serde")]
+    impl serde::Serialize for FileDecryptionProperties {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            use serde::ser::Error;
+
+            let DecryptionKeys::Explicit(keys) = &self.keys else {
+                return Err(S::Error::custom(
+                    "cannot serialize parquet decryption properties that use a key retriever",
+                ));
+            };
+            SerializableFileDecryptionProperties {
+                footer_key: keys.footer_key.clone(),
+                column_keys: keys
+                    .column_keys
+                    .iter()
+                    .map(|(name, key)| (name.clone(), key.clone()))
+                    .collect(),
+                aad_prefix: self.aad_prefix.clone(),
+                footer_signature_verification: self.footer_signature_verification,
+            }
+            .serialize(serializer)
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    impl<'de> serde::Deserialize<'de> for FileDecryptionProperties {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            use serde::de::Error;
+
+            let properties = SerializableFileDecryptionProperties::deserialize(deserializer)?;
+            let builder = DecryptionPropertiesBuilder {
+                footer_key: properties.footer_key,
+                column_keys: properties.column_keys.into_iter().collect(),
+                aad_prefix: properties.aad_prefix,
+                footer_signature_verification: properties.footer_signature_verification,
+            };
+            let properties = builder.build().map_err(D::Error::custom)?;
+            Ok(Arc::unwrap_or_clone(properties))
+        }
+    }
+
+    #[cfg(feature = "dsl-schema")]
+    impl schemars::JsonSchema for FileDecryptionProperties {
+        fn schema_name() -> Cow<'static, str> {
+            SerializableFileDecryptionProperties::schema_name()
+        }
+
+        fn schema_id() -> Cow<'static, str> {
+            SerializableFileDecryptionProperties::schema_id()
+        }
+
+        fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+            SerializableFileDecryptionProperties::json_schema(generator)
+        }
+    }
+
+    #[cfg(all(test, feature = "serde"))]
+    mod tests {
+        use super::*;
+
+        struct Retriever;
+
+        impl KeyRetriever for Retriever {
+            fn retrieve_key(&self, key_metadata: &[u8]) -> ParquetResult<Vec<u8>> {
+                Ok(key_metadata.to_vec())
+            }
+        }
+
+        #[test]
+        fn round_trip() {
+            let properties = FileDecryptionProperties::builder(b"0123456789012345".to_vec())
+                .with_column_key("a", b"1234567890123450".to_vec())
+                .with_column_key("b.c", b"1234567890123451".to_vec())
+                .with_aad_prefix(b"prefix".to_vec())
+                .disable_footer_signature_verification()
+                .build()
+                .unwrap();
+
+            let json = serde_json::to_string(&properties).unwrap();
+            let deserialized: FileDecryptionProperties = serde_json::from_str(&json).unwrap();
+            assert!(deserialized == *properties);
+        }
+
+        #[test]
+        fn key_retriever_is_not_serialized() {
+            let properties = FileDecryptionProperties::with_key_retriever(Arc::new(Retriever))
+                .build()
+                .unwrap();
+            let err = serde_json::to_string(&properties).unwrap_err();
+            assert!(err.to_string().contains("key retriever"), "{err}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};

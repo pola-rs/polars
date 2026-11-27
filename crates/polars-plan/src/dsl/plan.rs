@@ -8,6 +8,7 @@ use polars_core::frame::PivotColumnNaming;
 use polars_utils::arena::Node;
 #[cfg(feature = "serde")]
 use polars_utils::pl_serialize;
+use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 #[cfg(feature = "serde")]
@@ -132,14 +133,13 @@ pub enum DslPlan {
     Sort {
         input: Arc<DslPlan>,
         by_column: Vec<Expr>,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         sort_options: SortMultipleOptions,
     },
     /// Slice the table
     Slice {
         input: Arc<DslPlan>,
-        offset: i64,
-        len: IdxSize,
+        slice: Slice,
     },
     /// A (User Defined) Function
     MapFunction {
@@ -236,7 +236,7 @@ impl Clone for DslPlan {
             Self::PipeWithSchema { input, callback } => Self::PipeWithSchema { input: input.clone(), callback: callback.clone() },
             Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
             Self::Sort {input,by_column, slice, sort_options } => Self::Sort { input: input.clone(), by_column: by_column.clone(), slice: slice.clone(), sort_options: sort_options.clone() },
-            Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },
+            Self::Slice { input, slice } => Self::Slice { input: input.clone(), slice: *slice },
             Self::MapFunction { input, function } => Self::MapFunction { input: input.clone(), function: function.clone() },
             Self::Union { inputs, args} => Self::Union { inputs: inputs.clone(), args: args.clone() },
             Self::HConcat { inputs, options } => Self::HConcat { inputs: inputs.clone(), options: options.clone() },

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -11,7 +12,9 @@ from polars.exceptions import (
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
+
+    from polars._typing import EngineType
 
 
 def test_list_eval_dtype_inference() -> None:
@@ -782,3 +785,264 @@ def test_list_agg_null_rows_30252() -> None:
     assert_series_equal(
         s.list.agg(pl.element().first()), pl.Series("s", [None, None, None])
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_list_eval_columns(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {
+            "l": [[1, 2], [3], [], None],
+            "x": [10, 20, 30, 40],
+            "n": [1, 0, 1, 1],
+        }
+    )
+    # A column is the value of the row, as a literal would be.
+    out = lf.select(
+        add=pl.col("l").list.eval(pl.element() + pl.col("x")),
+        filter=pl.col("l").list.eval(pl.element().filter(pl.element() > pl.col("n"))),
+        append=pl.col("l").list.eval(pl.element().append(pl.col("x"))),
+        sum=pl.col("l").list.eval(pl.col("x").sum()),
+        when=pl.col("l").list.eval(
+            pl.when(pl.element() > 1).then(pl.element() + pl.col("x")).otherwise(0)
+        ),
+        agg=pl.col("l").list.agg(pl.element().sum() + pl.col("x")),
+        agg_col=pl.col("l").list.agg(pl.col("x")),
+        head=pl.col("l").list.eval(pl.element().head(pl.col("n"))),
+        shift=pl.col("l").list.eval(pl.element().shift(pl.col("n"))),
+        lit=pl.lit([1, 2]).list.eval(pl.element() * pl.col("x")),
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {
+            "add": [[11, 12], [23], [], None],
+            "filter": [[2], [3], [], None],
+            "append": [[1, 2, 10], [3, 20], [30], None],
+            "sum": [[10], [20], [30], None],
+            "when": [[0, 12], [23], [], None],
+            "agg": [13, 23, 30, None],
+            "agg_col": [10, 20, 30, None],
+            "head": [[1], [], [], None],
+            "shift": [[None, 1], [3], [], None],
+            "lit": [[10, 20], [20, 40], [30, 60], [40, 80]],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+    # A window inside the evaluation.
+    lf = pl.LazyFrame({"l": [[1, 1, 2], [0]], "x": [10, 20]})
+    out = lf.select(
+        over=pl.col("l").list.eval(
+            (pl.element() * pl.col("x")).sum().over(pl.element())
+        ),
+        over_col=pl.col("l").list.eval(pl.col("x").over(pl.element())),
+    ).collect(engine=engine)
+    assert out.to_dict(as_series=False) == {
+        "over": [[20, 20, 20], [0]],
+        "over_col": [[10, 10, 10], [20]],
+    }
+
+    # Null rows don't run fallible expressions on their columns.
+    lf = pl.LazyFrame({"l": [[1, 2], [3, 4]], "x": ["10", "bad"]}).with_columns(
+        pl.when(pl.col("x") == "10").then("l")
+    )
+    out = lf.select(
+        pl.col("l").list.eval(pl.element() + pl.col("x").cast(pl.Int64))
+    ).collect(engine=engine)
+    assert out["l"].to_list() == [[11, 12], None]
+
+    lf = pl.LazyFrame({"l": [[1], [0]], "keep": [True, False]}).with_columns(
+        pl.when("keep").then("l"), x=pl.lit("x1")
+    )
+    out = lf.select(
+        pl.col("l").list.eval(pl.col("x").str.slice(pl.element()).cast(pl.Int64))
+    ).collect(engine=engine)
+    assert out["l"].to_list() == [[1], None]
+
+    # Inferring the date format does not read across rows.
+    lf = pl.LazyFrame({"l": [[0], [0]], "x": ["2024-01-02", "13/04/2024"]})
+    out = lf.select(
+        pl.col("l").list.eval(pl.col("x").str.to_date(strict=False))
+    ).collect(engine=engine)
+    assert out["l"].to_list() == [[date(2024, 1, 2)], [date(2024, 4, 13)]]
+
+    # Nested, where the column is the value of the outer row.
+    lf = pl.LazyFrame({"n": [[[1, 2], [3]], [[4]]], "x": [10, 100]})
+    out = lf.select(
+        a=pl.col("n").list.eval(pl.element().list.eval(pl.element() + pl.col("x"))),
+        b=pl.col("n").list.eval(
+            pl.element().list.agg(pl.element().sum() * pl.col("x"))
+        ),
+    ).collect(engine=engine)
+    assert out.to_dict(as_series=False) == {
+        "a": [[[11, 12], [13]], [[104]]],
+        "b": [[30, 30], [400]],
+    }
+
+    # A nested `eval` on a value per list is a value per list.
+    lf = pl.LazyFrame({"l": [[1, 2], []], "x": [10, 20]})
+    q = lf.select(
+        a=pl.col("l").list.agg(pl.lit([0]).list.agg(pl.col("x"))),
+        b=pl.col("l").list.eval(pl.col("l").list.eval(pl.element() + pl.col("x"))),
+    )
+    assert q.collect_schema() == {"a": pl.Int64, "b": pl.List(pl.List(pl.Int64))}
+    assert q.collect(engine=engine).to_dict(as_series=False) == {
+        "a": [10, 20],
+        "b": [[[11, 12]], [[]]],
+    }
+
+    # A value per list read in a nested `eval` on the rows of each list.
+    lf = pl.LazyFrame({"n": [[[1], [2]]], "x": [10]})
+    out = lf.select(
+        pl.col("n").list.eval(
+            pl.element().reverse().list.eval(pl.element() + pl.col("x"))
+        )
+    ).collect(engine=engine)
+    assert out["n"].to_list() == [[[12], [11]]]
+
+    # A value per list read in a nested `eval` inside a rolling window.
+    lf = pl.LazyFrame({"l": [[[1], [2], [3]], [[4]]], "x": [10, 20]})
+    out = lf.select(
+        pl.col("l").list.eval(
+            pl.element()
+            .list.agg(pl.col("x") + pl.element().first())
+            .sum()
+            .rolling(pl.element().list.first(), period="2i")
+        )
+    ).collect(engine=engine)
+    assert out["l"].to_list() == [[11, 23, 25], [24]]
+
+    # Reductions on the value of an empty list or a null value.
+    lf = pl.LazyFrame({"l": [[], [1, 2]], "x": [10, 20], "b": [None, True]})
+    out = lf.select(
+        unique=pl.col("l").list.agg(pl.col("x").unique()),
+        drop_nulls=pl.col("l").list.agg(pl.col("x").drop_nulls()),
+        is_empty=pl.col("l").list.agg(pl.col("x").is_empty()),
+        all=pl.col("l").list.agg(pl.col("b").all()),
+    ).collect(engine=engine)
+    assert out.to_dict(as_series=False) == {
+        "unique": [[10], [20]],
+        "drop_nulls": [[10], [20]],
+        "is_empty": [False, False],
+        "all": [True, True],
+    }
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="index column"):
+        lf.select(
+            pl.col("l").list.eval(pl.element().sum().rolling(pl.col("x"), period="1i"))
+        ).collect(engine=engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_list_eval_columns_optimizations(engine: EngineType) -> None:
+    # Predicate pushdown renames the columns read in the evaluation.
+    lf = pl.LazyFrame({"l": [[1, 2], [3]], "x": [1, 3], "y": [99, 0]})
+    out = (
+        lf.select("l", pl.col("x").alias("y"), pl.col("y").alias("z"))
+        .filter(pl.col("l").list.eval(pl.element() > pl.col("y")).list.any())
+        .collect(engine=engine)
+    )
+    assert out["y"].to_list() == [1]
+
+    # Slice pushdown slices the columns together with the list.
+    lf = pl.LazyFrame({"l": [[1], [2], [3], [4]], "x": [10, 20, 30, 40]})
+    out = lf.select(
+        a=pl.col("l").list.eval(pl.element() + pl.col("x")).slice(1, 2),
+        b=pl.col("x").head(2),
+    ).collect(engine=engine)
+    assert out["a"].to_list() == [[22], [33]]
+
+    # A literal list that reads a column has the height of the frame.
+    lf = pl.LazyFrame({"x": [30, 10, 20]})
+    out = lf.sort(pl.lit([0]).list.agg(pl.col("x").first())).collect(engine=engine)
+    assert out["x"].to_list() == [10, 20, 30]
+
+
+def test_list_eval_columns_io_plugin_predicate() -> None:
+    from polars.io.plugins import register_io_source
+
+    df = pl.DataFrame({"l": [[1], [2]], "x": [1, 2]})
+
+    def read(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        out = df if predicate is None else df.filter(predicate)
+        yield out.select(with_columns or df.columns)
+
+    # The predicate passed to the source keeps the name the evaluation reads.
+    out = (
+        register_io_source(read, schema=df.schema)
+        .rename({"x": "y"})
+        .filter(
+            pl.col("l").list.eval(pl.struct("y")).list.first().struct.field("y") > 1
+        )
+        .collect()
+    )
+    assert out.to_dicts() == [{"l": [2], "y": 2}]
+
+
+def test_list_eval_columns_length_mismatch() -> None:
+    df = pl.DataFrame({"l": [[1], [2]], "x": [10, 20]})
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.select(pl.col("l").append(pl.col("l")).list.eval(pl.element() + pl.col("x")))
+
+
+def test_list_eval_columns_group_by() -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "l": [[1, 2], [3], None], "x": [10, 20, 30]})
+    out = df.group_by("g", maintain_order=True).agg(
+        pl.col("l").list.eval(pl.element() + pl.col("x"))
+    )
+    assert out["l"].to_list() == [[[11, 12], [23]], [None]]
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="reads columns"):
+        df.group_by("g").agg(pl.col("l").first().list.eval(pl.element() + pl.col("x")))
+
+    # The rows of each group line up with the columns in group order.
+    out = df.group_by("g", maintain_order=True).agg(
+        rev=pl.col("l").reverse().list.eval(pl.element() + pl.col("x")),
+        first=pl.col("l").list.eval(pl.element() + pl.col("x")).first(),
+        last=pl.col("l").list.eval(pl.element() + pl.col("x")).last(),
+    )
+    assert out.to_dict(as_series=False) == {
+        "g": [1, 2],
+        "rev": [[[13], [21, 22]], [None]],
+        "first": [[11, 12], None],
+        "last": [[23], None],
+    }
+
+    # A literal input reading columns has no value in an empty window.
+    lf = pl.LazyFrame({"i": [0], "x": [10]})
+    q = lf.rolling("i", period="1i", offset="0i").agg(
+        xs=pl.lit([1]).list.agg(pl.col("x"))
+    )
+    assert q.collect(engine="in-memory")["xs"].to_list() == [[]]
+    assert q.collect(engine="streaming")["xs"].to_list() == [[]]
+
+    # A literal input is the same for every row of the group.
+    out = df.group_by("g", maintain_order=True).agg(
+        lit=pl.lit([1, 2]).list.eval(pl.element() + pl.col("x")),
+        lit_first=pl.lit([1, 2]).list.eval(pl.element() + pl.col("x")).first(),
+    )
+    assert out.to_dict(as_series=False) == {
+        "g": [1, 2],
+        "lit": [[[11, 12], [21, 22]], [[31, 32]]],
+        "lit_first": [[11, 12], [31, 32]],
+    }
+
+
+def test_list_agg_unique_of_first() -> None:
+    df = pl.DataFrame({"l": [[], [1, 2]]})
+    out = df.select(pl.col("l").list.agg(pl.element().first().unique()))
+    assert out["l"].to_list() == [[None], [1]]
+
+
+def test_list_eval_after_with_columns_on_sliced_chunk_30881() -> None:
+    # The second chunk is a slice whose values extend past its last offset.
+    first = pl.DataFrame({"p": [["b"]]})
+    other = pl.DataFrame({"p": [["a", ""], ["c"]]}).head(1)
+    df = pl.concat([first, other], rechunk=False)
+    df = df.with_columns(x=pl.col("p").list.eval(pl.element() == "a"))
+
+    out = df.select(pl.col("p").list.eval(pl.element().filter(pl.element() != "")))
+    assert out["p"].to_list() == [["b"], ["a"]]

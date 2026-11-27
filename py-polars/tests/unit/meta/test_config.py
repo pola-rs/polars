@@ -13,6 +13,7 @@ import polars._plr as plr
 from polars._utils.unstable import issue_unstable_warning
 from polars.config import _POLARS_CFG_ENV_VARS
 from polars.exceptions import AttributeRemovedError
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -847,6 +848,18 @@ def test_set_streaming_chunk_size() -> None:
         cfg.set_streaming_chunk_size(0)
 
 
+def test_set_memory_budget() -> None:
+    with pl.Config() as cfg:
+        cfg.set_memory_budget(0)
+        assert os.environ.get("POLARS_OOC_MEMORY_BUDGET_MB") == "0"
+        lf = pl.LazyFrame({"a": [3, 1, 2] * 20, "b": range(60)})
+        out = lf.sort("a", "b").collect(engine="streaming")
+        assert_frame_equal(out, lf.collect().sort("a", "b"))
+
+    with pytest.raises(ValueError), pl.Config() as cfg:
+        cfg.set_memory_budget(-1)
+
+
 def test_set_fmt_str_lengths_invalid_length() -> None:
     with pl.Config() as cfg:
         with pytest.raises(ValueError):
@@ -1001,6 +1014,7 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
             "1",
         ),
         ("POLARS_IDEAL_MORSEL_SIZE", "set_streaming_chunk_size", 100, "100"),
+        ("POLARS_OOC_MEMORY_BUDGET_MB", "set_memory_budget", 4000, "4000"),
         ("POLARS_TABLE_WIDTH", "set_tbl_width_chars", 80, "80"),
         ("POLARS_VERBOSE", "set_verbose", True, "1"),
         ("POLARS_WARN_UNSTABLE", "warn_unstable", True, "1"),

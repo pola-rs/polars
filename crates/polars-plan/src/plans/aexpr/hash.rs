@@ -10,7 +10,7 @@ impl Hash for AExpr {
         std::mem::discriminant(self).hash(state);
 
         match self {
-            AExpr::Column(name) => name.hash(state),
+            AExpr::Column(name) | AExpr::EvalColumn(name) => name.hash(state),
             #[cfg(feature = "dtype-struct")]
             AExpr::StructField(name) => name.hash(state),
             AExpr::Literal(lv) => lv.hash(state),
@@ -99,7 +99,13 @@ impl Hash for AExpr {
                 expr: _,
                 evaluation: _,
                 variant,
-            } => variant.hash(state),
+                columns,
+            } => {
+                variant.hash(state);
+                for c in columns {
+                    c.output_name().hash(state);
+                }
+            },
             #[cfg(feature = "dtype-struct")]
             AExpr::StructEval {
                 expr: _,

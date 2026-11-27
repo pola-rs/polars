@@ -2,8 +2,9 @@ use std::num::NonZeroUsize;
 
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::frame::DataFrame;
+use polars_core::prelude::{DataType, PlSmallStr};
 use polars_core::runtime::ASYNC;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::prelude::PlanCallback;
 
 use crate::execute::StreamingExecutionState;
@@ -18,6 +19,39 @@ pub struct CallbackSinkNode {
     buffer: DataFrame,
     chunk_size: Option<NonZeroUsize>,
     is_done: bool,
+    /// The names and dtypes of the first morsel, which every later one must match.
+    schema: Option<Vec<(PlSmallStr, DataType)>>,
+}
+
+/// Checks the names and types of `df` against `schema` and casts the columns that match it only
+/// through a Null type.
+fn conform_to_schema(schema: &[(PlSmallStr, DataType)], df: DataFrame) -> PolarsResult<DataFrame> {
+    polars_ensure!(
+        schema.len() == df.width()
+            && schema.iter().zip(df.columns()).all(|((n, _), c)| n == c.name()),
+        SchemaMismatch: "schema of a morsel differs from that of the first"
+    );
+    let mut must_cast = false;
+    for ((_, expected), c) in schema.iter().zip(df.columns()) {
+        must_cast |= c.dtype().matches_schema_type(expected)?;
+    }
+    if !must_cast {
+        return Ok(df);
+    }
+    let height = df.height();
+    let columns = schema
+        .iter()
+        .zip(df.into_columns())
+        .map(|((_, expected), c)| {
+            if c.dtype() == expected {
+                Ok(c)
+            } else {
+                c.cast(expected)
+            }
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+    // SAFETY: casts keep the height.
+    Ok(unsafe { DataFrame::new_unchecked(height, columns) })
 }
 
 impl CallbackSinkNode {
@@ -33,6 +67,7 @@ impl CallbackSinkNode {
             buffer: DataFrame::empty(),
             chunk_size,
             is_done: false,
+            schema: None,
         }
     }
 }
@@ -98,8 +133,44 @@ impl ComputeNode for CallbackSinkNode {
             {
                 let (sf, _, _, consume_token) = m.into_inner();
 
+                let df = sf.into_df().await;
+
+                // Morsels are not always appended to the buffer, so check them here, and cast
+                // a column whose type is (nested) Null to the type of the first morsel's, as the
+                // vstack did: all batches have the same types.
+                let df = match &self.schema {
+                    None => {
+                        self.schema = Some(
+                            df.columns()
+                                .iter()
+                                .map(|c| (c.name().clone(), c.dtype().clone()))
+                                .collect(),
+                        );
+                        df
+                    },
+                    Some(schema) => conform_to_schema(schema, df)?,
+                };
+
+                // Without a chunk size every morsel is passed on as it is: buffering it would
+                // only append it to an empty frame.
+                if self.chunk_size.is_none() {
+                    debug_assert_eq!(self.buffer.height(), 0);
+                    if df.height() > 0 {
+                        let function = self.function.clone();
+                        let should_stop = ASYNC
+                            .spawn_blocking(move || function.call(df))
+                            .await
+                            .unwrap()?;
+                        if should_stop {
+                            self.is_done = true;
+                        }
+                    }
+                    drop(consume_token);
+                    continue;
+                }
+
                 // @NOTE: This also performs schema validation.
-                self.buffer.vstack_mut_owned(sf.into_df().await)?;
+                self.buffer.vstack_mut_owned(df)?;
 
                 while self.buffer.height() > 0
                     && self
@@ -112,6 +183,11 @@ impl ComputeNode for CallbackSinkNode {
                     (df, self.buffer) = self
                         .buffer
                         .split_at(self.buffer.height().min(chunk_size) as i64);
+                    if self.buffer.height() == 0 {
+                        // Start afresh: an empty remainder would keep the flushed dictionaries
+                        // (or a materialized column) and have the next morsels merged into them.
+                        self.buffer = DataFrame::empty();
+                    }
 
                     let function = self.function.clone();
                     let should_stop = ASYNC
@@ -131,5 +207,29 @@ impl ComputeNode for CallbackSinkNode {
 
             Ok(())
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn null_morsels_are_cast_to_the_first_schema() {
+        let schema = vec![("a".into(), DataType::Int64)];
+        let null =
+            DataFrame::new_infer_height(vec![Column::full_null("a".into(), 3, &DataType::Null)])
+                .unwrap();
+        let out = conform_to_schema(&schema, null).unwrap();
+        assert_eq!(out.height(), 3);
+        assert_eq!(out.column("a").unwrap().dtype(), &DataType::Int64);
+        assert_eq!(out.column("a").unwrap().null_count(), 3);
+
+        let strings = df!("a" => ["x"]).unwrap();
+        assert!(conform_to_schema(&schema, strings).is_err());
+        let renamed = df!("b" => [1i64]).unwrap();
+        assert!(conform_to_schema(&schema, renamed).is_err());
     }
 }

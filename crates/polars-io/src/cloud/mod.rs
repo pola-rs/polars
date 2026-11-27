@@ -31,4 +31,6 @@ mod http_origin_store;
 #[cfg(feature = "cloud")]
 pub mod http_rate_limit;
 #[cfg(feature = "cloud")]
+mod stall_timer;
+#[cfg(feature = "cloud")]
 pub mod token_bucket;

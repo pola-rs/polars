@@ -3,11 +3,12 @@ from __future__ import annotations
 import math
 import random
 from bisect import bisect_left, bisect_right
+from typing import Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, SchemaError
 from polars.testing import assert_series_equal
 
 
@@ -73,12 +74,17 @@ def test_bin_quantiles_include_intervals() -> None:
     assert_series_equal(result, expected)
 
 
-@pytest.mark.parametrize("quantiles", [[-0.1], [1.5]])
-def test_bin_quantiles_out_of_range_raises(quantiles: list[float]) -> None:
+@pytest.mark.parametrize("quantiles", [[-0.1], [1.5], [float("nan")], [None]])
+def test_bin_quantiles_out_of_range_raises(quantiles: Any) -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]})
 
     with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
         lf.select(pl.col("a").bin_quantiles(quantiles, labels=False)).collect_schema()
+
+
+def test_bin_quantiles_bool_raises() -> None:
+    with pytest.raises(SchemaError, match="dtype 'numeric'"):
+        pl.col("a").bin_quantiles([True], labels=False)
 
 
 @pytest.mark.parametrize("n_bins", [1, 2, 4, 7, 100, 300])

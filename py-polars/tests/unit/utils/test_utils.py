@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -25,6 +25,7 @@ from polars._utils.various import (
     parse_percentiles,
     parse_version,
 )
+from polars.exceptions import ComputeError, SchemaError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -133,6 +134,15 @@ def test_datetime_to_int(dt: datetime, time_unit: TimeUnit, expected: int) -> No
         (
             datetime(2000, 1, 1, 12, 0, tzinfo=ZoneInfo("America/Chicago")),
             946_749_600_000_000,
+        ),
+        # sub-second offsets
+        (
+            datetime(2000, 1, 1, 12, tzinfo=timezone(timedelta(microseconds=5))),
+            946_727_999_999_995,
+        ),
+        (
+            datetime(2000, 1, 1, 12, tzinfo=timezone(-timedelta(microseconds=5))),
+            946_728_000_000_005,
         ),
     ],
 )
@@ -264,9 +274,20 @@ def test_parse_percentiles(
     assert parse_percentiles(percentiles, inject_median=inject_median) == expected
 
 
-@pytest.mark.parametrize(("percentiles"), [(1.1), ([-0.1])])
-def test_parse_percentiles_errors(percentiles: Sequence[float] | float | None) -> None:
-    with pytest.raises(ValueError):
+@pytest.mark.parametrize(
+    ("percentiles", "error", "match"),
+    [
+        *[
+            (p, ComputeError, r"between 0\.0 and 1\.0")
+            for p in [1.1, [-0.1], float("nan"), [0.5, None]]
+        ],
+        *[(p, SchemaError, "dtype 'numeric'") for p in [True, [True], "0.5"]],
+    ],
+)
+def test_parse_percentiles_errors(
+    percentiles: Any, error: type[Exception], match: str
+) -> None:
+    with pytest.raises(error, match=match):
         parse_percentiles(percentiles)
 
 

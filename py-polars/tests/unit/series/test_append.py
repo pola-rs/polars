@@ -129,3 +129,77 @@ def test_append_enum_22764() -> None:
         }
     )
     pl.scan_csv(f, schema=schema).sink_parquet(g)
+
+
+def test_append_sliced_list_to_trimmed_list_30881() -> None:
+    s = pl.Series("p", [["b"]])
+    # Checks that `s` needs no trimming and flags it.
+    s.list.eval(pl.element() == "a")
+    s.append(pl.Series("p", [["a", ""], ["c"]]).head(1))
+
+    out = s.list.eval(pl.element().filter(pl.element() != ""))
+    assert out.to_list() == [["b"], ["a"]]
+
+
+# In the tests below, `when/then` keeps the values under the null rows it creates, and
+# a cast flags the nulls of the series it is called on as propagated.
+
+
+def test_append_masked_list_to_propagated_30881() -> None:
+    s = pl.Series("p", [["1"]])
+    s.cast(pl.List(pl.Int64))
+    masked = pl.DataFrame({"p": [["x"], ["2"]], "m": [False, True]})
+    s.append(masked.select(pl.when("m").then("p"))["p"])
+    assert s.cast(pl.List(pl.Int64)).to_list() == [[1], None, [2]]
+
+
+def test_append_masked_array_to_propagated_30881() -> None:
+    dtype = pl.Array(pl.Int64, 2)
+    s = pl.Series("a", [[1, 2]], dtype=dtype)
+    s.cast(pl.Array(pl.Float64, 2))
+    masked = pl.DataFrame(
+        {"a": pl.Series([[7, 8], [5, 6]], dtype=dtype), "m": [True, False]}
+    )
+    s.append(masked.select(pl.when("m").then("a"))["a"])
+    assert s.reshape((-1,)).to_list() == [1, 2, 7, 8, None, None]
+
+
+def test_append_masked_struct_to_propagated_30881() -> None:
+    dtype = pl.Array(pl.Int64, 2)
+    s = pl.DataFrame({"a": pl.Series([[1, 2]], dtype=dtype)}).select(
+        pl.struct("a").alias("s")
+    )["s"]
+    s.cast(s.dtype)
+    masked = pl.DataFrame(
+        {
+            "a": pl.Series([[7, 8], [5, 6], [3, 4]], dtype=dtype),
+            "m": [True, False, False],
+        }
+    )
+    s.append(masked.select(pl.struct(pl.when("m").then("a")).alias("s"))["s"])
+    # The `a` field is null in both masked-out rows.
+    assert s.n_unique() == 3
+
+
+def test_append_to_empty_takes_chunks_of_other_30881() -> None:
+    pa = pytest.importorskip("pyarrow")
+
+    class EmptyChunksWithValues:
+        # Two empty list chunks whose child arrays still hold a value.
+        def __arrow_c_stream__(self, requested_schema: object = None) -> object:
+            arr = pa.LargeListArray.from_arrays([0], pa.array(["x"]))
+            return pa.chunked_array([arr, arr]).__arrow_c_stream__(requested_schema)
+
+    other = pl.Series("p", EmptyChunksWithValues())
+    assert other.n_chunks() == 2
+
+    s = pl.Series("p", [], pl.List(pl.String))
+    s.cast(pl.List(pl.Int64))
+    # `s` is empty, so it takes the chunks of `other`.
+    s.append(other)
+    t = pl.Series("p", [["1"], ["2"]])
+    t.cast(pl.List(pl.Int64))
+    s.append(t)
+
+    out = s.list.eval(pl.element().filter(pl.element() != ""))
+    assert out.to_list() == [["1"], ["2"]]

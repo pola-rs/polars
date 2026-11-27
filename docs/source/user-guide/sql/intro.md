@@ -218,10 +218,10 @@ For example, here is a non-exhaustive list of some of the supported functionalit
 - List registered tables: `SHOW TABLES`
 - Drop a table: `DROP TABLE [IF EXISTS] tablename`
 - Truncate a table: `TRUNCATE TABLE [IF EXISTS] tablename`
+- Change the rows of a table: `INSERT INTO`, `UPDATE` and `DELETE FROM`
 
 The following are some features that are not yet supported:
 
-- `INSERT` and `UPDATE` on registered tables (both work on tables of an attached catalog)
 - Meta queries such as `ANALYZE`
 
 In the upcoming sections we will cover each of the statements in more detail.

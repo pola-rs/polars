@@ -1,9 +1,7 @@
 #[cfg(feature = "timezones")]
 use polars_arrow::legacy::time_zone::Tz;
 use polars_core::error::{PolarsResult, polars_bail};
-use polars_core::prelude::{
-    ArithmeticChunked, Column, DataType, IntoColumn, LogicalType, TimeUnit,
-};
+use polars_core::prelude::{Column, DataType, IntoColumn, LogicalType, TimeUnit};
 #[cfg(feature = "timezones")]
 use polars_core::prelude::{NonExistent, StringChunked, TimeZone};
 use polars_time::prelude::*;
@@ -123,13 +121,13 @@ pub(super) fn second(s: &Column) -> PolarsResult<Column> {
 }
 pub(super) fn millisecond(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
-        .nanosecond()
-        .map(|ca| (ca.wrapping_trunc_div_scalar(1_000_000)).into_column())
+        .millisecond()
+        .map(|ca| ca.into_column())
 }
 pub(super) fn microsecond(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
-        .nanosecond()
-        .map(|ca| (ca.wrapping_trunc_div_scalar(1_000)).into_column())
+        .microsecond()
+        .map(|ca| ca.into_column())
 }
 pub(super) fn nanosecond(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()
@@ -294,7 +292,7 @@ pub(super) fn month_start(s: &Column) -> PolarsResult<Column> {
     Ok(match s.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => s
+            Some(tz) if tz.as_str() != "UTC" => s
                 .datetime()
                 .unwrap()
                 .month_start(tz.parse::<Tz>().ok().as_ref())?
@@ -311,7 +309,7 @@ pub(super) fn month_end(s: &Column) -> PolarsResult<Column> {
     Ok(match s.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => s
+            Some(tz) if tz.as_str() != "UTC" => s
                 .datetime()
                 .unwrap()
                 .month_end(tz.parse::<Tz>().ok().as_ref())?

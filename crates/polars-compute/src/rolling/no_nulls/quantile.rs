@@ -13,6 +13,18 @@ pub struct QuantileWindow<'a, T: NativeType> {
     method: QuantileMethod,
 }
 
+impl<T: NativeType + PartialOrd> QuantileWindow<'_, T> {
+    /// The number of values in the window.
+    pub fn n_values(&self) -> usize {
+        self.sorted.len()
+    }
+
+    /// The value at `rank` in ascending order, for `rank < self.n_values()`.
+    pub fn value_at_rank(&self, rank: usize) -> T {
+        self.sorted.get(rank)
+    }
+}
+
 impl<
     T: NativeType
         + Float

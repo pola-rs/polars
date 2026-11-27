@@ -11,6 +11,7 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
+use polars_utils::slice_enum::Slice;
 
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -90,10 +91,7 @@ impl MorselStreamReverser {
         // The NDJSON workers don't stop at exactly the right number of rows (they stop when they
         // see the channel closed).
         let combined_df = if combined_df.height() > offset_len_rtl.1 {
-            combined_df.slice(
-                i64::try_from(combined_df.height() - offset_len_rtl.1).unwrap(),
-                usize::MAX,
-            )
+            combined_df.slice(Slice::tail(offset_len_rtl.1))
         } else {
             combined_df
         };
@@ -188,7 +186,7 @@ impl MorselStreamReverser {
                         }
 
                         let row_offset = chunk_idx.saturating_mul(chunk_size);
-                        let mut df = combined_df.slice(row_offset.try_into().unwrap(), chunk_size);
+                        let mut df = combined_df.slice((row_offset, chunk_size));
 
                         assert!(df.height() > 0); // If we did our calculations properly
 

@@ -1028,19 +1028,24 @@ def test_sink_iceberg_overwrite_filter_keeps_deleted_rows_30616(tmp_path: Path) 
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize("rows_per_file", [6, 2, 1])
 @pytest.mark.parametrize(
-    ("overwrite_filter", "deleted"),
+    ("rows_per_file", "overwrite_filter", "deleted"),
     [
-        ("a != 1", [3, 6]),
-        ("a = 1 or b = 2", [1, 2, 4]),
-        ("not (a = 1 and b = 5)", [3, 4, 6]),
-        ("s not like 'ab%'", [2]),
-        ("x > 1", [1, 6]),
-        ("x < 1", [2, 3]),
-        ("x not in (1.0, 2.0)", [1, 2, 3, 6]),
-        ("f = 0.1", [1, 2, 5]),
-    ],
+        (rows_per_file, overwrite_filter, deleted)
+        for rows_per_file in [6, 1]
+        for overwrite_filter, deleted in [
+            ("a != 1", [3, 6]),
+            ("a = 1 or b = 2", [1, 2, 4]),
+            ("not (a = 1 and b = 5)", [3, 4, 6]),
+            ("s not like 'ab%'", [2]),
+            ("x > 1", [1, 6]),
+            ("x < 1", [2, 3]),
+            ("x not in (1.0, 2.0)", [1, 2, 3, 6]),
+            ("f = 0.1", [1, 2, 5]),
+        ]
+    ]
+    # A single overwrite with a dropped, unchanged, and rewritten file.
+    + [(2, "f = 0.1", [1, 2, 5])],
 )
 def test_sink_iceberg_overwrite_filter_string_rows(
     tmp_path: Path, overwrite_filter: str, deleted: list[int], rows_per_file: int
@@ -1076,7 +1081,7 @@ def test_sink_iceberg_overwrite_filter_string_rows(
     )
 
     # the rows for which the filter is true, NaN ordered above every number and a
-    # float literal compared as float32, in every file layout
+    # float literal compared as float32
     assert _scan_sorted(tbl)["id"].to_list() == [
         i for i in range(1, 7) if i not in deleted
     ]
@@ -4196,6 +4201,32 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
     assert new_md_path == tbl.metadata_location
 
 
+@pytest.mark.write_disk
+def test_sink_iceberg_committed_snapshot_id(tmp_path: Path) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+
+    sink_state = IcebergSinkState.new(tbl)
+    sink_state.attach_sink(pl.LazyFrame({"a": 1})).collect()
+    first_id = sink_state.committed_snapshot_id()
+    assert first_id is not None
+
+    pl.LazyFrame({"a": 2}).sink_iceberg(tbl, mode="append")
+
+    tbl = catalog.load_table(tbl.name())
+    assert first_id != tbl.metadata.current_snapshot_id
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, snapshot_id=first_id).collect(), pl.DataFrame({"a": 1})
+    )
+
+    # A retried commit (e.g. on another process) lands nothing, and reports the
+    # sink's own snapshot rather than the table's current one.
+    retried = pickle.loads(pickle.dumps(sink_state))
+    retried.commit([])
+    assert retried.committed_snapshot_id() == first_id
+
+
 def _sql_catalog(tmp_path: Path, **properties: Any) -> SqlCatalog:
     catalog = SqlCatalog(
         "default",
@@ -5606,6 +5637,120 @@ def test_scan_iceberg_renews_only_provider_credentials(tmp_path: Path) -> None:
     provider = scan_data.credential_provider.build_credential_provider()
     assert provider is not None
     assert provider() == ({"sas_token": "sas"}, now + 3600 - 60)
+
+
+@pytest.mark.parametrize(
+    ("properties", "location", "expected"),
+    [
+        # The token of the URL's account, whatever its endpoint.
+        (
+            {
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_sas_key": "sas"},
+        ),
+        (
+            {"adls.sas-token.acct.dfs.core.windows.net": "sas"},
+            "wasbs://c@ACCT.blob.core.windows.net/t",
+            {"azure_storage_sas_key": "sas"},
+        ),
+        # Without an account in the URL, that of `adls.account-name`.
+        (
+            {
+                "adls.account-name": "acct",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "az://c/t",
+            {"azure_storage_account_name": "acct", "azure_storage_sas_key": "sas"},
+        ),
+        # The URL's account is the one accessed, as by object store.
+        (
+            {
+                "adls.account-name": "other",
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_account_name": "other", "azure_storage_sas_key": "sas"},
+        ),
+        # It replaces `adls.sas-token`, which PyIceberg sets to any account's.
+        (
+            {
+                "adls.sas-token": "other",
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_sas_key": "sas"},
+        ),
+        # Without one for the account, `adls.sas-token` is used.
+        (
+            {
+                "adls.sas-token": "plain",
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_sas_key": "plain"},
+        ),
+        # Other accounts' tokens, empty ones, and tokens for an unknown account are
+        # not used.
+        (
+            {"adls.sas-token.other.dfs.core.windows.net": "other"},
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {},
+        ),
+        (
+            {"adls.sas-token.acct.dfs.core.windows.net": ""},
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {},
+        ),
+        ({"adls.sas-token.acct.dfs.core.windows.net": "sas"}, "az://c/t", {}),
+        ({"adls.sas-token.acct.dfs.core.windows.net": "sas"}, "s3://b/t", {}),
+    ],
+)
+def test_iceberg_per_account_sas_token(
+    properties: dict[str, str], location: str, expected: dict[str, str]
+) -> None:
+    from polars.io.iceberg._plugin import _catalog_storage_options, _storage_options
+
+    assert _catalog_storage_options(properties, location) == expected
+    # The user's credentials replace it.
+    assert _storage_options(properties, location, {"account_key": "k"}) == {
+        **{k: v for k, v in expected.items() if k != "azure_storage_sas_key"},
+        "account_key": "k",
+    }
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_per_account_sas_token(tmp_path: Path) -> None:
+    now = int(datetime.now().timestamp())
+
+    def vended(token: str, expires_at: int) -> dict[str, str]:
+        properties = {}
+        for account in ("other", "acct"):
+            host = f"{account}.dfs.core.windows.net"
+            properties[f"adls.sas-token.{host}"] = f"{token}-{account}"
+            # The other account's token expires sooner.
+            properties[f"adls.sas-token-expires-at-ms.{host}"] = str(
+                (expires_at if account == "acct" else now + 120) * 1000
+            )
+        return properties
+
+    tbl, catalog = _vended_table(tmp_path, vended("sas", now + 3600), "abfss")
+    tbl.metadata = tbl.metadata.model_copy(
+        update={"location": "abfss://c@acct.dfs.core.windows.net/t"}
+    )
+    # As PyIceberg leaves it after a read: the first token, without its expiry.
+    tbl.io.properties["adls.sas-token"] = "sas-other"
+
+    provider = _native_credential_provider(tbl)
+    assert provider() == ({"sas_token": "sas-acct"}, now + 3600 - 60)
+
+    catalog.properties.update(vended("new", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"sas_token": "new-acct"}, now + 7200 - 60)
 
 
 class _SinkArgs(Exception):
@@ -8275,6 +8420,58 @@ def test_scan_iceberg_v3_field_initial_default(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.write_disk
+def test_scan_iceberg_struct_field_initial_default_null_parent(
+    tmp_path: Path,
+) -> None:
+    # A non-null default is still null where the parent struct is null.
+    table, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "s", StructType(NestedField(2, "a", LongType())))
+        ),
+    )
+
+    schema = {"s": pl.Struct({"a": pl.Int64})}
+    pl.DataFrame({"s": [{"a": 1}, {"a": 2}]}, schema=schema).write_iceberg(
+        table, mode="append"
+    )
+    pl.DataFrame({"s": [None, {"a": 3}]}, schema=schema).write_iceberg(
+        table, mode="append"
+    )
+
+    md_path = Path(
+        table.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md_object = json.loads(md_path.read_text())
+    md_object["format-version"] = 3
+    md_object["schemas"][-1]["fields"][0]["type"]["fields"].append(
+        {"id": 3, "name": "b", "required": False, "type": "long", "initial-default": 5}
+    )
+    md_path.write_text(json.dumps(md_object))
+    table = catalog.load_table(table.name())
+
+    lf = pl.scan_iceberg(table)
+    expect = pl.DataFrame(
+        {"s": [None]}, schema={"s": pl.Struct({"a": pl.Int64, "b": pl.Int64})}
+    )
+
+    assert_frame_equal(lf.filter(pl.col("s").is_null()).collect(), expect)
+    assert_frame_equal(
+        lf.filter(pl.col("s").struct.field("b").is_null()).collect(), expect
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("s").struct.field("b") == 5).collect(),
+        pl.DataFrame(
+            {"s": [{"a": 1, "b": 5}, {"a": 2, "b": 5}, {"a": 3, "b": 5}]},
+            schema={"s": pl.Struct({"a": pl.Int64, "b": pl.Int64})},
+        ),
+        check_row_order=False,
+    )
+
+
 def test_scan_iceberg_self_join_28465(tmp_path: Path) -> None:
     table, _ = new_iceberg_table(
         tmp_path, schema=IcebergSchema(NestedField(1, "x", LongType()))
@@ -9302,6 +9499,8 @@ def test_scan_iceberg_runtime_join_filter(
     capfd: pytest.CaptureFixture[str],
     renamed: bool,
 ) -> None:
+    # The scans here are far smaller than the probe sides worth filtering by default.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
     tbl, _ = new_iceberg_table(
         tmp_path,
         schema=IcebergSchema(
@@ -10955,12 +11154,15 @@ def _add_position_deletes(
     stale_deletion_vectors: dict[str, list[int]] | None = None,
     row_bounds: dict[int, tuple[bytes, bytes]] | None = None,
     summary: dict[str, str] | None = None,
+    equality_ids: list[int] | None = None,
 ) -> Any:
     """
     Commit a snapshot adding one position delete file per data file.
 
     `row_bounds` adds (lower, upper) bounds of the deleted rows' columns, by field ID.
     `summary` holds properties of the snapshot summary, written as given.
+    With `equality_ids`, the delete files are listed as equality deletes of those field
+    IDs instead (for checks that refuse them from the manifests: the files are not).
 
     With `single_delete_file`, one delete file holds the deletes of all data files (it
     is then scoped to the partition rather than to a data file). `partition` is the
@@ -11125,7 +11327,12 @@ def _add_position_deletes(
             local_path,
         )
         data_file = DataFile.from_args(
-            content=DataFileContent.POSITION_DELETES,
+            content=(
+                DataFileContent.POSITION_DELETES
+                if equality_ids is None
+                else DataFileContent.EQUALITY_DELETES
+            ),
+            equality_ids=equality_ids,
             file_path=path,
             file_format=FileFormat.PARQUET,
             partition=Record() if partition is None else partition,

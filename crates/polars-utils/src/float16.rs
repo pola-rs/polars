@@ -122,6 +122,34 @@ impl pf16 {
         pf16(half::f16::from_bits(b))
     }
 
+    /// The least value greater than `self`, as [`f32::next_up`].
+    #[inline]
+    pub fn next_up(self) -> Self {
+        self.step(true)
+    }
+
+    /// The greatest value less than `self`, as [`f32::next_down`].
+    #[inline]
+    pub fn next_down(self) -> Self {
+        self.step(false)
+    }
+
+    fn step(self, up: bool) -> Self {
+        let bits = self.to_bits();
+        let (positive, magnitude) = (bits & 0x8000 == 0, bits & 0x7FFF);
+        // A step away from zero increments the magnitude's bits, and toward zero decrements them.
+        let bits = if self.is_nan() || (magnitude == 0x7C00 && positive == up) {
+            bits
+        } else if magnitude == 0 {
+            if up { 0x0001 } else { 0x8001 }
+        } else if positive == up {
+            bits + 1
+        } else {
+            bits - 1
+        };
+        Self::from_bits(bits)
+    }
+
     #[inline]
     pub fn min(self, other: Self) -> Self {
         pf16(self.0.min(other.0))

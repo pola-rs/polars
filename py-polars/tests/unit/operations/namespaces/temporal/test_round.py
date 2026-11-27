@@ -246,7 +246,7 @@ def test_round_unequal_length_22018(as_date: bool) -> None:
         s.dt.round(pl.Series(["30m", "20m"]))
 
 
-@pytest.mark.parametrize("mode", ["half_to_even", "half_away_from_zero"])
+@pytest.mark.parametrize("mode", ["half_to_even", "half_away_from_zero", "to_zero"])
 def test_round_small(mode: RoundMode) -> None:
     small = 1.234e-320
     small_s = pl.Series([small])
@@ -266,7 +266,7 @@ def test_round_small(mode: RoundMode) -> None:
     assert small_s.round_sig_figs(1000).item() == small
 
 
-@pytest.mark.parametrize("mode", ["half_to_even", "half_away_from_zero"])
+@pytest.mark.parametrize("mode", ["half_to_even", "half_away_from_zero", "to_zero"])
 def test_round_big(mode: RoundMode) -> None:
     big = 1.234e308
     max_err = big / 10**10

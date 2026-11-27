@@ -333,7 +333,7 @@ enum BatchAction {
 /// Applies the pre-slice to a sequence of newline-aligned batches and assigns row offsets and
 /// morsel sequence ids.
 struct BatchSlicer {
-    global_slice: Option<Range<usize>>,
+    global_slice: Option<Slice>,
     needs_full_row_count: bool,
     row_offset: usize,
     morsel_seq: MorselSeq,
@@ -342,19 +342,12 @@ struct BatchSlicer {
 
 impl BatchSlicer {
     fn new(pre_slice: Option<Slice>, needs_full_row_count: bool) -> Self {
-        let global_slice = if let Some(pre_slice) = pre_slice {
-            match pre_slice {
-                Slice::Positive { .. } => Some(Range::<usize>::from(pre_slice)),
-                // IR lowering puts negative slice in separate node.
-                // TODO: Native line buffering for negative slice
-                Slice::Negative { .. } => unreachable!(),
-            }
-        } else {
-            None
-        };
+        // IR lowering puts negative slice in separate node.
+        // TODO: Native line buffering for negative slice
+        assert!(pre_slice.is_none_or(|s| s.is_positive()));
 
         Self {
-            global_slice,
+            global_slice: pre_slice,
             needs_full_row_count,
             row_offset: 0,
             morsel_seq: MorselSeq::default(),
@@ -368,12 +361,8 @@ impl BatchSlicer {
         let prev_row_offset = self.row_offset;
         self.row_offset += n_lines;
 
-        let slice = if let Some(global_slice) = &self.global_slice {
-            match SplitSlicePosition::split_slice_at_file(
-                prev_row_offset,
-                n_lines,
-                global_slice.clone(),
-            ) {
+        let slice = if let Some(global_slice) = self.global_slice {
+            match SplitSlicePosition::split_slice_at_file(prev_row_offset, n_lines, global_slice) {
                 SplitSlicePosition::Before => {
                     self.n_rows_skipped = self.n_rows_skipped.saturating_add(n_lines);
                     return BatchAction::Skip;

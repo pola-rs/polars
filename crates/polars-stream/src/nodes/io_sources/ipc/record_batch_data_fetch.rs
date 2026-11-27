@@ -105,7 +105,8 @@ impl RecordBatchDataFetcher {
 
         let inflight_budget = byte_source.window_inflight_budget();
         let window_growth = WindowGrowth::for_source(&byte_source, inflight_budget.as_deref());
-        let global_slice = pre_slice.clone().map(Range::<usize>::from);
+        let global_slice = pre_slice;
+        assert!(global_slice.is_none_or(|s| s.is_positive()));
 
         polars_ensure!(
             global_slice.is_none() || record_batch_cum_len.is_some(),
@@ -148,7 +149,7 @@ impl RecordBatchDataFetcher {
                 num_rows_this_rb =
                     Some(record_batch_cum_len[record_batch_idx] - row_offset.unwrap());
 
-                if let Some(global_slice) = global_slice.clone() {
+                if let Some(global_slice) = global_slice {
                     match SplitSlicePosition::split_slice_at_file(
                         row_offset.unwrap() as usize,
                         num_rows_this_rb.unwrap() as usize,

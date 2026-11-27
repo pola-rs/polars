@@ -28,7 +28,7 @@ where
             let bin_len = bins.len();
             if bin_len > 1 {
                 for i in 1..bin_len {
-                    if (bins[i] - bins[i - 1]) <= 0.0 {
+                    if bins[i].is_nan() || bins[i - 1].is_nan() || bins[i] - bins[i - 1] <= 0.0 {
                         return Err(PolarsError::ComputeError(
                             "bins must increase monotonically".into(),
                         ));
@@ -117,47 +117,27 @@ where
     count
 }
 
-// Variable-width bucketing. We sort the items and then move linearly through buckets.
+// Variable-width bucketing. Each item is placed with a binary search over the breaks.
 fn hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     let num_bins = breaks.len() - 1;
-    let mut breaks_iter = breaks.iter().skip(1); // Skip the first lower bound
     let (min_break, max_break) = (breaks[0], breaks[breaks.len() - 1]);
-    let mut upper_bound = *breaks_iter.next().unwrap();
-    let mut sorted = ca.sort(false);
-    sorted.rechunk_mut();
-    let mut current_count: IdxSize = 0;
-    let chunk = sorted.downcast_as_array();
-    let mut count: Vec<IdxSize> = Vec::with_capacity(num_bins);
+    let mut count: Vec<IdxSize> = vec![0; num_bins];
 
-    'item: for item in chunk.non_null_values_iter() {
-        let item = item.to_f64().unwrap();
-
-        // Cycle through items until we hit the first bucket.
-        if item.is_nan() || item < min_break {
-            continue;
-        }
-
-        while item > upper_bound {
-            if item > max_break {
-                // No more items will fit in any buckets
-                break 'item;
+    for arr in ca.downcast_iter() {
+        for item in arr.non_null_values_iter() {
+            let item = item.to_f64().unwrap();
+            if item.is_nan() || item < min_break || item > max_break {
+                continue;
             }
-
-            // Finished with prior bucket; push, reset, and move to next.
-            count.push(current_count);
-            current_count = 0;
-            upper_bound = *breaks_iter.next().unwrap();
+            // The first bin also includes `min_break`.
+            let idx = breaks.partition_point(|b| *b < item).saturating_sub(1);
+            count[idx] += 1;
         }
-
-        // Item is in bound.
-        current_count += 1;
     }
-    count.push(current_count);
-    count.resize(num_bins, 0); // If we left early, fill remainder with 0.
     count
 }
 
@@ -184,6 +164,11 @@ impl HistBreaks {
     pub fn new(s: &Series, bin_count: Option<usize>, bins: Option<&Series>) -> PolarsResult<Self> {
         let bins = bins
             .map(|bins| {
+                // `Null` is the dtype of empty bins, e.g. `bins=[]` from Python.
+                polars_ensure!(
+                    bins.dtype().is_numeric() || bins.dtype().is_null(),
+                    InvalidOperation: "`hist` bins must be numeric, got dtype `{}`", bins.dtype()
+                );
                 polars_ensure!(bins.null_count() == 0, InvalidOperation: "nulls not supported in 'bins' argument");
                 Ok(bins.cast(&DataType::Float64)?.rechunk())
             })

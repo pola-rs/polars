@@ -219,7 +219,7 @@ pub(crate) fn write(
             |thread_no, write_buffer: &mut Vec<_>, csv_serializer: &mut CsvSerializer| {
                 let thread_offset = thread_no * chunk_size;
                 let total_offset = n_rows_finished + thread_offset;
-                let mut df = df.slice(total_offset as i64, chunk_size);
+                let mut df = df.slice((total_offset, chunk_size));
                 // the `series.iter` needs rechunked series.
                 // we don't do this on the whole as this probably needs much less rechunking
                 // so will be faster.

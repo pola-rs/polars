@@ -68,21 +68,28 @@ fn binary_output_reads_back() {
     )
     .unwrap();
 
-    for format in ["parquet", "arrow-stream"] {
-        let output = common::polars()
-            .args(["--format", format, "-c", sql])
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(0), "{format}");
-        assert!(output.stderr.is_empty(), "{format}");
+    let copy_parquet = format!("COPY ({sql}) TO STDOUT (FORMAT parquet)");
+    let copy_ipc = format!("COPY ({sql}) TO STDOUT (FORMAT ipc)");
+    // The format of the command line, then that of a `COPY ... TO STDOUT` statement.
+    let cases: [(&[&str], &str); 4] = [
+        (&["--format", "parquet", "-c", sql], "parquet"),
+        (&["--format", "arrow-stream", "-c", sql], "arrow-stream"),
+        (&["-c", &copy_parquet], "parquet"),
+        (&["-c", &copy_ipc], "ipc"),
+    ];
+    for (args, format) in cases {
+        let output = common::polars().args(args).output().unwrap();
+        assert_eq!(output.status.code(), Some(0), "{args:?}");
+        assert!(output.stderr.is_empty(), "{args:?}");
 
         let bytes = Cursor::new(output.stdout);
         let read = match format {
             "parquet" => ParquetReader::new(bytes).finish(),
+            "ipc" => IpcReader::new(bytes).finish(),
             _ => IpcStreamReader::new(bytes).finish(),
         }
         .unwrap();
-        assert!(read.equals(&expected), "{format}: {read}");
+        assert!(read.equals(&expected), "{args:?}: {read}");
     }
 }
 

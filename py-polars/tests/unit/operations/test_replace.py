@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ArgumentRemovedError, InvalidOperationError
+from polars.exceptions import ArgumentRemovedError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -310,15 +310,18 @@ def test_replace_single_argument_not_mapping() -> None:
     [
         pl.col("l"),
         pl.col("l").head(1),
+        pl.lit(pl.Series([[1]])),
         pl.lit(pl.Series([[1]])).list.drop_nulls(),
     ],
 )
 def test_replace_list_of_values_per_row_raises(height: int, values: pl.Expr) -> None:
     # Even a list that has one row at runtime must be a scalar in the plan.
     df = pl.DataFrame({"a": [1] * height, "l": [[1]] * height})
-    with pytest.raises(InvalidOperationError, match="per row"):
+    with pytest.raises(ShapeError, match="'old' must be a scalar value in `replace`"):
         df.lazy().select(pl.col("a").replace(values, 9)).collect()
-    with pytest.raises(InvalidOperationError, match="per row"):
+    with pytest.raises(
+        ShapeError, match="'new' must be a scalar value in `replace_strict`"
+    ):
         df.lazy().select(pl.col("a").replace_strict(1, values)).collect()
 
 

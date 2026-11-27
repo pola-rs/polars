@@ -67,7 +67,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
             nulls_last: true,
             ..Default::default()
         })
-        .slice(0, len - null_count);
+        .slice(Slice::head(len - null_count));
 
     let validity = concatenate_validities(s.chunks());
 
@@ -85,8 +85,8 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
     } else {
         let sorted_values = unsafe { s.take_unchecked(&sort_idx_ca) };
         let not_consecutive_same = sorted_values
-            .slice(1, sorted_values.len() - 1)
-            .not_equal(&sorted_values.slice(0, sorted_values.len() - 1))
+            .slice((1usize, sorted_values.len() - 1))
+            .not_equal(&sorted_values.slice(Slice::head(sorted_values.len() - 1)))
             .unwrap();
         let neq = not_consecutive_same.rechunk();
         let neq = neq.downcast_as_array();

@@ -45,13 +45,14 @@ use object_store::client::{
 use polars_core::runtime::ASYNC;
 use tokio::sync::oneshot;
 
+use super::stall_timer::{StallState, StallTimer};
 use super::token_bucket::TokenBucket;
 use crate::cloud::{CloudDirectionalRateLimitConfig, CloudRateLimitConfig};
 
 // For tracing purposes.
 static CONTROLLER_ID: AtomicU32 = AtomicU32::new(0);
 
-// Verbose.
+// Diagnostics; the format is unstable.
 static LOG_HTTP_RATE_LIMIT: LazyLock<bool> =
     LazyLock::new(|| std::env::var("POLARS_LOG_HTTP_RATE_LIMIT").is_ok());
 
@@ -312,6 +313,7 @@ pub(crate) struct RateState {
     pub admitted: Arc<AtomicU64>,
     // A throttle response was seen.
     pub throttled: Arc<AtomicBool>,
+    pub stall: Arc<StallState>,
 }
 
 impl RateState {
@@ -321,6 +323,7 @@ impl RateState {
             max_bits: Arc::new(AtomicU64::new(f64::NAN.to_bits())),
             admitted: Arc::new(AtomicU64::new(0)),
             throttled: Arc::new(AtomicBool::new(false)),
+            stall: Arc::default(),
         }
     }
 
@@ -517,6 +520,7 @@ pub(crate) struct PacerSignal {
     // Cumulative HTTP response counters, since epoch.
     resp_succeeded: AtomicU64,
     resp_throttled: AtomicU64,
+    stall: Arc<StallState>,
 }
 
 #[derive(Debug)]
@@ -561,6 +565,7 @@ impl AdaptiveRateController {
             last_cut_ns: AtomicU64::new(0),
             resp_succeeded: AtomicU64::new(0),
             resp_throttled: AtomicU64::new(0),
+            stall: Arc::clone(&shared.stall),
         };
 
         let state = Mutex::new(AimdState {
@@ -885,10 +890,12 @@ impl AdaptiveRateController {
         // Logging.
         let raises = std::mem::take(&mut state.raises);
         if *LOG_HTTP_RATE_LIMIT {
+            let stall = self.signal.stall.take();
             eprintln!(
                 "[http rate_limit #{}_{} {}] {}: rate: {:.1}, success_rate_ewma: {:.1}, last_max: {:.1}, \
                     elapsed: {:.1}s, win_admit: {}, win_deny: {}, win_success: {}, win_throttle: {},  q_depth: {}, \
-                    demand: {:.1}, raises: {}",
+                    demand: {:.1}, raises: {}, win_stall_hdr: {}, win_stall_body: {}, win_stall_refused: {}, \
+                    stall_t: {:.1}ms",
                 self.id,
                 self.label,
                 Utc::now(),
@@ -904,6 +911,10 @@ impl AdaptiveRateController {
                 self.pacer.queue_depth(),
                 state.demand.unwrap_or_default(),
                 raises,
+                stall.hdr_abandons,
+                stall.body_abandons,
+                stall.refused,
+                stall.t.as_secs_f64() * 1e3,
             );
         }
     }
@@ -1154,7 +1165,11 @@ impl HttpService for PacedHttpService {
         // The object_store is responsible for retry.
         verb_pacer.pacer.admit().await?;
 
-        let response = self.inner.execute(req).await;
+        let stall_timer = StallTimer::start(&req, &verb_pacer.signal.stall);
+        let response = match &stall_timer {
+            Some(timer) => Box::pin(timer.headers(self.inner.execute(req))).await,
+            None => self.inner.execute(req).await,
+        };
         match &response {
             Ok(r) if r.status().as_u16() == 429 || r.status().as_u16() == 503 => {
                 verb_pacer.on_congestion()
@@ -1163,6 +1178,9 @@ impl HttpService for PacedHttpService {
             _ => verb_pacer.on_other(),
         }
 
-        response
+        match stall_timer {
+            Some(timer) => timer.body(response),
+            None => response,
+        }
     }
 }

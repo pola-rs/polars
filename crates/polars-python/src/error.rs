@@ -144,7 +144,9 @@ impl From<PyPolarsErr> for PyErr {
                 PolarsError::StructFieldNotFound(name) => {
                     StructFieldNotFoundError::new_err(name.to_string())
                 },
-                PolarsError::Context { .. } | PolarsError::ExprContext { .. } => {
+                PolarsError::Context { .. }
+                | PolarsError::ExprContext { .. }
+                | PolarsError::Attached { .. } => {
                     let tmp = PyPolarsErr::Polars(err.context_trace());
                     PyErr::from(tmp)
                 },

@@ -10,6 +10,7 @@ use polars_core::frame::DataFrame;
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -38,7 +39,7 @@ pub struct JoinArgs {
     pub how: JoinType,
     pub validation: JoinValidation,
     pub suffix: Option<PlSmallStr>,
-    pub slice: Option<(i64, usize)>,
+    pub slice: Option<Slice>,
     pub nulls_equal: bool,
     pub coalesce: JoinCoalesce,
     pub maintain_order: MaintainOrderJoin,

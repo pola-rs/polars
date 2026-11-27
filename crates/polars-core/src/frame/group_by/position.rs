@@ -3,12 +3,13 @@ use std::ops::{Deref, DerefMut};
 
 use polars_arrow::offset::OffsetsBuffer;
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::slice_enum::Slice;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
 use crate::prelude::*;
 use crate::runtime::RAYON;
-use crate::utils::{NoNull, flatten, slice_slice};
+use crate::utils::{NoNull, flatten};
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.
@@ -766,7 +767,7 @@ pub struct GroupPositions {
     sliced: ManuallyDrop<GroupsType>,
     // Unsliced buffer
     original: Arc<GroupsType>,
-    offset: i64,
+    offset: usize,
     len: usize,
 }
 
@@ -804,9 +805,13 @@ impl Default for GroupPositions {
 }
 
 impl GroupPositions {
-    pub fn slice(&self, offset: i64, len: usize) -> Self {
-        let offset = self.offset + offset;
-        slice_groups(self.original.clone(), offset, len)
+    pub fn slice(&self, slice: impl Into<Slice>) -> Self {
+        let range = slice.into().resolve(self.len());
+        slice_groups(
+            self.original.clone(),
+            self.offset + range.start,
+            range.len(),
+        )
     }
 
     pub fn sort_by_first_idx(&mut self) {
@@ -866,7 +871,7 @@ impl GroupPositions {
     }
 }
 
-fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<GroupsType> {
+fn slice_groups_inner(g: &GroupsType, offset: usize, len: usize) -> ManuallyDrop<GroupsType> {
     // SAFETY:
     // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
     // so that we never call drop on them.
@@ -875,13 +880,13 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
     match g {
         GroupsType::Idx(groups) => {
             let first = unsafe {
-                let first = slice_slice(groups.first(), offset, len);
+                let first = &groups.first()[offset..][..len];
                 let ptr = first.as_ptr() as *mut _;
                 Vec::from_raw_parts(ptr, first.len(), first.len())
             };
 
             let all = unsafe {
-                let all = slice_slice(groups.all(), offset, len);
+                let all = &groups.all()[offset..][..len];
                 let ptr = all.as_ptr() as *mut _;
                 Vec::from_raw_parts(ptr, all.len(), all.len())
             };
@@ -895,7 +900,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
             monotonic,
         } => {
             let groups = unsafe {
-                let groups = slice_slice(groups, offset, len);
+                let groups = &groups[offset..][..len];
                 let ptr = groups.as_ptr() as *mut _;
                 Vec::from_raw_parts(ptr, groups.len(), groups.len())
             };
@@ -905,7 +910,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
     }
 }
 
-fn slice_groups(g: Arc<GroupsType>, offset: i64, len: usize) -> GroupPositions {
+fn slice_groups(g: Arc<GroupsType>, offset: usize, len: usize) -> GroupPositions {
     let sliced = slice_groups_inner(g.as_ref(), offset, len);
 
     GroupPositions {

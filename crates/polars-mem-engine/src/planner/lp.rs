@@ -367,7 +367,21 @@ fn create_physical_plan_impl(
         };
     }
 
+    // A slice that wasn't pushed into a scan runs on the streaming engine with it, so that
+    // only the sliced rows are collected.
+    let slice_of_streaming_scan = matches!(
+        lp_arena.get(root),
+        IR::Slice { input, .. } if matches!(
+            lp_arena.get(*input),
+            IR::Scan { scan_type, .. } if matches!(
+                scan_type.as_ref(),
+                FileScanIR::ExternalReaderBuilder { .. }
+            )
+        )
+    );
+
     let logical_plan = if state.has_cache_parent
+        || slice_of_streaming_scan
         || matches!(
             lp_arena.get(root),
             IR::Scan { .. } // Needed for the streaming impl
@@ -457,9 +471,12 @@ fn create_physical_plan_impl(
 
             Ok(Box::new(executors::HConcatExec { inputs, options }))
         },
-        Slice { input, offset, len } => {
+        Slice { .. } if slice_of_streaming_scan => {
+            get_streaming_executor_builder()(root, lp_arena, expr_arena)
+        },
+        Slice { input, slice } => {
             let input = recurse!(input, state)?;
-            Ok(Box::new(executors::SliceExec { input, offset, len }))
+            Ok(Box::new(executors::SliceExec { input, slice }))
         },
         Filter { input, predicate } => {
             let streamable = is_elementwise_rec(predicate.node(), expr_arena);
@@ -504,6 +521,7 @@ fn create_physical_plan_impl(
                         expr_arena,
                         output_schema.as_ref().unwrap_or(&file_info.schema),
                         None, // hive_schema
+                        None, // file_path_col
                         &mut expr_conversion_state,
                         create_skip_batch_predicate,
                         false,
@@ -594,7 +612,7 @@ fn create_physical_plan_impl(
             Ok(Box::new(executors::SortExec {
                 input,
                 by_column,
-                slice: slice.map(|t| (t.0, t.1)),
+                slice: slice.map(|(slice, _dp)| slice),
                 sort_options,
             }))
         },

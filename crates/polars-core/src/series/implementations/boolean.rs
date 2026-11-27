@@ -140,8 +140,8 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Series {
-        self.0.slice(offset, length).into_series()
+    fn slice(&self, slice: Slice) -> Series {
+        self.0.slice(slice).into_series()
     }
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (a, b) = self.0.split_at(offset);
@@ -298,6 +298,20 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         let sc = ca.median_reduce()?;
         let v = sc.value().cast(&DataType::Float64);
         Ok(Scalar::new(DataType::Float64, v))
+    }
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let ca = self
+            .0
+            .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
+            .unwrap();
+        ca.quantile_reduce(quantile, method)
+    }
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let ca = self
+            .0
+            .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
+            .unwrap();
+        ca.quantiles_reduce(quantiles, method)
     }
     /// Get the variance of the Series as a new Series of length 1.
     fn var_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {

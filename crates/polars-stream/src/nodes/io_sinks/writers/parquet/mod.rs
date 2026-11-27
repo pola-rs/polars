@@ -28,6 +28,7 @@ mod row_group_encoder;
 pub struct ParquetWriterStarter {
     pub options: Arc<ParquetWriteOptions>,
     pub arrow_schema: ArrowSchemaRef,
+    row_group_schema: ArrowSchemaRef,
     pub initialized_state: std::sync::Mutex<Option<InitializedState>>,
     pub row_group_size: Option<IdxSize>,
 }
@@ -36,6 +37,7 @@ impl ParquetWriterStarter {
     pub fn try_new(
         options: Arc<ParquetWriteOptions>,
         arrow_schema: ArrowSchemaRef,
+        row_group_schema: ArrowSchemaRef,
     ) -> PolarsResult<Self> {
         // Metadata that may set its own `geo` key skips the early checks,
         // as that key replaces the derived one.
@@ -65,6 +67,7 @@ impl ParquetWriterStarter {
                 .map(|x| IdxSize::try_from(x).unwrap()),
             options,
             arrow_schema,
+            row_group_schema,
             initialized_state: std::sync::Mutex::new(initialized_state),
         })
     }
@@ -173,7 +176,7 @@ impl FileWriterStarter for ParquetWriterStarter {
             ),
         );
 
-        let arrow_schema = Arc::clone(&self.arrow_schema);
+        let arrow_schema = Arc::clone(&self.row_group_schema);
         let compute_handle = executor::AbortOnDropHandle::new(executor::spawn(
             TaskPriority::High,
             task_metrics.as_deref(),

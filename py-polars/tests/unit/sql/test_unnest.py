@@ -134,6 +134,17 @@ def test_unnest_select_expressions() -> None:
     )
 
 
+def test_unnest_empty_or_null_list() -> None:
+    # as in Postgres and DuckDB: an empty or NULL list gives no row, a NULL element does
+    df = pl.DataFrame({"id": [1, 2, 3, 4], "xs": [[10, 11], [], None, [None]]})
+    expected = pl.DataFrame({"id": [1, 1, 4], "x": [10, 11, None]})
+    for query in [
+        "SELECT id, UNNEST(xs) AS x FROM self ORDER BY id, x",
+        "SELECT id, x FROM self CROSS JOIN UNNEST(xs) AS u(x) ORDER BY id, x",
+    ]:
+        assert_sql_matches(df, query=query, compare_with="duckdb", expected=expected)
+
+
 def test_unnest_aggregates() -> None:
     df = pl.DataFrame({"a": [i // 100 for i in range(1, 1000)]})
     query = """
@@ -196,3 +207,26 @@ def test_unnest_select_height_filter_order_by() -> None:
         ),
         pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
     )
+
+
+def test_unnest_with_ordinality() -> None:
+    # as in Postgres: the 1-based position of each element in its list
+    df = pl.DataFrame({"id": [1, 2], "xs": [["a", "b"], ["c"]]})
+    res = df.sql(
+        "SELECT id, x, n FROM self "
+        "CROSS JOIN UNNEST(xs) WITH ORDINALITY AS u(x, n) ORDER BY id, n"
+    )
+    assert res.rows() == [(1, "a", 1), (1, "b", 2), (2, "c", 1)]
+    res = pl.sql(
+        "SELECT * FROM UNNEST(ARRAY['x', 'y']) WITH ORDINALITY AS t(v, pos)",
+        eager=True,
+    )
+    assert res.rows() == [("x", 1), ("y", 2)]
+    # a fixed-size array, and a name that is a column already, which is refused
+    df = pl.DataFrame({"ordinality": [9], "xs": [[1, 2]]}).cast(
+        {"xs": pl.Array(pl.Int64, 2)}
+    )
+    query = "SELECT x, n FROM self CROSS JOIN UNNEST(xs) WITH ORDINALITY AS u(x, n)"
+    assert df.sql(query).rows() == [(1, 1), (2, 2)]
+    with pytest.raises(SQLInterfaceError, match="is a column already"):
+        df.sql("SELECT * FROM self CROSS JOIN UNNEST(xs) WITH ORDINALITY AS u(x)")

@@ -20,7 +20,7 @@ where {
         }
         let slice_offset = (-periods).max(0);
         let length = self.len() - fill_length;
-        let mut slice = self.slice(slice_offset, length);
+        let mut slice = self.slice((slice_offset, length));
 
         let mut fill = match fill_value {
             Some(val) => ChunkedArray::full(self.name().clone(), val, fill_length),
@@ -55,7 +55,7 @@ impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
         let periods = clamp(periods, -(self.len() as i64), self.len() as i64);
         let slice_offset = (-periods).max(0);
         let length = self.len() - abs(periods) as usize;
-        let mut slice = self.slice(slice_offset, length);
+        let mut slice = self.slice((slice_offset, length));
 
         let fill_length = abs(periods) as usize;
         let mut fill = match fill_value {
@@ -91,7 +91,7 @@ impl ChunkShiftFill<FixedSizeListType, Option<&Series>> for ArrayChunked {
         let periods = clamp(periods, -(self.len() as i64), self.len() as i64);
         let slice_offset = (-periods).max(0);
         let length = self.len() - abs(periods) as usize;
-        let mut slice = self.slice(slice_offset, length);
+        let mut slice = self.slice((slice_offset, length));
 
         let fill_length = abs(periods) as usize;
         let mut fill = match fill_value {
@@ -131,7 +131,7 @@ impl<T: PolarsObject> ChunkShiftFill<ObjectType<T>, Option<T>> for ObjectChunked
         let slice_offset = (-periods).max(0);
         let length = self.len() - fill_len;
 
-        let mut slice = self.slice(slice_offset, length);
+        let mut slice = self.slice((slice_offset, length));
 
         let mut fill = match fill_value {
             Some(val) => ObjectChunked::<T>::full(self.name().clone(), val, fill_len),
@@ -163,7 +163,7 @@ impl ChunkShift<StructType> for StructChunked {
         let periods = clamp(periods, -(self.len() as i64), self.len() as i64);
         let slice_offset = (-periods).max(0);
         let length = self.len() - abs(periods) as usize;
-        let mut slice = self.slice(slice_offset, length);
+        let mut slice = self.slice((slice_offset, length));
 
         let fill_length = abs(periods) as usize;
 

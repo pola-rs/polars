@@ -23,6 +23,7 @@ from polars.io.iceberg._dataset import (
 )
 from polars.io.iceberg._plugin import (
     _PROPERTY_SCHEMES,
+    _account_sas_properties,
     _catalog_storage_options,
     _is_credential_key,
     _table_location,
@@ -283,11 +284,13 @@ def _vended_credentials(
 def _expires_at(properties: Mapping[str, Any], location: str) -> int | None:
     """Earliest expiry of the credentials vended for `location`, in epoch seconds."""
     # Iceberg names these `...expires-at[-ms]`, in milliseconds since the epoch, e.g.
-    # `s3.session-token-expires-at-ms` or `gcs.oauth2.token-expires-at`. Per-account
-    # ones (`adls.sas-token-expires-at-ms.<account host>`) are not translated.
+    # `s3.session-token-expires-at-ms` or `gcs.oauth2.token-expires-at`. Of the
+    # per-account ones (`adls.sas-token-expires-at-ms.<account host>`), only that of
+    # the table's account counts.
     prefix = _credential_prefix(location)
     if not prefix:
         return None
+    properties = _account_sas_properties(properties, location)
     expiries = [
         int(v)
         for k, v in properties.items()

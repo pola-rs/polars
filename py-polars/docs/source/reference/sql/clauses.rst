@@ -233,17 +233,20 @@ format: ``.csv``, ``.parquet``, ``.ipc`` / ``.arrow`` / ``.feather``, or ``.ndjs
 The file is read with the defaults of the ``read_csv``, ``read_parquet``, ``read_ipc`` or
 ``read_ndjson`` table function; call that function to pass options, or to read a path that
 does not end in such an extension. A table of the same name comes first, and any other name
-in quotes is looked up as a table. To run untrusted SQL, turn off reading files and URLs with
-``SQLContext(allow_file_reads=False)``.
+in quotes is looked up as a table. To run untrusted SQL, turn off reading and writing files
+and URLs with ``SQLContext(allow_file_reads=False, allow_file_writes=False)``.
 
 .. code-block:: sql
 
     SELECT * FROM 'data/events.parquet'
     SELECT region, COUNT(*) FROM 'data/sales_*.csv' GROUP BY region
 
+.. _time_travel:
+
 **Time travel:** a table of an attached catalog (see
 :meth:`SQLContext.register_catalog`) can be read as of a snapshot, a branch or tag, or
-a time. The clause follows the table name or its alias, and takes a literal.
+a time. The clause follows the table name or its alias, and takes a literal. Tags and
+branches are made with :ref:`ALTER TABLE <alter_table>`.
 
 * ``[FOR] VERSION AS OF <version>`` or ``AT (VERSION => <version>)``: an integer is a
   snapshot id, a string a branch or tag.

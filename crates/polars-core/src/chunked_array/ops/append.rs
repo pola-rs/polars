@@ -1,5 +1,6 @@
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -24,6 +25,14 @@ pub(crate) fn new_chunks_owned(chunks: &mut Vec<ArrayRef>, other: Vec<ArrayRef>,
         chunks.reserve(other.len());
         chunks.extend(other.into_iter().filter(|c| !c.is_empty()));
     }
+}
+
+/// Keeps the nesting flags of `ca` only if `other` has them too, as they must hold for every chunk.
+/// This applies to an empty `other` as well, whose chunks replace those of an empty `ca`.
+fn retain_nesting_flags<T: PolarsDataType>(ca: &mut ChunkedArray<T>, other: &ChunkedArray<T>) {
+    let nesting = StatisticsFlags::HAS_TRIMMED_LISTS_TO_NORMALIZED_OFFSETS
+        | StatisticsFlags::HAS_PROPAGATED_NULLS;
+    ca.set_flags(ca.get_flags() - (nesting - other.get_flags()));
 }
 
 /// Unit-length arrays are sorted but don't necessarily carry the flag.
@@ -213,6 +222,7 @@ impl ListChunked {
         if !other.get_fast_explode_list() {
             self.unset_fast_explode_list()
         }
+        retain_nesting_flags(self, &other);
 
         new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())
@@ -239,6 +249,7 @@ impl ArrayChunked {
         self.null_count += other.null_count;
 
         self.set_sorted_flag(IsSorted::Not);
+        retain_nesting_flags(self, &other);
 
         new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())
@@ -265,6 +276,7 @@ impl StructChunked {
         self.null_count += other.null_count;
 
         self.set_sorted_flag(IsSorted::Not);
+        retain_nesting_flags(self, &other);
 
         new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())

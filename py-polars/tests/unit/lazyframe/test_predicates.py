@@ -2215,6 +2215,26 @@ def test_predicate_not_pushed_below_scalar_select(engine: EngineType) -> None:
     assert q.collect(engine=engine).height == 0
 
 
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+def test_filter_constraint_signed_zero_and_nan(dtype: pl.DataType) -> None:
+    # -0.0 == 0.0 and NaN == NaN when filtering: no combination of them is impossible
+    other_nan = np.frombuffer(np.uint64(0x7FF8_0000_0000_0001).tobytes(), "f8")[0]
+    lf = pl.LazyFrame({"f": [0.0, -0.0, 1.5, float("nan"), None]}, schema={"f": dtype})
+    f = pl.col("f")
+    predicates = [
+        f.is_in([-0.0]) & f.is_in([0.0, 1.5]),
+        f.is_in([0.0]) & (f == -0.0),
+        (f >= 0.0) & (f <= -0.0),
+        (f == 0.0) & (f != -0.0),
+        f.is_in([0.0]) & ~f.is_in([-0.0]),
+        f.is_in([float("nan")]) & f.is_in([other_nan]),
+        (f == float("nan")) & ~f.is_in([other_nan]),
+    ]
+    for p in predicates:
+        expected = lf.filter(p).collect(optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(lf.filter(p).collect(), expected)
+
+
 _NOT_NULL_LF = pl.LazyFrame({"a": [1, None, 4, 7], "b": [None, 2, 3, 4]})
 
 

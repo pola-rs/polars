@@ -1,9 +1,24 @@
 use polars::lazy::dsl;
+use polars::prelude::QuantileFractionDtypes;
 use pyo3::prelude::*;
 
-use crate::PyExpr;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
+use crate::{PyExpr, PySeries};
+
+/// Checks a constant `quantile` fraction, which mustn't be null, and returns its values.
+/// `fraction` holds one row, and `allow_list` says whether that row may be a list of fractions.
+#[pyfunction]
+pub fn extract_quantiles(fraction: PySeries, allow_list: bool) -> PyResult<Vec<f64>> {
+    let allowed = match allow_list {
+        true => QuantileFractionDtypes::NumberOrList,
+        false => QuantileFractionDtypes::Number,
+    };
+    let fraction = fraction.series.into_inner();
+    let quantiles = polars::prelude::extract_non_null_quantiles(&fraction, allowed)
+        .map_err(PyPolarsErr::from)?;
+    Ok(quantiles)
+}
 
 #[pyfunction]
 pub fn all_horizontal(exprs: Vec<PyExpr>) -> PyResult<PyExpr> {

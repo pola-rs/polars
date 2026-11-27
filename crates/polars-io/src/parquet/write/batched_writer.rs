@@ -51,19 +51,16 @@ impl<W: Write> BatchedWriter<W> {
         &'a self,
         df: &'a DataFrame,
     ) -> impl Iterator<Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>> + 'a {
-        let rb_iter = df.iter_chunks(CompatLevel::newest(), false);
-        rb_iter.filter_map(move |batch| match batch.len() {
-            0 => None,
-            _ => {
-                let row_group = create_eager_serializer(
-                    batch,
-                    self.parquet_schema.fields(),
-                    self.encodings.as_ref(),
-                    self.options,
-                );
-
-                Some(row_group)
-            },
+        let rb_iter = df.try_iter_chunks(CompatLevel::newest(), false);
+        rb_iter.filter_map(move |batch| match batch {
+            Ok(batch) if batch.is_empty() => None,
+            Ok(batch) => Some(create_eager_serializer(
+                batch,
+                self.parquet_schema.fields(),
+                self.encodings.as_ref(),
+                self.options,
+            )),
+            Err(err) => Some(Err(err)),
         })
     }
 
@@ -162,15 +159,17 @@ fn prepare_rg_iter<'a>(
         PolarsResult<RowGroupIterColumns<'static, PolarsError>>,
     ),
 > + 'a {
-    let rb_iter = df.iter_chunks(CompatLevel::newest(), false);
-    rb_iter.filter_map(move |batch| match batch.len() {
-        0 => None,
-        num_rows => {
+    let rb_iter = df.try_iter_chunks(CompatLevel::newest(), false);
+    rb_iter.filter_map(move |batch| match batch {
+        Ok(batch) if batch.is_empty() => None,
+        Ok(batch) => {
+            let num_rows = batch.len();
             let row_group =
                 create_serializer(batch, parquet_schema.fields(), encodings, options, parallel);
 
             Some((num_rows, row_group))
         },
+        Err(err) => Some((0, Err(err))),
     })
 }
 

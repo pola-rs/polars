@@ -240,6 +240,29 @@ def test_merge_sorted_categorical_global_lexical() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("n_categories", [200, 300])
+@pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_enum_30820(
+    n_categories: int, maintain_order: bool, streaming: bool
+) -> None:
+    # The Enum order is the reverse of the string order. Many categories keep
+    # several keys in each streaming morsel.
+    cats = [f"c{i:03}" for i in reversed(range(n_categories))]
+    dtype = pl.Enum(cats)
+    left = pl.DataFrame({"k": cats}, schema={"k": dtype})
+    right = pl.DataFrame(
+        {"k": [c for c in cats[::2] for _ in range(2)]}, schema={"k": dtype}
+    )
+
+    out = (
+        left.lazy()
+        .merge_sorted(right.lazy(), key="k", maintain_order=maintain_order)
+        .collect(engine="streaming" if streaming else "in-memory")
+    )
+    assert_series_equal(out["k"], pl.concat([left, right]).sort("k")["k"])
+
+
 def test_merge_sorted_categorical_21952() -> None:
     df1 = pl.DataFrame({"a": ["a", "b", "c"]}).cast(pl.Categorical())
     df2 = pl.DataFrame({"a": ["a", "b", "d"]}).cast(pl.Categorical())

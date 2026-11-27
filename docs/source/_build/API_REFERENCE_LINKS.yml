@@ -114,6 +114,7 @@ python:
     link: https://docs.pola.rs/api/python/stable/reference/api/polars.read_database.html
     feature_flags: [connectorx]
   read_database_uri: https://docs.pola.rs/api/python/stable/reference/api/polars.read_database_uri.html
+  scan_database: https://docs.pola.rs/api/python/stable/reference/api/polars.scan_database.html
   read_excel: https://docs.pola.rs/api/python/stable/reference/api/polars.read_excel.html
   read_ipc: https://docs.pola.rs/api/python/stable/reference/api/polars.read_ipc.html
   read_json: https://docs.pola.rs/api/python/stable/reference/api/polars.read_json.html

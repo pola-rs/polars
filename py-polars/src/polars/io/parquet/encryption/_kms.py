@@ -112,6 +112,14 @@ class KmsConnectionConfig:
     from refreshing the key access token. The object passed to the KMS client
     factory is a read-only snapshot: its token can't be refreshed, and it can't
     be used to read or write files.
+
+    When a query that uses this configuration is serialized, for example to run on
+    Polars Cloud, the configuration is included in the serialized query, including
+    the key access token. Refreshing the token afterwards doesn't change the
+    serialized query. For Polars Cloud, we recommend that the KMS client gets its
+    credentials from the environment it runs in, rather than from the key access
+    token, so that the credentials don't need to be serialized, and because a
+    serialized token can't be refreshed from the client.
     """
 
     _pyconfig: PyKmsConnectionConfig
@@ -204,6 +212,15 @@ class CryptoFactory:
     it creates should hold a reference, directly or indirectly, to this
     `CryptoFactory` or to a `ParquetEncryptionConfig`, `ParquetDecryptionConfig`
     or LazyFrame that uses it. If they need one, hold it with a :mod:`weakref`.
+    However, weak references can't be pickled, so a query can't be serialized
+    if its `kms_client_factory` holds one (see below).
+
+    When a query that uses this factory is serialized, for example to run on
+    Polars Cloud, the `kms_client_factory` is pickled, using cloudpickle if it
+    can't be pickled with :mod:`pickle`. It must be possible to unpickle it, and to
+    create KMS clients with it, wherever the query is deserialized. Configurations
+    in the deserialized query that used the same factory share a single copy of it.
+    This copy has its own caches, which aren't shared with this factory.
     """
 
     def __init__(
@@ -216,10 +233,26 @@ class CryptoFactory:
             )
             raise TypeError(msg)
 
-        def create_client(pyconfig: PyKmsConnectionConfig) -> Any:
-            return kms_client_factory(KmsConnectionConfig._from_pyconfig(pyconfig))
+        self._pycrypto_factory = PyCryptoFactory(
+            _KmsClientFactoryAdapter(kms_client_factory)
+        )
 
-        self._pycrypto_factory = PyCryptoFactory(create_client)
+
+class _KmsClientFactoryAdapter:
+    """
+    Calls a KMS client factory with a :class:`KmsConnectionConfig`.
+
+    This is a module-level class, rather than a closure, so that it can be pickled
+    with :mod:`pickle` whenever the KMS client factory can be.
+    """
+
+    def __init__(
+        self, kms_client_factory: Callable[[KmsConnectionConfig], Any]
+    ) -> None:
+        self.kms_client_factory = kms_client_factory
+
+    def __call__(self, pyconfig: PyKmsConnectionConfig) -> Any:
+        return self.kms_client_factory(KmsConnectionConfig._from_pyconfig(pyconfig))
 
 
 class EncryptionConfiguration:

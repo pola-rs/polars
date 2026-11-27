@@ -1082,10 +1082,10 @@ def test_slice_pushdown_expr_create_ir_slice_offset_correction_26592() -> None:
         ),
     )
 
-    # NULL length -> IdxSize::MAX
+    # NULL length -> runs to the end
     q = lf.select(a_off2=pl.col("a").slice(2))
     plan = q.explain()
-    assert "SLICE: Positive { offset: 2, len: " in plan
+    assert "SLICE: PositiveUnbounded { offset: 2 }" in plan
     assert_frame_equal(
         q.collect(),
         pl.DataFrame(

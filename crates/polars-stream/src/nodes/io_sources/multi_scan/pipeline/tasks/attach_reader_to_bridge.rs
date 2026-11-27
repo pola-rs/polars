@@ -50,7 +50,7 @@ impl AttachReaderToBridge {
         while let Some(StartedReader {
             handle,
             wait_token,
-            slot: _,
+            slot,
             read_bytes,
         }) = started_reader_rx.recv().await
         {
@@ -74,6 +74,8 @@ impl AttachReaderToBridge {
 
             drop(wait_token);
             join_reader(reader_handle, post_apply_pipeline_handle).await?;
+            // the next reader may start only now (`ordered_reader_slots`)
+            drop(slot);
             if verbose && read_bytes.is_some() {
                 eprintln!("[AttachReaderToBridge]: releasing read bytes");
             }

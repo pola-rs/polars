@@ -386,7 +386,7 @@ fn check_left_continuity(
     let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
     let project = df.select(sorted_by_cols.clone())?;
     let first_non_null_at = project.column(key_col_name)?.first_non_null();
-    let first_non_null_row = first_non_null_at.map(|at| project.slice(at as i64, 1));
+    let first_non_null_row = first_non_null_at.map(|at| project.slice((at, 1)));
     check_continuity(
         last_non_null_row.clone(),
         first_non_null_row,
@@ -397,7 +397,7 @@ fn check_left_continuity(
 
     // Store the last non-null row of this DataFrame for the next check.
     if let Some(pos) = project.column(key_col_name)?.last_non_null() {
-        *last_non_null_row = Some(project.slice((pos) as i64, 1));
+        *last_non_null_row = Some(project.slice((pos, 1)));
     }
     Ok(())
 }
@@ -417,14 +417,14 @@ async fn check_right_continuity(
         .into_df()
         .await
         .select(sorted_by_cols.clone())?;
-    let before_split = df.slice(0, split_at_idx);
-    let after_split = df.slice(split_at_idx as i64, df.height() - split_at_idx);
+    let before_split = df.slice(Slice::head(split_at_idx));
+    let after_split = df.slice((split_at_idx, df.height() - split_at_idx));
     let last_non_null = before_split.column(key_col_name)?.last_non_null();
     let first_non_null = after_split.column(key_col_name)?.first_non_null();
     let before_split_point_row = last_non_null
-        .map(|pos| before_split.slice(pos as i64, 1))
+        .map(|pos| before_split.slice((pos, 1)))
         .or(last_non_null_row.clone());
-    let after_split_point_row = first_non_null.map(|pos| after_split.slice(pos as i64, 1));
+    let after_split_point_row = first_non_null.map(|pos| after_split.slice((pos, 1)));
     check_continuity(
         before_split_point_row.clone(),
         after_split_point_row,
@@ -850,8 +850,8 @@ async fn compute_asof_join(
             };
 
         let right_start = right_group.map_or(0, |(start, _len)| start);
-        let group_left_key = left_key.slice(left_start as i64, left_group_len);
-        let group_right_key = right_key.slice(right_start as i64, right_chunk_len);
+        let group_left_key = left_key.slice((left_start, left_group_len));
+        let group_right_key = right_key.slice((right_start, right_chunk_len));
 
         let take_idx = _join_asof_dispatch(
             group_left_key.as_materialized_series(),
@@ -863,7 +863,7 @@ async fn compute_asof_join(
 
         out_right.push(
             right_df
-                .slice(right_start as i64, right_chunk_len)
+                .slice((right_start, right_chunk_len))
                 .take(&take_idx)?,
         );
     }

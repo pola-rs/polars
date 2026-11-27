@@ -20,7 +20,6 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
-use polars_utils::slice_enum::Slice;
 
 #[cfg(feature = "parquet")]
 use crate::dsl::MetadataPerSource::Unresolved;
@@ -416,10 +415,9 @@ impl DatasetScanArgs {
                 .collect();
         }
 
-        let limit = match unified_scan_args.pre_slice.clone() {
-            Some(v @ Slice::Positive { .. }) => Some(v.end_position()),
-            _ => None,
-        };
+        let limit = unified_scan_args
+            .pre_slice
+            .and_then(|slice| slice.end_position());
 
         // Note
         // row_index is removed from projection/live_columns set, and is therefore not

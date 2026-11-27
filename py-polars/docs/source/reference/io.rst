@@ -38,6 +38,8 @@ Database
 
    read_database
    read_database_uri
+   scan_database
+   io.database.show_drivers
    DataFrame.write_database
 
 Delta Lake

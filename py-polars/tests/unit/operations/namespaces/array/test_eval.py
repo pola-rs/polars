@@ -10,6 +10,8 @@ from polars.testing import assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from polars._typing import EngineType
+
 
 def set_nulls(s: pl.Series, mask: list[bool]) -> pl.Series:
     return pl.select(pl.when(pl.Series(mask)).then(s).alias(s.name)).to_series()
@@ -351,3 +353,54 @@ def test_arr_agg_null_rows_30252() -> None:
     assert_series_equal(
         s.arr.agg(pl.element().first()), pl.Series("s", [None, None, None])
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_arr_eval_columns(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"a": [[1, 2], [3, 4], None], "x": [10, 20, 30]},
+        schema={"a": pl.Array(pl.Int64, 2), "x": pl.Int64},
+    )
+    out = lf.select(
+        add=pl.col("a").arr.eval(pl.element() + pl.col("x")),
+        append=pl.col("a").arr.eval(pl.element().append(pl.col("x")), as_list=True),
+        agg=pl.col("a").arr.agg(pl.element().max() - pl.col("x")),
+        agg_col=pl.col("a").arr.agg(pl.col("x")),
+    ).collect(engine=engine)
+    assert out.to_dict(as_series=False) == {
+        "add": [[11, 12], [23, 24], None],
+        "append": [[1, 2, 10], [3, 4, 20], None],
+        "agg": [-8, -16, None],
+        "agg_col": [10, 20, None],
+    }
+
+    # Null rows don't run fallible expressions on their columns.
+    df = pl.DataFrame(
+        {"a": [[1, 2], None], "x": ["10", "bad"]},
+        schema={"a": pl.Array(pl.Int64, 2), "x": pl.String},
+    )
+    out = (
+        df.lazy()
+        .select(pl.col("a").arr.eval(pl.element() + pl.col("x").cast(pl.Int64)))
+        .collect(engine=engine)
+    )
+    assert out["a"].to_list() == [[11, 12], None]
+
+    out = (
+        df.lazy()
+        .select(
+            pl.col("a").arr.eval(
+                pl.element() + pl.col("x").fill_null("bad").cast(pl.Int64)
+            )
+        )
+        .collect(engine=engine)
+    )
+    assert out["a"].to_list() == [[11, 12], None]
+
+    df = pl.DataFrame({"a": [["1"], None]}, schema={"a": pl.Array(pl.String, 1)})
+    out = (
+        df.lazy()
+        .select(pl.col("a").arr.eval(pl.element().fill_null("bad").cast(pl.Int64)))
+        .collect(engine=engine)
+    )
+    assert out["a"].to_list() == [[1], None]

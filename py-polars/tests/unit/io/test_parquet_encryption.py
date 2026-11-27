@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import re
 from functools import partial
 from typing import TYPE_CHECKING, Any
@@ -313,14 +314,48 @@ def test_scan_encrypted_footer_with_wrong_key(encrypted_file_path: Path) -> None
         ).collect_schema()
 
 
-def test_serialize_with_decryption_properties(encrypted_file_path: Path) -> None:
-    decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
+def serde_round_trip(lf: pl.LazyFrame) -> pl.LazyFrame:
+    """Serialize and deserialize a query."""
+    return pl.LazyFrame.deserialize(io.BytesIO(lf.serialize()))
+
+
+def test_serialize_scan_with_decryption_properties(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+    basic_data().write_parquet(
+        path,
+        encryption=pl.ParquetEncryptionProperties(
+            footer_key=FOOTER_KEY,
+            column_keys={"secret": COLUMN_KEY},
+            aad_prefix=AAD_PREFIX,
+        ),
+    )
+    decryption_properties = pl.ParquetDecryptionProperties(
+        footer_key=FOOTER_KEY,
+        column_keys={"secret": COLUMN_KEY},
+        aad_prefix=AAD_PREFIX,
+    )
+    lf = pl.scan_parquet(path, decryption=decryption_properties).filter(
+        pl.col("id") < 10
+    )
+
+    result = serde_round_trip(lf).collect()
+
+    assert_frame_equal(result, basic_data().filter(pl.col("id") < 10))
+
+
+def test_serialize_scan_with_decryption_properties_wrong_key(
+    encrypted_file_path: Path,
+) -> None:
+    # Check that the deserialized key is actually used
+    decryption_properties = pl.ParquetDecryptionProperties(
+        footer_key=b"1234567890123450"
+    )
     lf = pl.scan_parquet(encrypted_file_path, decryption=decryption_properties)
+
     with pytest.raises(
-        pl.exceptions.ComputeError,
-        match="cannot serialize parquet decryption properties",
+        pl.exceptions.ComputeError, match="unable to decrypt parquet footer"
     ):
-        lf.serialize()
+        serde_round_trip(lf).collect()
 
 
 @pytest.mark.parametrize(
@@ -551,6 +586,84 @@ def test_sink_parquet_reencrypt(tmp_path: Path) -> None:
         source,
         decryption=pl.ParquetDecryptionProperties(footer_key=AES_256_KEY),
     ).sink_parquet(path, encryption=basic_encryption_properties(), **WRITE_OPTIONS)
+    assert_basic_encryption(path)
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_serialize_sink_with_encryption_properties(
+    tmp_path: Path, partitioned: bool
+) -> None:
+    path = tmp_path / ("out" if partitioned else "out.parquet")
+    target = pl.PartitionBy(path, key="part") if partitioned else path
+    lf = (
+        basic_data()
+        .lazy()
+        .sink_parquet(
+            target,
+            encryption=basic_encryption_properties(),
+            mkdir=True,
+            lazy=True,
+            **WRITE_OPTIONS,
+        )
+    )
+
+    serde_round_trip(lf).collect()
+
+    assert len(parquet_files(path)) == (3 if partitioned else 1)
+    assert_basic_encryption(path)
+
+
+def test_serialize_sink_with_encryption_options(tmp_path: Path) -> None:
+    # Check that options other than keys are kept
+    path = tmp_path / "out.parquet"
+    lf = (
+        basic_data()
+        .lazy()
+        .sink_parquet(
+            path,
+            encryption=pl.ParquetEncryptionProperties(
+                footer_key=FOOTER_KEY,
+                column_keys={"secret": COLUMN_KEY},
+                plaintext_footer=True,
+                aad_prefix=AAD_PREFIX,
+            ),
+            lazy=True,
+        )
+    )
+
+    serde_round_trip(lf).collect()
+
+    # The footer is plaintext, so the schema can be read without keys
+    assert pl.scan_parquet(path).collect_schema() == basic_data().schema
+    # The AAD prefix isn't stored, so is required to read the file
+    with pytest.raises(pl.exceptions.ComputeError, match="no AAD prefix was provided"):
+        pl.scan_parquet(path, decryption=basic_decryption_properties()).collect()
+    decryption_properties = pl.ParquetDecryptionProperties(
+        footer_key=FOOTER_KEY,
+        column_keys={"secret": COLUMN_KEY},
+        aad_prefix=AAD_PREFIX,
+    )
+    df = pl.read_parquet(path, decryption=decryption_properties)
+    assert_frame_equal(df, basic_data())
+
+
+def test_serialize_reencrypt(tmp_path: Path) -> None:
+    source = tmp_path / "source.parquet"
+    basic_data().write_parquet(
+        source,
+        encryption=pl.ParquetEncryptionProperties(footer_key=AES_256_KEY),
+        **WRITE_OPTIONS,
+    )
+    path = tmp_path / "out.parquet"
+    lf = pl.scan_parquet(
+        source,
+        decryption=pl.ParquetDecryptionProperties(footer_key=AES_256_KEY),
+    ).sink_parquet(
+        path, encryption=basic_encryption_properties(), lazy=True, **WRITE_OPTIONS
+    )
+
+    serde_round_trip(lf).collect()
+
     assert_basic_encryption(path)
 
 
