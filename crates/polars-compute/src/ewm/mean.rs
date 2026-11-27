@@ -71,8 +71,16 @@ where
                 if let Some(new_v) = opt_v {
                     let new_weight = self.weight + new_value_weight;
 
-                    self.weighted_mean = self.weighted_mean
-                        + (new_v - self.weighted_mean) * (new_value_weight / new_weight);
+                    let new_value_frac = new_value_weight / new_weight;
+                    let mut new_mean =
+                        self.weighted_mean + (new_v - self.weighted_mean) * new_value_frac;
+                    if !new_mean.is_finite() && new_v.is_finite() && self.weighted_mean.is_finite()
+                    {
+                        // `new_v - weighted_mean` overflowed, the mean itself is in range.
+                        new_mean = self.weighted_mean * (self.weight / new_weight)
+                            + new_v * new_value_frac;
+                    }
+                    self.weighted_mean = new_mean;
 
                     self.weight = if self.adjust {
                         self.weight + T::one()
