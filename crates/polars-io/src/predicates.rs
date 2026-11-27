@@ -46,6 +46,9 @@ pub struct ColumnPredicateExpr {
     /// Lets dictionary values be compared as strings, without adding them to the categories.
     #[cfg(feature = "parquet")]
     dictionary_needles: Option<DictionaryNeedles>,
+    /// Whether `expr` can raise on some value, e.g. a strict cast.
+    #[cfg(feature = "parquet")]
+    fallible: bool,
     expr: Arc<dyn PhysicalIoExpr>,
 }
 
@@ -56,6 +59,7 @@ impl ColumnPredicateExpr {
         source_arrow_dtype: ArrowDataType,
         expr: Arc<dyn PhysicalIoExpr>,
         specialized: Option<SpecializedColumnPredicate>,
+        fallible: bool,
     ) -> Self {
         use SpecializedColumnPredicate as S;
         #[cfg(feature = "parquet")]
@@ -129,6 +133,8 @@ impl ColumnPredicateExpr {
             specialized,
             #[cfg(feature = "parquet")]
             dictionary_needles,
+            #[cfg(feature = "parquet")]
+            fallible,
             expr,
         };
         // Values that are not in an Enum are read as null, which this predicate can keep.
@@ -202,6 +208,11 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     }
 
     fn can_evaluate_null_slots(&self) -> bool {
+        // A placeholder under a null row is no value of the column, e.g. an empty string, so a
+        // predicate that can raise could raise on it.
+        if self.fallible {
+            return false;
+        }
         // Evaluating dictionary values adds them to the categories.
         self.dictionary_needles.is_some()
             || !matches!(self.source_arrow_dtype, ArrowDataType::Dictionary(..))
@@ -396,6 +407,8 @@ pub struct ColumnPredicate {
     /// The static conjuncts, conjoined. `None` when the column only has dynamic ones.
     pub predicate: Option<Arc<dyn PhysicalIoExpr>>,
     pub specialized: Option<SpecializedColumnPredicate>,
+    /// Whether `predicate` can raise on some value, e.g. a strict cast.
+    pub fallible: bool,
     /// The conjuncts a producer sets at run time, each on its own.
     pub dynamic: Vec<DynamicColumnPredicate>,
 }
