@@ -230,3 +230,17 @@ def test_unnest_with_ordinality() -> None:
     assert df.sql(query).rows() == [(1, 1), (2, 2)]
     with pytest.raises(SQLInterfaceError, match="is a column already"):
         df.sql("SELECT * FROM self CROSS JOIN UNNEST(xs) WITH ORDINALITY AS u(x)")
+
+
+def test_cross_join_unnest_same_column_twice() -> None:
+    df = pl.DataFrame({"id": [1, 2], "arr": [[1, 2], [3]]})
+    res = df.sql("SELECT id, a, b FROM self CROSS JOIN UNNEST(arr, arr) AS u(a, b)")
+    expected = pl.DataFrame({"id": [1, 1, 2], "a": [1, 2, 3], "b": [1, 2, 3]})
+    assert_frame_equal(res, expected)
+
+    with pytest.raises(SQLSyntaxError, match="distinct alias"):
+        df.sql("SELECT * FROM self CROSS JOIN UNNEST(arr, arr) AS u")
+
+    # the copy's alias must not silently overwrite an existing column
+    with pytest.raises(pl.exceptions.DuplicateError, match="'id' is duplicate"):
+        df.sql("SELECT * FROM self CROSS JOIN UNNEST(arr, arr) AS u(a, id)")

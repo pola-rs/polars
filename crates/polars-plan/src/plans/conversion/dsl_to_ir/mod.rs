@@ -1388,6 +1388,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                     let existing_lut =
                         PlIndexSet::from_iter(existing.iter().map(PlSmallStr::as_str));
+                    polars_ensure!(
+                        existing_lut.len() == existing.len(),
+                        Duplicate: "cannot rename the same column more than once in a single rename"
+                    );
 
                     let mut schema = Schema::with_capacity(input_schema.len());
                     let mut num_replaced = 0;
