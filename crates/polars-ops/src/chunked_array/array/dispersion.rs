@@ -1,4 +1,5 @@
 use num_traits::FromPrimitive;
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_utils::float16::pf16;
 
 use super::*;
@@ -55,12 +56,36 @@ pub(super) fn median_with_nulls(ca: &ArrayChunked) -> PolarsResult<Series> {
                 .with_name(ca.name().clone());
             out.into_series()
         },
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Date => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| s.as_ref().median().map(|v| (v * (US_IN_DAY as f64)) as i64))
+                })
+                .with_name(ca.name().clone());
+            out.into_datetime(TimeUnit::Microseconds, None)
+                .into_series()
+        },
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(tu, tz) => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().median().map(|v| v as i64)))
+                .with_name(ca.name().clone());
+            out.into_datetime(*tu, tz.clone()).into_series()
+        },
         #[cfg(feature = "dtype-duration")]
         DataType::Duration(tu) => {
             let out: Int64Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().median().map(|v| v as i64)))
                 .with_name(ca.name().clone());
             out.into_duration(*tu).into_series()
+        },
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().median().map(|v| v as i64)))
+                .with_name(ca.name().clone());
+            out.into_time().into_series()
         },
         _ => {
             let out: Float64Chunked = ca

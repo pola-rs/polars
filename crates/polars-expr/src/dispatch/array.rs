@@ -70,11 +70,11 @@ pub(super) fn length(s: &Column) -> PolarsResult<Column> {
 }
 
 pub(super) fn max(s: &Column) -> PolarsResult<Column> {
-    Ok(s.array()?.array_max().into())
+    s.array()?.array_max().map(Column::from)
 }
 
 pub(super) fn min(s: &Column) -> PolarsResult<Column> {
-    Ok(s.array()?.array_min().into())
+    s.array()?.array_min().map(Column::from)
 }
 
 pub(super) fn sum(s: &Column) -> PolarsResult<Column> {

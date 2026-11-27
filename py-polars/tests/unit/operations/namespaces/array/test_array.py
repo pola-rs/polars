@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -887,6 +888,96 @@ def test_arr_first_max_after_null_gather_30273() -> None:
     s = pl.Series([[1, 2], [3, 4]], dtype=pl.Array(pl.Int64, 2)).gather(idx)
     assert s.arr.first().to_list() == [1, None, 3]
     assert s.arr.max().to_list() == [2, None, 4]
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        ([datetime.date(2024, 3, 1), datetime.date(2024, 1, 1)], pl.Date),
+        (
+            [datetime.datetime(2024, 3, 1), datetime.datetime(2024, 1, 1)],
+            pl.Datetime("ns"),
+        ),
+        (
+            [datetime.datetime(2024, 3, 1), datetime.datetime(2024, 1, 1)],
+            pl.Datetime("us", "Europe/Amsterdam"),
+        ),
+        ([datetime.timedelta(3), datetime.timedelta(1)], pl.Duration("ms")),
+        ([datetime.time(3), datetime.time(1)], pl.Time),
+        ([Decimal("1.50"), Decimal("-2.50")], pl.Decimal(10, 2)),
+        (["b", "a"], pl.String),
+        ([True, False], pl.Boolean),
+        (["z", "a"], pl.Enum(["a", "z"])),
+    ],
+)
+def test_arr_min_max_non_numeric_30760(values: list[Any], dtype: pl.DataType) -> None:
+    hi, lo = values
+    s = pl.Series(
+        "a",
+        [[hi, lo, None], None, [None, None, None], [lo, hi, lo]],
+        dtype=pl.Array(dtype, 3),
+    )
+    lf = (
+        s.to_frame().lazy().select(min=pl.col("a").arr.min(), max=pl.col("a").arr.max())
+    )
+    expected = pl.DataFrame(
+        {"min": [lo, None, None, lo], "max": [hi, None, None, hi]},
+        schema={"min": dtype, "max": dtype},
+    )
+    assert lf.collect_schema() == expected.schema
+    assert_frame_equal(lf.collect(), expected)
+
+    as_list = s.cast(pl.List(dtype))
+    assert_series_equal(s.arr.min(), as_list.list.min())
+    assert_series_equal(s.arr.max(), as_list.list.max())
+
+
+def test_arr_min_max_categorical_lexical_30760() -> None:
+    s = pl.Series("a", [["z", "a", None], None], dtype=pl.Array(pl.Categorical, 3))
+    assert s.arr.min().to_list() == ["a", None]
+    assert s.arr.max().to_list() == ["z", None]
+    assert s.arr.min().dtype == pl.Categorical
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "expected", "out_dtype"),
+    [
+        (
+            [datetime.date(2024, 1, 1), datetime.date(2024, 1, 2)],
+            pl.Date,
+            datetime.datetime(2024, 1, 1, 12),
+            pl.Datetime("us"),
+        ),
+        (
+            [datetime.datetime(2024, 1, 1), datetime.datetime(2024, 1, 3)],
+            pl.Datetime("ns"),
+            datetime.datetime(2024, 1, 2),
+            pl.Datetime("ns"),
+        ),
+        (
+            [datetime.time(1), datetime.time(3)],
+            pl.Time,
+            datetime.time(2),
+            pl.Time,
+        ),
+        (
+            [datetime.timedelta(1), datetime.timedelta(3)],
+            pl.Duration("ms"),
+            datetime.timedelta(2),
+            pl.Duration("ms"),
+        ),
+    ],
+)
+def test_arr_median_temporal_29475(
+    values: list[Any], dtype: pl.DataType, expected: Any, out_dtype: pl.DataType
+) -> None:
+    s = pl.Series("a", [values, None], dtype=pl.Array(dtype, 2))
+    lf = s.to_frame().lazy().select(pl.col("a").arr.median())
+    out = lf.collect()
+    assert lf.collect_schema()["a"] == out_dtype
+    assert out.schema["a"] == out_dtype
+    assert out["a"].to_list() == [expected, None]
+    assert_series_equal(out["a"], s.cast(pl.List(dtype)).list.median())
 
 
 @pytest.mark.parametrize(
