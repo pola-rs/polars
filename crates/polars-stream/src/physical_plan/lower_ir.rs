@@ -1198,6 +1198,7 @@ fn lower_ir_inner(
                         cloud_options,
                         file_projection_builder,
                         output_schema: output_schema.clone(),
+                        output_schema_after_predicate: None,
                         row_index: None,
                         pre_slice,
                         predicate,
