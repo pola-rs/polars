@@ -558,6 +558,10 @@ pub struct CastColumnsPolicy {
     /// the precision of decimals with equal scale.
     pub integer_upcast: bool,
 
+    /// Protocol-limited Delta type widening (private scan planner option).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub delta_type_widening: bool,
+
     /// Allow casting integers to floats.
     #[cfg_attr(feature = "serde", serde(default))]
     pub integer_to_float_cast: bool,
@@ -601,6 +605,7 @@ impl CastColumnsPolicy {
     /// Configuration variant that defaults to raising on mismatch.
     pub const ERROR_ON_MISMATCH: Self = Self {
         integer_upcast: false,
+        delta_type_widening: false,
         integer_to_float_cast: false,
         float_upcast: false,
         float_downcast: false,
@@ -636,6 +641,11 @@ pub enum ExtraColumnsPolicy {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ColumnMapping {
+    /// Delta name mode always resolves physical names, even in files carrying IDs.
+    Delta {
+        schema: IcebergSchemaRef,
+        by_name: bool,
+    },
     Iceberg {
         schema: IcebergSchemaRef,
         /// Whether the table has a name mapping (`schema.name-mapping.default`), which data
@@ -1253,6 +1263,10 @@ impl CastColumnsPolicy {
             };
         }
 
+        if self.delta_type_widening && delta_cast_is_lossless(incoming_dtype, target_dtype) {
+            return Ok(true);
+        }
+
         // Decimal precision widening with equal scale (allowed Iceberg type promotion).
         #[cfg(feature = "dtype-decimal")]
         if let (
@@ -1371,5 +1385,29 @@ impl CastColumnsPolicy {
         }
 
         mismatch_err("")
+    }
+}
+
+/// Lossless promotions permitted by the Delta reader protocol beyond normal scan widening.
+pub fn delta_cast_is_lossless(incoming: &DataType, target: &DataType) -> bool {
+    use DataType::*;
+    match (incoming, target) {
+        (Int8 | Int16 | Int32, Float64) => true,
+        #[cfg(feature = "dtype-datetime")]
+        (Date, Datetime(TimeUnit::Microseconds, None)) => true,
+        #[cfg(feature = "dtype-decimal")]
+        (Decimal(p, s), Decimal(q, t)) => t >= s && q >= p && q - p >= t - s && *q <= 38,
+        #[cfg(feature = "dtype-decimal")]
+        (Int8 | Int16 | Int32 | Int64, Decimal(p, s)) => {
+            let digits = match incoming {
+                Int8 => 3,
+                Int16 => 5,
+                Int32 => 10,
+                Int64 => 20,
+                _ => unreachable!(),
+            };
+            *p <= 38 && *p >= *s && p - s >= digits
+        },
+        _ => false,
     }
 }

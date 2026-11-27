@@ -129,6 +129,9 @@ impl ColumnSelector {
                     #[cfg(feature = "dtype-map")]
                     TF::MapValuesMapping { .. } => input,
 
+                    #[cfg(feature = "dtype-map")]
+                    TF::MapKeysMapping { .. } => input,
+
                     TF::FullNull { dtype } => TF::FullNull {
                         dtype: null_count_dtype(dtype),
                     }

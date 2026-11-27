@@ -338,7 +338,7 @@ pub fn optimize(
     if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins {
         join_build_side::set_join_build_sides(root, ir_arena, expr_arena);
         if opt_flags.streaming() {
-            join_runtime_filter::attach_join_runtime_filters(root, ir_arena, expr_arena);
+            join_runtime_filter::attach_join_runtime_filters(root, ir_arena, expr_arena, false);
         }
     }
 
@@ -346,18 +346,19 @@ pub fn optimize(
         cluster_with_columns::optimize(root, ir_arena, expr_arena)
     }
 
+    // A resolver's plan is only available once the resolvers are called, and the passes
+    // that follow them (late projection pushdown) must not see a plan that CSE has rewritten.
+    // So with resolvers, CSE runs after them.
+    let has_dsl_resolvers = match &get_or_init_members!().seen_dsl_resolvers {
+        Some(resolvers) => !resolvers.is_empty(),
+        // None records that equivalent resolver nodes were seen.
+        None => true,
+    };
+
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
-    if comm_subexpr_elim {
-        let mut optimizer = CommonSubExprOptimizer::new(
-            opt_flags.contains(OptFlags::STREAMING) | opt_flags.contains(OptFlags::GPU),
-        );
-        let ir_node = IRNode::new_mutate(root);
-
-        root = try_with_ir_arena(ir_arena, expr_arena, |arena| {
-            let rewritten = ir_node.rewrite(&mut optimizer, arena)?;
-            Ok(rewritten.node())
-        })?;
+    if comm_subexpr_elim && !has_dsl_resolvers {
+        root = common_subexpr_elim(root, ir_arena, expr_arena, &opt_flags)?;
     }
 
     let has_windows = opt_flags.streaming()
@@ -433,6 +434,29 @@ pub fn optimize(
 
     call_dsl_resolvers::call_dsl_resolvers(root, ir_arena, expr_arena, opt_flags, hooks)?;
 
+    // Resolver scans are available only now. Attach filters solely to joins
+    // containing them; existing runtime filters and cache boundaries are retained.
+    if opt_flags.contains(OptFlags::ROW_ESTIMATE)
+        && opt_flags.streaming()
+        && get_or_init_members!().has_joins
+        && has_dsl_resolvers
+    {
+        join_runtime_filter::attach_join_runtime_filters(root, ir_arena, expr_arena, true);
+    }
+
+    // Nested field selections were opaque to the first projection pass. Resolved
+    // resolver nodes are transparent to the existing pass, including its cache
+    // coordination and schema refresh. Run after late runtime filters so their
+    // residual predicates retain every required column.
+    if has_dsl_resolvers && opt_flags.projection_pushdown() {
+        projection_pushdown(root, ir_arena, expr_arena, has_recursive, !opt_flags.gpu());
+    }
+
+    #[cfg(feature = "cse")]
+    if comm_subexpr_elim && has_dsl_resolvers {
+        root = common_subexpr_elim(root, ir_arena, expr_arena, &opt_flags)?;
+    }
+
     // Needs the final plan, with the predicates that are set while the query runs.
     if has_recursive {
         recursive_caches::cache_round_independent_parts(root, ir_arena, expr_arena);
@@ -462,6 +486,24 @@ pub fn optimize(
     };
 
     Ok(root)
+}
+
+#[cfg(feature = "cse")]
+fn common_subexpr_elim(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    opt_flags: &OptFlags,
+) -> PolarsResult<Node> {
+    let mut optimizer = CommonSubExprOptimizer::new(
+        opt_flags.contains(OptFlags::STREAMING) | opt_flags.contains(OptFlags::GPU),
+    );
+    let ir_node = IRNode::new_mutate(root);
+
+    try_with_ir_arena(ir_arena, expr_arena, |arena| {
+        let rewritten = ir_node.rewrite(&mut optimizer, arena)?;
+        Ok(rewritten.node())
+    })
 }
 
 fn _get_or_init_members<'a>(

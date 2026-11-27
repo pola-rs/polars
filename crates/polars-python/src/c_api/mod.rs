@@ -298,6 +298,24 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::sql_expr))
         .unwrap();
 
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add_wrapped(wrap_pyfunction!(
+        crate::io::delta_plugin::_delta_plugin_scan
+    ))
+    .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add_wrapped(wrap_pyfunction!(
+        crate::io::delta_plugin::_delta_plugin_register_decoder
+    ))
+    .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add_wrapped(wrap_pyfunction!(
+        crate::io::delta_plugin::_delta_plugin_decoder_registered
+    ))
+    .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    crate::io::delta_plugin::install_decoder_loader(py)?;
+
     // Functions - I/O
     m.add_wrapped(wrap_pyfunction!(functions::_has_writable_scheme))
         .unwrap();
@@ -324,6 +342,11 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         crate::io::iceberg_plugin::SUPPORTED_IDS
             .iter()
             .map(|id| id.as_str())
+            .chain(
+                crate::io::delta_plugin::SUPPORTED_IDS
+                    .iter()
+                    .map(|id| id.to_str().unwrap()),
+            )
             .collect::<Vec<_>>(),
     )
     .unwrap();

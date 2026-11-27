@@ -115,7 +115,12 @@ def _scan_pyarrow_dataset_impl(
                     batch = batch.slice(0, remaining)
                 remaining -= batch.num_rows
 
-            yield pl.from_arrow(batch)  # type: ignore[misc]
+            # Arrow retains row counts without columns; from_arrow cannot infer
+            # that height from the empty column sequence.
+            if batch.num_columns == 0:
+                yield pl.DataFrame(height=batch.num_rows)
+            else:
+                yield pl.from_arrow(batch)  # type: ignore[misc]
 
     applies_predicate_in_this_function = filter_ is not None
     return frames(), applies_predicate_in_this_function

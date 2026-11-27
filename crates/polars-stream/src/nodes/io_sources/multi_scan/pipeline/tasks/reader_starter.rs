@@ -475,6 +475,8 @@ async fn start_reader_impl(
     let file_iceberg_schema: Option<IcebergSchema> = if let ProjectionBuilder::Iceberg {
         projected_iceberg_schema,
         table_has_name_mapping,
+        force_name_mapping,
+        strict_ids,
         ..
     } = &file_projection_builder
     {
@@ -482,6 +484,18 @@ async fn start_reader_impl(
             .file_arrow_schema()
             .await?
             .map(|x| {
+                if *strict_ids {
+                    return IcebergSchema::from_arrow_schema_with_strict_ids(
+                        x.as_ref(),
+                        projected_iceberg_schema,
+                    );
+                }
+                if *force_name_mapping {
+                    return IcebergSchema::from_arrow_schema_with_physical_names(
+                        x.as_ref(),
+                        projected_iceberg_schema,
+                    );
+                }
                 IcebergSchema::from_arrow_schema_with_name_mapping(
                     x.as_ref(),
                     projected_iceberg_schema,

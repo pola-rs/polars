@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import importlib
-import importlib.util
+import contextlib
+import os
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.expired import RemovedParameter, removed_parameters
-from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
-from polars.io.delta._dataset import DeltaDataset
+from polars.io.delta._scan_resolver import DeltaScanResolver
 
 if TYPE_CHECKING:
     from datetime import datetime
-    from pathlib import Path
     from typing import Literal
 
     from deltalake import DeltaTable
@@ -29,7 +27,7 @@ if TYPE_CHECKING:
     ),
 )
 def read_delta(
-    source: str | Path | DeltaTable,
+    source: str | os.PathLike[str] | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
@@ -57,7 +55,7 @@ def read_delta(
     columns
         Columns to select. Accepts a list of column names.
     storage_options
-        Extra options for the storage backends supported by `deltalake`.
+        Storage options for native Polars reads or the `deltalake` fallback.
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here
@@ -71,7 +69,7 @@ def read_delta(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     delta_table_options
-        Additional keyword arguments while reading a Delta lake Table.
+        Additional keyword arguments passed to `deltalake.DeltaTable`.
     use_pyarrow
         Flag to enable pyarrow dataset reads.
     pyarrow_options
@@ -136,16 +134,6 @@ def read_delta(
     ...     "AZURE_STORAGE_ACCOUNT_KEY": "AZURE_STORAGE_ACCOUNT_KEY",
     ... }
     >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
-
-    Reads a Delta table with additional delta specific options. In the below example,
-    `without_files` option is used which loads the table without file tracking
-    information.
-
-    >>> table_path = "/path/to/delta-table/"
-    >>> delta_table_options = {"without_files": True}
-    >>> pl.read_delta(
-    ...     table_path, delta_table_options=delta_table_options
-    ... )  # doctest: +SKIP
     """
     lf = scan_delta(
         source=source,
@@ -171,7 +159,7 @@ def read_delta(
     ),
 )
 def scan_delta(
-    source: str | Path | DeltaTable,
+    source: str | os.PathLike[str] | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     storage_options: StorageOptionsDict | None = None,
@@ -198,7 +186,7 @@ def scan_delta(
         Note: If `version` is not provided, the latest version of delta lake
         table is read.
     storage_options
-        Extra options for the storage backends supported by `deltalake`.
+        Storage options for native Polars reads or the `deltalake` fallback.
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here
@@ -212,7 +200,7 @@ def scan_delta(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     delta_table_options
-        Additional keyword arguments while reading a Delta lake Table.
+        Additional keyword arguments passed to `deltalake.DeltaTable`.
     use_pyarrow
         Flag to enable pyarrow dataset reads.
     pyarrow_options
@@ -223,6 +211,18 @@ def scan_delta(
     Returns
     -------
     LazyFrame
+
+    Notes
+    -----
+    When a compatible `polars_delta` plugin is installed, Polars uses native Delta
+    planning. Set `POLARS_DELTA_PLANNER=plugin` to require it, or
+    `POLARS_DELTA_PLANNER=deltalake` to select the compatibility planner. Automatic
+    selection can fall back for unsupported features; invalid metadata and IO
+    failures are reported. `use_pyarrow=True` and writes continue to use deltalake.
+
+    URI scans keep the snapshot selected during resolution. A supplied `DeltaTable`
+    without an explicit version follows updates to that object's loaded version.
+    If its schema changes, construct a new scan. An explicit version remains fixed.
 
     Examples
     --------
@@ -285,29 +285,24 @@ def scan_delta(
     >>> pl.scan_delta(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
-
-    Creates a scan for a Delta table with additional delta specific options.
-    In the below example, `without_files` option is used which loads the table without
-    file tracking information.
-
-    >>> table_path = "/path/to/delta-table/"
-    >>> delta_table_options = {"without_files": True}
-    >>> pl.scan_delta(
-    ...     table_path, delta_table_options=delta_table_options
-    ... ).collect()  # doctest: +SKIP
     """
-    from polars._plr import PyLazyFrame
     from polars.io.cloud.credential_provider._builder import (
         _init_credential_provider_builder,
     )
 
     table: DeltaTable | None = None
 
-    if importlib.util.find_spec("deltalake") is not None:
+    # Path scans must work without importing (or installing) deltalake.
+    if isinstance(source, os.PathLike) and isinstance(os.fspath(source), str):
+        source = os.fspath(source)
+    if not isinstance(source, str):
         from deltalake import DeltaTable
 
         if isinstance(source, DeltaTable):
             table = source
+        else:
+            msg = "source must be a path or DeltaTable"
+            raise TypeError(msg)
 
     if table is None:
         credential_provider_builder = _init_credential_provider_builder(
@@ -329,7 +324,7 @@ def scan_delta(
             **(storage_options or {}),
         }
 
-    dataset = DeltaDataset(
+    dataset = DeltaScanResolver(
         table_=NoPickleOption(table),
         table_uri_=str(source) if table is None else None,
         version=version,
@@ -340,4 +335,14 @@ def scan_delta(
         pyarrow_options=pyarrow_options,
     )
 
-    return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))
+    if not use_pyarrow:
+        # Choose the planner here, so that a warning about an unusable plugin is
+        # attributed to the caller rather than to the thread resolving the scan.
+        # A restored scan chooses again when it is resolved.
+        from polars.io.delta._plugin import use_plugin_planner
+
+        # An invalid environment value raises when the scan is collected.
+        with contextlib.suppress(ValueError):
+            dataset._plugin_enabled = use_plugin_planner()
+
+    return dataset.lazy()

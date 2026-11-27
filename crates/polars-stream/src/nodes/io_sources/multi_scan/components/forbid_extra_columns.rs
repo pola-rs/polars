@@ -24,7 +24,9 @@ impl ForbidExtraColumns {
         }
 
         Some(match column_mapping {
-            Some(ColumnMapping::Iceberg { schema, .. }) => Self::Iceberg(schema.clone()),
+            Some(ColumnMapping::Iceberg { schema, .. } | ColumnMapping::Delta { schema, .. }) => {
+                Self::Iceberg(schema.clone())
+            },
             None => Self::Plain(full_file_schema.clone()),
         })
     }

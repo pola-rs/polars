@@ -1,0 +1,396 @@
+mod convert;
+mod host;
+mod schema;
+use std::ffi::CStr;
+use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+use std::sync::{Arc, Condvar, Mutex};
+
+use polars::prelude::CloudScheme;
+use polars::prelude::deletion::{DeltaDeletionVectorDecoder, set_delta_deletion_vector_decoder};
+use polars_arrow::bitmap::Bitmap;
+use polars_buffer::SharedStorage;
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
+use polars_io_ext_ffi::common::{FfiError, FfiErrorKind, FfiSlice};
+use polars_io_ext_ffi::delta_v1;
+use pyo3::prelude::*;
+use pyo3::types::{PyCapsule, PyCapsuleMethods};
+
+use super::iceberg_plugin::metadata_cache::{PyIcebergMetadataFileCache, ScopedMetadataCache};
+use crate::error::PyPolarsErr;
+use crate::io::cloud_options::OptPyCloudOptions;
+use crate::lazyframe::PyLazyFrame;
+use crate::utils::EnterPolarsExt;
+
+/// Delta plugin IDs this Polars can call, oldest first. Removing an ID drops support for
+/// plugins that only provide it.
+pub const SUPPORTED_IDS: &[&CStr] = &[delta_v1::ID];
+
+/// Python distribution name of the plugin, for error messages.
+const PLUGIN_NAME: &str = "polars_delta";
+
+enum Dispatch {
+    V2(&'static delta_v1::Plugin),
+}
+
+fn dispatch(capsule: &Bound<'_, PyCapsule>) -> PolarsResult<Dispatch> {
+    // SAFETY: Plugin capsule names are static; the name is only used during this call.
+    let name = capsule
+        .name()
+        .map_err(|e| polars_err!(ComputeError: "invalid {PLUGIN_NAME} capsule: {e}"))?
+        .map(|n| unsafe { n.as_cstr() }.to_owned());
+
+    match name.as_deref() {
+        Some(id) if id == delta_v1::ID => {
+            let ptr = capsule
+                .pointer_checked(Some(id))
+                .map_err(|e| polars_err!(ComputeError: "invalid {PLUGIN_NAME} capsule: {e}"))?;
+            // SAFETY: A capsule with this name points to a static `delta_v1::Plugin`, and plugin
+            // extension modules are never unloaded.
+            Ok(Dispatch::V2(unsafe {
+                &*(ptr.as_ptr() as *const delta_v1::Plugin)
+            }))
+        },
+        _ => polars_bail!(
+            ComputeError:
+            "unsupported {PLUGIN_NAME} plugin ID {}; this Polars supports {:?}",
+            name.map_or_else(|| "<none>".to_owned(), |n| format!("{:?}", n.to_string_lossy())),
+            SUPPORTED_IDS.iter().map(|id| id.to_str().unwrap()).collect::<Vec<_>>()
+        ),
+    }
+}
+
+/// Serves deletion-vector decoding from the plugin's vtable; registered with the host's scan
+/// engine, which does all I/O itself.
+struct PluginDecoder(&'static delta_v1::Plugin);
+
+fn keep_mask_to_bitmap(mask: delta_v1::KeepMask) -> PolarsResult<Bitmap> {
+    let len = usize::try_from(mask.len)
+        .ok()
+        .filter(|len| len.div_ceil(8) <= mask.bytes.len())
+        .ok_or_else(|| polars_err!(ComputeError: "{PLUGIN_NAME}: invalid keep mask length"))?;
+    // The buffer stays owned by the plugin's allocator (released through its callback when the
+    // bitmap's last reference drops): no copy. The plugin module is never unloaded.
+    let storage = SharedStorage::from_owner(mask.bytes);
+    // SAFETY: `len` bits fit in the storage, checked above.
+    Ok(unsafe { Bitmap::from_inner_unchecked(storage, 0, len, None) })
+}
+
+fn decode_err(e: FfiError) -> PolarsError {
+    polars_err!(ComputeError: "{}", e.message())
+}
+
+impl DeltaDeletionVectorDecoder for PluginDecoder {
+    fn decode_inline(
+        &self,
+        data: &[u8],
+        size: u32,
+        cardinality: u64,
+        max_rows: usize,
+    ) -> PolarsResult<Bitmap> {
+        let mask = unsafe {
+            (self.0.decode_inline)(FfiSlice::new(data), size, cardinality, max_rows as u64)
+        }
+        .into_result()
+        .map_err(decode_err)?;
+        keep_mask_to_bitmap(mask)
+    }
+
+    fn decode_frame(
+        &self,
+        frame: &[u8],
+        offset: u64,
+        expected_size: u32,
+        cardinality: u64,
+        max_rows: usize,
+    ) -> PolarsResult<Bitmap> {
+        let mask = unsafe {
+            (self.0.decode_frame)(
+                FfiSlice::new(frame),
+                offset,
+                expected_size,
+                cardinality,
+                max_rows as u64,
+            )
+        }
+        .into_result()
+        .map_err(decode_err)?;
+        keep_mask_to_bitmap(mask)
+    }
+
+    fn check_file_version(&self, header: &[u8]) -> PolarsResult<()> {
+        unsafe { (self.0.check_file_version)(FfiSlice::new(header)) }
+            .into_result()
+            .map_err(decode_err)
+    }
+}
+
+fn register_decoder(plugin: &'static delta_v1::Plugin) {
+    set_delta_deletion_vector_decoder(Arc::new(PluginDecoder(plugin)));
+}
+
+/// Loads the decoder run on Rust threads, and whether the interpreter is about to shut down.
+/// Python state must not be touched by a foreign thread once finalization begins: CPython aborts
+/// ("the GIL is released", "thread state must be current"), and `Py_IsFinalizing` alone leaves a
+/// window between the check and taking the GIL. So an `atexit` hook, which runs before
+/// finalization, refuses new loads and waits for the running ones.
+static LOADS: Mutex<(bool, usize)> = Mutex::new((false, 0));
+static LOADS_DONE: Condvar = Condvar::new();
+
+struct LoadGuard;
+
+impl LoadGuard {
+    /// `None` once the interpreter is shutting down.
+    fn begin() -> Option<Self> {
+        let mut loads = LOADS.lock().unwrap();
+        if loads.0 {
+            return None;
+        }
+        loads.1 += 1;
+        Some(Self)
+    }
+}
+
+impl Drop for LoadGuard {
+    fn drop(&mut self) {
+        LOADS.lock().unwrap().1 -= 1;
+        LOADS_DONE.notify_all();
+    }
+}
+
+/// `atexit` hook: no decoder load starts after this, and none is running when it returns.
+#[pyfunction]
+fn _delta_plugin_stop_loading(py: Python<'_>) {
+    py.detach(|| {
+        let mut loads = LOADS.lock().unwrap();
+        loads.0 = true;
+        while loads.1 > 0 {
+            loads = LOADS_DONE.wait(loads).unwrap();
+        }
+    });
+}
+
+/// Make scans find the decoder in a process that did not resolve the plan: on first need, import
+/// the Python layer and let it load the installed plugin. Called at module init.
+pub fn install_decoder_loader(py: Python<'_>) -> PyResult<()> {
+    py.import("atexit")?.call_method1(
+        "register",
+        (wrap_pyfunction!(_delta_plugin_stop_loading, py)?,),
+    )?;
+    polars::prelude::deletion::set_delta_deletion_vector_decoder_loader(Box::new(|| {
+        // This runs on a blocking-pool thread that can outlive the interpreter (a scan collected
+        // from a daemon thread or an atexit hook): it must not attach once shutdown has begun.
+        let Some(_guard) = LoadGuard::begin() else {
+            return Err("the Python interpreter is shutting down".to_string());
+        };
+        // `attach` is reentrant for a thread that already holds the GIL.
+        Python::try_attach(|py| {
+            let reason = py
+                .import("polars.io.delta._plugin")
+                .and_then(|m| m.call_method0("dv_decoder_load_error"))
+                .and_then(|r| r.extract::<Option<String>>());
+            match reason {
+                Ok(None) => Ok(()),
+                Ok(Some(why)) => Err(why),
+                Err(e) => Err(format!("failed to load: {e}")),
+            }
+        })
+        .unwrap_or_else(|| Err("the Python interpreter is shutting down".to_string()))
+    }));
+    Ok(())
+}
+
+/// Register the plugin's deletion-vector decoder with the scan engine. Scans resolved by
+/// `deltalake` can have native descriptors too, so the Python layer calls this whenever the
+/// plugin is installed.
+#[pyfunction]
+pub fn _delta_plugin_register_decoder(capsule: &Bound<'_, PyAny>) -> PyResult<()> {
+    let capsule = capsule.cast::<PyCapsule>()?;
+    let Dispatch::V2(plugin) = dispatch(capsule).map_err(PyPolarsErr::from)?;
+    register_decoder(plugin);
+    Ok(())
+}
+
+/// Whether a deletion-vector decoder is registered.
+#[pyfunction]
+pub fn _delta_plugin_decoder_registered() -> bool {
+    polars::prelude::deletion::delta_deletion_vector_decoder().is_some()
+}
+
+/// A `scheme://` prefix whose scheme Polars does not know, or `hf://`, which the
+/// object store setup cannot open without resolving it first.
+fn has_unknown_scheme(uri: &str) -> bool {
+    let Some((scheme, _)) = uri.split_once("://") else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && scheme.len() > 1 // A single letter is a Windows drive.
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        && CloudScheme::from_path(uri).is_none_or(|s| matches!(s, CloudScheme::Hf))
+}
+
+#[pyfunction]
+#[pyo3(signature = (capsule, *, table_uri, version, timestamp_ms, projection, filter_columns, statistics_columns, limit, use_metadata_statistics, schema_only=false, verbose, testing_fail, storage_options, credential_provider, metadata_cache))]
+#[allow(clippy::too_many_arguments)]
+pub fn _delta_plugin_scan(
+    py: Python<'_>,
+    capsule: &Bound<'_, PyAny>,
+    table_uri: String,
+    version: Option<i64>,
+    timestamp_ms: Option<i64>,
+    projection: Option<Vec<String>>,
+    filter_columns: Option<Vec<String>>,
+    statistics_columns: Option<Vec<String>>,
+    limit: Option<u64>,
+    use_metadata_statistics: bool,
+    schema_only: bool,
+    verbose: bool,
+    testing_fail: Option<String>,
+    storage_options: OptPyCloudOptions,
+    credential_provider: Option<Py<PyAny>>,
+    metadata_cache: PyRef<'_, PyIcebergMetadataFileCache>,
+) -> PyResult<(PyLazyFrame, i64, String)> {
+    let capsule = capsule.cast::<PyCapsule>()?;
+    let Dispatch::V2(plugin) = dispatch(capsule).map_err(PyPolarsErr::from)?;
+    if has_unknown_scheme(&table_uri) {
+        // Otherwise it would be read as a local path. The Python resolver may fall back to
+        // deltalake, which has more storage backends.
+        return Err(pyo3::exceptions::PyNotImplementedError::new_err(format!(
+            "{PLUGIN_NAME}: delta: unsupported URI scheme in {table_uri:?}"
+        )));
+    }
+    register_decoder(plugin);
+    let cloud_options = storage_options
+        .extract_opt_cloud_options(CloudScheme::from_path(&table_uri), credential_provider)?;
+    let request = delta_v1::Request {
+        table_uri,
+        version,
+        timestamp_ms,
+        projection,
+        filter_columns,
+        statistics_columns,
+        limit,
+        max_threads: Some(polars_config::config().max_threads() as u64),
+        use_metadata_statistics,
+        fast_deletion_count: true,
+        schema_only,
+        verbose,
+        testing_fail,
+    };
+    let metadata_cache = ScopedMetadataCache {
+        cache: metadata_cache.0.clone(),
+        scope: BuildHasherDefault::<DefaultHasher>::default()
+            .hash_one(&cloud_options)
+            .to_string(),
+        stats: Default::default(),
+    };
+    let (lf, version, table_id) = py.enter_polars(move || {
+        let plan = |pinned_version: Option<i64>| {
+            let ctx = host::HostCtx {
+                cloud_options: cloud_options.clone(),
+                metadata_cache: Some(metadata_cache.clone()),
+                io_error_kinds: Default::default(),
+                pinned_version,
+                hint_served: Default::default(),
+                hint_read: Default::default(),
+            };
+            let host = ctx.host();
+            let mut stale_hint_possible = false;
+            let result = request
+                .with_ffi(|r| unsafe { (plugin.plan)(&host, r) })
+                .into_result()
+                .map_err(|e| {
+                    // What a stale hint causes: Kernel's invalid checkpoint (OTHER), a
+                    // checkpoint or commit gone (NOT_FOUND) or replaced (OBJECT_CHANGED).
+                    stale_hint_possible = request.testing_fail.is_none()
+                        && matches!(
+                            e.kind(),
+                            FfiErrorKind::OTHER
+                                | FfiErrorKind::NOT_FOUND
+                                | FfiErrorKind::OBJECT_CHANGED
+                        );
+                    let io_kind = ctx.io_error_kinds.kind_of(&e.message());
+                    ffi_to_polars_err(e, PLUGIN_NAME, io_kind)
+                });
+            let retry =
+                stale_hint_possible && ctx.hint_served.load(std::sync::atomic::Ordering::Relaxed);
+            let hint_read = ctx.hint_read.lock().unwrap().take();
+            (result, retry, hint_read)
+        };
+        // Only a plan pinned to the version a hint was recorded for may use it. A failure that
+        // followed one (the table was replaced or its checkpoint deleted) is retried reading it
+        // fresh.
+        let (output, retry, hint_read) = plan(version);
+        let (output, hint_read) = match output {
+            Err(_) if retry => match plan(None) {
+                (Ok(output), _, hint_read) => (output, hint_read),
+                (Err(e), _, hint_read) => {
+                    // Also failing fresh: do not plan from the cached hint again.
+                    if let Some(read) = hint_read {
+                        host::poison_hint(&metadata_cache, read);
+                    }
+                    return Err(e);
+                },
+            },
+            output => (output?, hint_read),
+        };
+        let record = |version: i64| {
+            if let Some(read) = hint_read {
+                host::record_hint(&metadata_cache, read, version);
+            }
+        };
+        if schema_only {
+            // An empty frame with the table's schema: the plan listed no files.
+            let (schema, version, table_id) = schema::schema_only(output)?;
+            record(version);
+            let lf = polars::prelude::IntoLazy::lazy(
+                polars::prelude::DataFrame::empty_with_schema(&schema),
+            );
+            return PolarsResult::Ok((lf, version, table_id));
+        }
+        let (dsl, version, table_id) = convert::build_scan(output, cloud_options)?;
+        record(version);
+        Ok((polars::prelude::LazyFrame::from(dsl), version, table_id))
+    })?;
+    Ok((lf.into(), version, table_id))
+}
+
+fn ffi_to_polars_err(
+    e: FfiError,
+    plugin: &str,
+    io_kind: Option<std::io::ErrorKind>,
+) -> PolarsError {
+    if e.kind() == FfiErrorKind::INVALID_INPUT {
+        // Invalid user input (e.g. an unknown snapshot ID) is reported as a `ValueError` with the
+        // plugin's message.
+        return pyo3::exceptions::PyValueError::new_err(e.message()).into();
+    }
+    if e.kind() == FfiErrorKind::NOT_IMPLEMENTED {
+        // Unsupported table features are raised as `NotImplementedError`,
+        // on which the Delta resolver may fall back unless the plugin is required.
+        return pyo3::exceptions::PyNotImplementedError::new_err(format!(
+            "{plugin}: {}",
+            e.message()
+        ))
+        .into();
+    }
+    let io_kind = match e.kind() {
+        FfiErrorKind::NOT_FOUND => Some(std::io::ErrorKind::NotFound),
+        FfiErrorKind::OBJECT_CHANGED => Some(std::io::ErrorKind::Other),
+        // Storage errors keep their Python exception type (e.g. `PermissionError`), as with the
+        // deltalake planner.
+        FfiErrorKind::IO => Some(
+            io_kind
+                .filter(|k| *k != std::io::ErrorKind::NotFound)
+                .unwrap_or(std::io::ErrorKind::Other),
+        ),
+        _ => None,
+    };
+    if let Some(kind) = io_kind {
+        return std::io::Error::new(kind, format!("{plugin}: {}", e.message())).into();
+    }
+    polars_err!(
+        ComputeError: "{} failed ({}): {}",
+        plugin, e.kind().name(), e.message()
+    )
+}

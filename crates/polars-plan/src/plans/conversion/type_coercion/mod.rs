@@ -43,6 +43,7 @@ pub struct TypeCoercionRule {}
 /// that kind of cast strict; it does not make the cast raise.
 const RELAXED_CAST_POLICY: CastColumnsPolicy = CastColumnsPolicy {
     integer_upcast: true,
+    delta_type_widening: false,
     integer_to_float_cast: false,
     float_upcast: true,
     float_downcast: true,

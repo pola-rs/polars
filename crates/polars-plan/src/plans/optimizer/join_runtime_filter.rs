@@ -67,6 +67,7 @@ pub(super) fn attach_join_runtime_filters(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    resolved_resolver_only: bool,
 ) {
     if !polars_config::config().join_runtime_filters() {
         return;
@@ -75,22 +76,43 @@ pub(super) fn attach_join_runtime_filters(
     // an outer one tries to carry a predicate through it.
     let mut joins = Vec::new();
     let mut has_pruning_scan = false;
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
+    let mut visited = PlIndexSet::default();
+    let mut resolver_subtrees = PlIndexSet::default();
+    let mut stack = vec![(root, false)];
+    while let Some((node, exit)) = stack.pop() {
         let ir = ir_arena.get(node);
+        let mut inputs = UnitVec::new();
+        ir.copy_inputs(&mut inputs);
+        if !exit {
+            if !visited.insert(node) {
+                continue;
+            }
+            stack.push((node, true));
+            stack.extend(inputs.iter().rev().map(|&input| (input, false)));
+            continue;
+        }
+        let has_resolver = matches!(
+            ir,
+            IR::Resolver {
+                resolved_ir: Some(_),
+                ..
+            }
+        ) || inputs.iter().any(|input| resolver_subtrees.contains(input));
+        if has_resolver {
+            resolver_subtrees.insert(node);
+        }
         match ir {
-            IR::Join { .. } => joins.push(node),
+            IR::Join { .. } if !resolved_resolver_only || has_resolver => joins.push(node),
             IR::Scan { scan_type, .. } => has_pruning_scan |= skips_batches(scan_type),
             _ => {},
         }
-        ir.copy_inputs(&mut stack);
     }
     if !has_pruning_scan {
         return;
     }
     let mut scratch = UnitVec::new();
     let mut stats = StatsCache::default();
-    for node in joins.into_iter().rev() {
+    for node in joins {
         process_join(node, ir_arena, expr_arena, &mut scratch, &mut stats);
     }
 }
@@ -112,7 +134,8 @@ fn process_join(
         return;
     };
     let (input_left, input_right) = (*input_left, *input_right);
-    if !is_eligible_join(options, expr_arena)
+    if !options.runtime_filters.is_empty()
+        || !is_eligible_join(options, expr_arena)
         || matches!(
             options.args.build_side,
             Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight)
@@ -410,6 +433,10 @@ fn scan_origins(
                     }
                     continue 'paths;
                 },
+                IR::Resolver {
+                    resolved_ir: Some(input),
+                    ..
+                } => node = *input,
                 IR::Filter {
                     predicate: filter, ..
                 } if has_window(std::slice::from_ref(filter), expr_arena) => continue 'paths,
@@ -530,8 +557,12 @@ fn attach_to_scan(
     else {
         unreachable!()
     };
-    // Files are skipped by the scan predicate after these filters are attached.
-    debug_assert!(predicate_file_skip_applied.is_none());
+    // Late resolver attachment preserves static source pruning, but the new
+    // runtime predicate must still reach the reader even if the static predicate
+    // was completely satisfied by file pruning.
+    if let Some(skip) = predicate_file_skip_applied.as_mut() {
+        skip.no_residual_predicate = false;
+    }
     *existing = Some(match existing.take() {
         None => predicate,
         Some(existing) => {

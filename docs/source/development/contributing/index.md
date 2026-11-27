@@ -163,6 +163,18 @@ to conveniently run the following formatting and linting tools:
 
 If this all runs correctly, you're ready to start contributing to the Polars codebase!
 
+#### Building runtime source distributions
+
+Build a runtime source archive with maturin from the repository root:
+
+```bash
+maturin sdist --manifest-path py-polars/runtime/polars-runtime-32/Cargo.toml --out dist
+```
+
+Use the corresponding manifest for the other runtime variants or I/O plugins. Raw archives include
+the required local dependency sources; no workspace-normalization step is needed. They include
+`polars-delta` source, but host builds compile only its codec unless planner features are selected.
+
 #### Updating the development environment
 
 Dependencies are updated regularly - at least once per month. If you do not keep your environment

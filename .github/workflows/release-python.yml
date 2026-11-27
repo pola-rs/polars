@@ -22,6 +22,10 @@ on:
         description: Allow unreleased polars-iceberg changes
         type: boolean
         default: false
+      allow-unreleased-delta-changes:
+        description: Allow unreleased polars-delta changes
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -363,6 +367,7 @@ jobs:
     outputs:
       iceberg: ${{ steps.iceberg.outputs.version }}
       database: ${{ steps.database.outputs.version }}
+      delta: ${{ steps.delta.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -382,6 +387,13 @@ jobs:
           package: polars-database
           extra: database
 
+      - name: Get polars-delta version
+        id: delta
+        uses: ./.github/actions/optional-dependency-version
+        with:
+          package: polars-delta
+          extra: deltalake
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -396,12 +408,16 @@ jobs:
         env:
           DATABASE_VERSION: ${{ steps.database.outputs.version }}
           ICEBERG_VERSION: ${{ steps.iceberg.outputs.version }}
+          DELTA_VERSION: ${{ steps.delta.outputs.version }}
           ALLOW_DATABASE: ${{ inputs.allow-unreleased-database-changes }}
           ALLOW_ICEBERG: ${{ inputs.allow-unreleased-iceberg-changes }}
+          ALLOW_DELTA: ${{ inputs.allow-unreleased-delta-changes }}
         run: |
+          # Arguments: package, extra, version, allow flag, FFI file; the allow input is named
+          # after the plugin (`allow-unreleased-<name>-changes`), the extra may differ from it.
           check_plugin() {
-            local extra=$1 version=$2 allow=$3 ffi_file=$4
-            local package="polars-$extra" module="polars_$extra"
+            local package=$1 extra=$2 version=$3 allow=$4 ffi_file=$5
+            local module="${package//-/_}" name="${package#polars-}"
             local base tag msg
             local paths=("crates/$package" "py-polars/$package" "crates/polars-io-ext-ffi/src/$ffi_file")
 
@@ -437,7 +453,7 @@ jobs:
             fi
 
             git diff --stat "$base" HEAD -- "${paths[@]}"
-            msg="Unreleased $package changes since $version (Polars checkout $base): release $package and raise the lower bound of the '$extra' extra, or rerun with allow-unreleased-$extra-changes"
+            msg="Unreleased $package changes since $version (Polars checkout $base): release $package and raise the lower bound of the '$extra' extra, or rerun with allow-unreleased-$name-changes"
             if [[ "$allow" == "true" ]]; then
               echo "::warning::$msg"
             else
@@ -446,10 +462,11 @@ jobs:
             fi
           }
 
-          check_plugin database "$DATABASE_VERSION" "$ALLOW_DATABASE" lazyframe_resolver_v1.rs
-          check_plugin iceberg "$ICEBERG_VERSION" "$ALLOW_ICEBERG" iceberg_v1.rs
+          check_plugin polars-database database "$DATABASE_VERSION" "$ALLOW_DATABASE" lazyframe_resolver_v1.rs
+          check_plugin polars-iceberg iceberg "$ICEBERG_VERSION" "$ALLOW_ICEBERG" iceberg_v1.rs
+          check_plugin polars-delta deltalake "$DELTA_VERSION" "$ALLOW_DELTA" delta_v1.rs
 
-  # Full Python test suite, with the polars-iceberg and polars-database plugins installed from PyPI
+  # Full Python test suite, with the polars-iceberg, polars-database and polars-delta plugins installed from PyPI
   # at the versions required in pyproject.toml.
   test-python:
     needs: [plugin-versions]
@@ -458,6 +475,7 @@ jobs:
       sha: ${{ inputs.sha }}
       polars-iceberg-version: ${{ needs.plugin-versions.outputs.iceberg }}
       polars-database-version: ${{ needs.plugin-versions.outputs.database }}
+      polars-delta-version: ${{ needs.plugin-versions.outputs.delta }}
 
   publish-to-pypi:
     needs: [base-package, create-sdist, build-wheels, test-python]

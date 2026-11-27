@@ -11,6 +11,7 @@ on:
       - py-polars/src/**
       - py-polars/Cargo.toml
       - py-polars/polars-database/**
+      - py-polars/polars-delta/**
       - py-polars/polars-iceberg/**
       - deny.toml
       - Cargo.toml
@@ -30,6 +31,7 @@ on:
       - py-polars/src/**
       - py-polars/Cargo.toml
       - py-polars/polars-database/**
+      - py-polars/polars-delta/**
       - py-polars/polars-iceberg/**
       - deny.toml
       - Cargo.toml

@@ -36,6 +36,8 @@ pub enum ProjectionBuilder {
         /// be derived from the mapped names in `projected_iceberg_schema`: the mapping may name
         /// none of the projected columns (e.g. only fields dropped from the schema).
         table_has_name_mapping: bool,
+        force_name_mapping: bool,
+        strict_ids: bool,
         /// Used for filling missing fields.
         default_values: Option<Arc<IcebergDefaultFieldValues>>,
         /// The struct fields read of each projected column, indexed like `projected_schema`;
@@ -64,65 +66,70 @@ impl ProjectionBuilder {
         default_values: Option<Arc<IcebergDefaultFieldValues>>,
         field_selection: Option<&ScanFieldSelection>,
     ) -> Self {
-        match column_mapping {
-            None => ProjectionBuilder::Plain(projected_schema),
-            Some(ColumnMapping::Iceberg {
-                schema: iceberg_schema,
-                has_name_mapping,
-            }) => {
-                // Note: `projected_schema` is derived from `iceberg_schema` during IR resolution.
-                // Many of the assertions below are based on this invariant.
-                assert!(projected_schema.len() <= iceberg_schema.len());
-
-                let projected_physical_ids_lookup: PlHashMap<PlSmallStr, u32> = iceberg_schema
-                    .iter()
-                    .filter(|(_, col)| projected_schema.contains(&col.name))
-                    .map(|(key, col)| (col.name.clone(), *key))
-                    .collect();
-
-                assert_eq!(projected_physical_ids_lookup.len(), projected_schema.len());
-
-                let projected_iceberg_schema: IcebergSchemaRef = Arc::new(
-                    projected_schema
-                        .iter()
-                        .map(|(output_name, output_dtype)| {
-                            let physical_id = projected_physical_ids_lookup
-                                .get(output_name.as_str())
-                                .unwrap();
-
-                            let column = iceberg_schema.get(physical_id).unwrap();
-
-                            let selection = field_selection
-                                .map_or(&FieldSelection::All, |s| s.get(output_name));
-                            assert_eq!(
-                                &selection.prune_dtype(&column.type_.to_polars_dtype()),
-                                output_dtype
-                            );
-
-                            (*physical_id, column.clone())
-                        })
-                        .collect(),
-                );
-
-                assert_eq!(projected_iceberg_schema.len(), projected_schema.len());
-
-                let field_selections = field_selection
-                    .filter(|s| projected_schema.iter_names().any(|n| !s.get(n).is_all()))
-                    .map(|s| {
-                        projected_schema
-                            .iter_names()
-                            .map(|n| s.get(n).clone())
-                            .collect()
-                    });
-
-                Self::Iceberg {
-                    projected_schema,
-                    projected_iceberg_schema,
-                    table_has_name_mapping: *has_name_mapping,
-                    default_values,
-                    field_selections,
-                }
+        let (schema, has_name_mapping, force_name_mapping, strict_ids) = match column_mapping {
+            Some(ColumnMapping::Delta { schema, by_name }) => {
+                (schema, *by_name, *by_name, !*by_name)
             },
+            Some(ColumnMapping::Iceberg {
+                schema,
+                has_name_mapping,
+            }) => (schema, *has_name_mapping, false, false),
+            None => return ProjectionBuilder::Plain(projected_schema),
+        };
+        let iceberg_schema = schema;
+        // Note: `projected_schema` is derived from `iceberg_schema` during IR resolution.
+        // Many of the assertions below are based on this invariant.
+        assert!(projected_schema.len() <= iceberg_schema.len());
+
+        let projected_physical_ids_lookup: PlHashMap<PlSmallStr, u32> = iceberg_schema
+            .iter()
+            .filter(|(_, col)| projected_schema.contains(&col.name))
+            .map(|(key, col)| (col.name.clone(), *key))
+            .collect();
+
+        assert_eq!(projected_physical_ids_lookup.len(), projected_schema.len());
+
+        let projected_iceberg_schema: IcebergSchemaRef = Arc::new(
+            projected_schema
+                .iter()
+                .map(|(output_name, output_dtype)| {
+                    let physical_id = projected_physical_ids_lookup
+                        .get(output_name.as_str())
+                        .unwrap();
+
+                    let column = iceberg_schema.get(physical_id).unwrap();
+
+                    let selection =
+                        field_selection.map_or(&FieldSelection::All, |s| s.get(output_name));
+                    assert_eq!(
+                        &selection.prune_dtype(&column.type_.to_polars_dtype()),
+                        output_dtype
+                    );
+
+                    (*physical_id, column.clone())
+                })
+                .collect(),
+        );
+
+        assert_eq!(projected_iceberg_schema.len(), projected_schema.len());
+
+        let field_selections = field_selection
+            .filter(|s| projected_schema.iter_names().any(|n| !s.get(n).is_all()))
+            .map(|s| {
+                projected_schema
+                    .iter_names()
+                    .map(|n| s.get(n).clone())
+                    .collect()
+            });
+
+        Self::Iceberg {
+            projected_schema,
+            projected_iceberg_schema,
+            table_has_name_mapping: has_name_mapping,
+            force_name_mapping,
+            strict_ids,
+            default_values,
+            field_selections,
         }
     }
 
@@ -208,6 +215,8 @@ impl ProjectionBuilder {
                 projected_schema,
                 projected_iceberg_schema,
                 table_has_name_mapping: _,
+                force_name_mapping: _,
+                strict_ids: _,
                 default_values,
                 field_selections,
             } => (|| {

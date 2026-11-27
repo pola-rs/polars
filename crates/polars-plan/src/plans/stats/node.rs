@@ -309,9 +309,12 @@ pub(crate) fn node_stats_with_cache(
             );
             Some(inner.filter(filtered))
         },
-        IR::SimpleProjection { input, .. } | IR::Cache { input, .. } => {
-            node_stats_with_cache(*input, ir_arena, expr_arena, cache)
-        },
+        IR::SimpleProjection { input, .. }
+        | IR::Cache { input, .. }
+        | IR::Resolver {
+            resolved_ir: Some(input),
+            ..
+        } => node_stats_with_cache(*input, ir_arena, expr_arena, cache),
         IR::Sort { input, slice, .. } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(match slice {

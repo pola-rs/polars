@@ -313,6 +313,33 @@ impl MapChunked {
         Ok(unsafe { Self::from_storage_unchecked(dtype, storage) })
     }
 
+    /// Replace live entry keys.
+    ///
+    /// Requires one key per live entry, in [`Self::keys`] order, and a valid Map key dtype.
+    /// Keys are validated and canonicalized again, as for [`Self::try_from_storage`], because
+    /// a replacement may make distinct keys equal.
+    pub fn with_keys(&self, keys: &Series) -> PolarsResult<Self> {
+        let dtype = DataType::Map(
+            Box::new(keys.dtype().clone()),
+            Box::new(self.value_dtype().clone()),
+        );
+        dtype.ensure_valid_map_dtype()?;
+
+        let storage = try_apply_map_entries(&self.live_storage(), |old_keys, _| {
+            polars_ensure!(
+                keys.len() == old_keys.len(),
+                ShapeMismatch:
+                "Map keys must have one element per entry: expected {}, got {}",
+                old_keys.len(),
+                keys.len(),
+            );
+            Ok((keys.clone(), self.values()))
+        })?
+        .into_series();
+
+        Self::try_from_storage(dtype, storage)
+    }
+
     /// Propagate nulls through the storage, exactly as for a [`ListChunked`].
     ///
     /// Entries under null rows may end up null, which the contract allows.
@@ -1279,6 +1306,33 @@ mod test {
         assert_no_live_null_entries_or_keys(back);
         assert_eq!(back.storage().null_count(), 2);
         assert_eq!(str_values(&back.keys()), [Some("c".to_owned())]);
+    }
+
+    #[test]
+    fn with_keys_replaces_keys_and_canonicalizes() {
+        let map = three_row_map();
+
+        let out = map
+            .with_keys(&str_keys(&[
+                Some("w"),
+                Some("x"),
+                Some("y"),
+                Some("z"),
+                Some("z"),
+            ]))
+            .unwrap();
+        // Row 2 held two entries that now share a key: first position, last value.
+        assert_eq!(
+            str_values(&out.keys()),
+            ["w", "x", "y", "z"].map(|s| Some(s.to_owned()))
+        );
+        assert_eq!(
+            out.values().i64().unwrap().iter().collect::<Vec<_>>(),
+            [Some(1), Some(2), Some(3), Some(5)]
+        );
+
+        let err = map.with_keys(&str_keys(&[Some("w")])).err().unwrap();
+        assert!(err.to_string().contains("expected 5, got 1"), "{err}");
     }
 
     #[test]

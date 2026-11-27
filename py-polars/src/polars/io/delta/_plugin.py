@@ -1,0 +1,323 @@
+"""Native Delta planning and the versioned I/O plugin handshake."""
+
+from __future__ import annotations
+
+import importlib
+import os
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
+
+from polars._utils.logging import verbose
+from polars._utils.wrap import wrap_ldf
+from polars._warnings import issue_warning
+from polars.exceptions import ComputeError, PerformanceWarning, SchemaError
+from polars.io.delta._utils import _delta_cloud_root_is_ambiguous
+
+if TYPE_CHECKING:
+    from polars import LazyFrame
+    from polars.io.delta._scan_resolver import DeltaScanResolver
+
+PLANNER_ENV_VAR = "POLARS_DELTA_PLANNER"
+
+# Deprecated no-op `DeltaTable` options that only tuned deltalake's own loading.
+_IGNORED_DELTA_TABLE_OPTIONS = frozenset(
+    {"without_files", "log_buffer_size", "skip_stats"}
+)
+
+
+# Keys object_store's S3 config parser reads as the endpoint, lower-cased by it.
+_S3_ENDPOINT_KEYS = frozenset(
+    {
+        "aws_endpoint_url",
+        "aws_endpoint",
+        "endpoint_url",
+        "endpoint",
+        "aws_endpoint_url_s3",
+    }
+)
+
+
+def _has_s3_endpoint(storage_options: dict[str, Any] | None) -> bool:
+    return any(
+        str(key).lower() in _S3_ENDPOINT_KEYS and value
+        for key, value in (storage_options or {}).items()
+    )
+
+
+def plugin_planner_required() -> bool:
+    return _planner() == "plugin"
+
+
+def _planner() -> str | None:
+    value = os.getenv(PLANNER_ENV_VAR) or None
+    if value not in (None, "plugin", "deltalake"):
+        msg = f"delta: unknown {PLANNER_ENV_VAR}={value!r}; expected 'plugin' or 'deltalake'"
+        raise ValueError(msg)
+    return value
+
+
+class IncompatiblePluginError(ComputeError):
+    """The installed `polars_delta` shares no I/O plugin contract with this Polars."""
+
+
+def _plugin_capsule(supported_ids: list[str]) -> Any:
+    plugin = importlib.import_module("polars_delta")
+    shared = set(supported_ids).intersection(plugin._polars_io_plugin_ids)
+    if not shared:
+        msg = "polars_delta has no compatible Delta I/O plugin contract; upgrade polars and polars-delta"
+        raise IncompatiblePluginError(msg)
+    return plugin._capsule(max(shared, key=lambda s: int(s.rsplit(".v", 1)[1])))
+
+
+def use_plugin_planner() -> bool:
+    planner = _planner()
+    if planner is not None:
+        return planner == "plugin"
+    import polars._plr as plr
+
+    if not hasattr(plr, "_delta_plugin_scan"):
+        return False
+    try:
+        _plugin_capsule(plr._IO_PLUGIN_IDS)
+    except ModuleNotFoundError as e:
+        if e.name != "polars_delta":
+            _warn_plugin_unusable(f"failed to load: {e}")
+        else:
+            issue_warning(
+                "Install polars-delta to plan Delta scans natively. Using deltalake; "
+                f"set {PLANNER_ENV_VAR}=deltalake to use deltalake without this warning.",
+                PerformanceWarning,
+            )
+        return False
+    except IncompatiblePluginError:
+        _warn_plugin_unusable("it is incompatible with this version of Polars")
+        return False
+    except Exception as e:
+        _warn_plugin_unusable(f"failed to load: {e}")
+        return False
+    return True
+
+
+def deltalake_route_hint(*, use_pyarrow: bool, root_uses_deltalake: bool) -> str | None:
+    """
+    How to read, natively, a table that only the deltalake route refuses.
+
+    None when native planning is not an option here: `use_pyarrow`, or polars-delta
+    is usable and the deltalake route was chosen for another reason. The hints say
+    what polars-delta supports, not that it will read this table: it can still
+    refuse one for reasons beyond the reader protocol.
+    """
+    if use_pyarrow:
+        return None
+    can = "polars-delta can read tables with these features"
+    forced = _planner() == "deltalake"
+    unset = (
+        f" and unset {PLANNER_ENV_VAR}, which selects the deltalake planner"
+        if forced
+        else ""
+    )
+    if root_uses_deltalake:
+        # An ambiguous cloud path goes to deltalake by default, whatever is installed.
+        if _plugin_importable():
+            return (
+                f"this path is read with deltalake by default; {can}: set "
+                f"{PLANNER_ENV_VAR}=plugin to read it natively"
+            )
+        return None
+    if forced and _plugin_importable():
+        return (
+            f"{PLANNER_ENV_VAR}=deltalake selects the deltalake planner, which "
+            f"cannot read this table; {can}: unset it to use polars-delta"
+        )
+    import polars._plr as plr
+
+    if not hasattr(plr, "_delta_plugin_scan"):
+        return None
+    try:
+        _plugin_capsule(plr._IO_PLUGIN_IDS)
+    except ModuleNotFoundError as e:
+        if e.name == "polars_delta":
+            return (
+                f"{can}: install it (`pip install polars-delta`, or `pip install "
+                f"'polars[deltalake]'`){unset}"
+            )
+    except Exception:
+        pass
+    else:
+        return None
+    return f"{can}: upgrade it to a version compatible with this Polars{unset}"
+
+
+def _plugin_importable() -> bool:
+    import polars._plr as plr
+
+    if not hasattr(plr, "_delta_plugin_scan"):
+        return False
+    try:
+        _plugin_capsule(plr._IO_PLUGIN_IDS)
+    except Exception:
+        return False
+    return True
+
+
+def _warn_plugin_unusable(why: str) -> None:
+    issue_warning(
+        f"polars-delta cannot be used ({why}); upgrade polars-delta to a version "
+        f"compatible with this Polars. Using deltalake; set {PLANNER_ENV_VAR}=deltalake "
+        "to use deltalake without this warning.",
+        PerformanceWarning,
+    )
+
+
+def dv_decoder_supported_build() -> bool:
+    """Whether this Polars build can use a deletion-vector decoder plugin at all."""
+    import polars._plr as plr
+
+    return hasattr(plr, "_delta_plugin_register_decoder")
+
+
+def dv_decoder_load_error() -> str | None:
+    """
+    Register the `polars-delta` deletion-vector decoder; the reason if it cannot be.
+
+    Not installed, incompatible with this Polars, or failing to load all mean
+    unavailable, never an exception.
+    """
+    import polars._plr as plr
+
+    if not dv_decoder_supported_build():
+        return "this Polars build cannot use a deletion vector decoder plugin"
+    try:
+        if not plr._delta_plugin_decoder_registered():
+            plr._delta_plugin_register_decoder(_plugin_capsule(plr._IO_PLUGIN_IDS))
+    except ModuleNotFoundError as e:
+        if e.name == "polars_delta":
+            return "it is not installed"
+        return f"failed to load: {e}"
+    except IncompatiblePluginError:
+        return "the installed version is incompatible with this version of Polars, upgrade it"
+    except Exception as e:
+        return f"failed to load: {e}"
+    return None
+
+
+def dv_decoder_available() -> bool:
+    """
+    Whether the `polars-delta` plugin's deletion-vector decoder is registered.
+
+    Registers it if the plugin is installed and compatible. Scans with native
+    deletion vector descriptors need it, whichever planner produced them. Any
+    failure to load or register the plugin means unavailable.
+    """
+    return dv_decoder_load_error() is None
+
+
+def plugin_scan(
+    dataset: DeltaScanResolver, **options: Any
+) -> tuple[LazyFrame | None, int]:
+    import polars._plr as plr
+
+    if not hasattr(plr, "_delta_plugin_scan"):
+        msg = "this Polars build has no Delta I/O plugin support (requires cloud and parquet)"
+        raise NotImplementedError(msg)
+    unsupported = sorted(
+        set(dataset.delta_table_options or {}) - _IGNORED_DELTA_TABLE_OPTIONS
+    )
+    if unsupported:
+        msg = f"Delta plugin does not support delta_table_options: {unsupported}"
+        raise NotImplementedError(msg)
+    if dataset.table_uri().startswith("lakefs://") and not _has_s3_endpoint(
+        dataset.storage_options
+    ):
+        # A lakeFS table is read through its S3 gateway. Without an endpoint the
+        # rewritten `s3://` path would address the AWS bucket of that name with the
+        # ambient credentials; deltalake refuses such a call.
+        msg = "a lakeFS table needs `endpoint` in storage_options"
+        raise NotImplementedError(msg)
+    table = dataset.table_.get()
+    if table is not None and not hasattr(table, "_storage_options"):
+        msg = "DeltaTable storage options are unavailable to the native planner"
+        raise NotImplementedError(msg)
+    if table is not None and dataset.version is None:
+        table_schema = table.schema().to_json()
+        if dataset._plugin_table_schema is None:
+            dataset._plugin_table_schema = table_schema
+        elif dataset._plugin_table_schema != table_schema:
+            msg = "DeltaTable schema changed after scan creation; create a new scan"
+            raise SchemaError(msg)
+    version: int | str | datetime | None = dataset.version
+    if version is None:
+        # A caller-supplied DeltaTable can advance between collections. Capture its
+        # current version once; URI scans retain the snapshot resolved with schema.
+        version = table.version() if table is not None else dataset._resolved_version
+    elif isinstance(version, (str, datetime)) and dataset._resolved_version is not None:
+        # Time travel selects one snapshot, just like a URI scan of latest. Retain
+        # the first successfully resolved version when planning another request.
+        version = dataset._resolved_version
+    schema_only = bool(options.get("schema_only"))
+    if (
+        not schema_only
+        and isinstance(version, int)
+        and options.get("existing_resolved_version_key") == str(version)
+    ):
+        # The host only supplies a key when its cached expansion covers this
+        # request, including projection/filter columns, limit and statistics.
+        # Keep this distinct from None, which signals planner fallback.
+        return None, version
+    timestamp_ms = None
+    if isinstance(version, str):
+        version = datetime.fromisoformat(version.replace("Z", "+00:00"))
+    if isinstance(version, datetime):
+        if version.tzinfo is None:
+            version = version.replace(tzinfo=UTC)
+        timestamp_ms = (version - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(
+            milliseconds=1
+        )
+        version = None
+
+    uri = dataset._native_table_uri()
+    if dataset._plugin_metadata_cache is None:
+        dataset._plugin_metadata_cache = plr.PyIcebergMetadataFileCache(
+            64 * 1024 * 1024
+        )
+    ambiguous = _delta_cloud_root_is_ambiguous(uri)
+    if ambiguous and not dataset._table_uri_escaped:
+        # The native planner opens this caller's spelling as the literal object key
+        # (the explicit `plugin` planner's intended meaning), while deltalake decodes
+        # escapes. Record that before planning, so a failure here (an unsupported
+        # table feature) can never fall back to the other interpretation.
+        dataset._root_planner = "plugin"
+    result, resolved_version, table_id = plr._delta_plugin_scan(
+        _plugin_capsule(plr._IO_PLUGIN_IDS),
+        table_uri=uri,
+        version=version,
+        timestamp_ms=timestamp_ms,
+        projection=options.get("projection"),
+        filter_columns=options.get("filter_columns"),
+        statistics_columns=options.get("statistics_columns"),
+        limit=options.get("limit"),
+        use_metadata_statistics=True,
+        schema_only=schema_only,
+        verbose=verbose(),
+        testing_fail=os.getenv("POLARS_DELTA_PLUGIN_TESTING_FAIL") or None,
+        storage_options=dataset.storage_options,
+        credential_provider=dataset.credential_provider_builder,
+        metadata_cache=dataset._plugin_metadata_cache,
+    )
+    expected_id = dataset._expected_table_id()
+    # An empty id is unknown (a table without one): nothing to compare.
+    scanned_id: str | None = table_id or None
+    if expected_id is not None and scanned_id is not None and scanned_id != expected_id:
+        msg = (
+            f"the Delta table at {dataset._user_table_uri()!r} is not the one this scan was created from "
+            f"(table id {scanned_id!r}, expected {expected_id!r}); it was replaced. "
+            "Create a new scan"
+        )
+        raise ComputeError(msg)
+    if scanned_id is not None:
+        # An unknown id must not erase one learned earlier.
+        dataset._resolved_table_id = scanned_id
+    dataset._resolved_version = resolved_version
+    if ambiguous:
+        dataset._root_planner = "plugin"
+    return wrap_ldf(result), resolved_version
