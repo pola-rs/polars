@@ -334,31 +334,6 @@ fn is_sorted_ca_bool(ca: &BooleanChunked, descending: bool) -> bool {
     }
 }
 
-/// Casts `values` to `dtype` to match them against values of that dtype.
-///
-/// Casting strings to a Categorical would add them to its categories, so they are
-/// looked up instead: a string without a category can't match, and is dropped. If
-/// any value was dropped, the mask of the kept values is also returned.
-pub fn cast_to_match(
-    values: &Series,
-    dtype: &DataType,
-) -> PolarsResult<(Series, Option<BooleanChunked>)> {
-    #[cfg(feature = "dtype-categorical")]
-    if let DataType::Categorical(_, mapping) = dtype
-        && let Some(ca) = values.try_str()
-    {
-        let kept: BooleanChunked = ca
-            .iter()
-            .map(|opt_s| opt_s.is_none_or(|s| mapping.get_cat(s).is_some()))
-            .collect_ca_trusted(PlSmallStr::EMPTY);
-        if !kept.all() {
-            // Every string left has a category, so the cast adds none.
-            return Ok((values.filter(&kept)?.strict_cast(dtype)?, Some(kept)));
-        }
-    }
-    Ok((values.strict_cast(dtype)?, None))
-}
-
 /// Infers the `(descending, nulls_last)` sort options for `s`, honoring any provided hints.
 ///
 /// Each returned value is `Some` when known — taken from the corresponding hint when given,
