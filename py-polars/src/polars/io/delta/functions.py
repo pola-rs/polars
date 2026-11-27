@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.expired import RemovedParameter, removed_parameters
@@ -9,7 +10,6 @@ from polars.io.delta._scan_resolver import DeltaScanResolver
 
 if TYPE_CHECKING:
     from datetime import datetime
-    from pathlib import Path
     from typing import Literal
 
     from deltalake import DeltaTable
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     ),
 )
 def read_delta(
-    source: str | Path | DeltaTable,
+    source: str | os.PathLike[str] | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
@@ -159,7 +159,7 @@ def read_delta(
     ),
 )
 def scan_delta(
-    source: str | Path | DeltaTable,
+    source: str | os.PathLike[str] | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     storage_options: StorageOptionsDict | None = None,
@@ -291,8 +291,6 @@ def scan_delta(
     )
 
     table: DeltaTable | None = None
-
-    import os
 
     # Path scans must work without importing (or installing) deltalake.
     if isinstance(source, os.PathLike) and isinstance(os.fspath(source), str):

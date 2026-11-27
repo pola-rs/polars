@@ -98,6 +98,68 @@ def use_plugin_planner() -> bool:
     return True
 
 
+def deltalake_route_hint(*, use_pyarrow: bool, root_uses_deltalake: bool) -> str | None:
+    """
+    How to read, natively, a table that only the deltalake route refuses.
+
+    None when native planning is not an option here: `use_pyarrow`, or polars-delta
+    is usable and the deltalake route was chosen for another reason. The hints say
+    what polars-delta supports, not that it will read this table: it can still
+    refuse one for reasons beyond the reader protocol.
+    """
+    if use_pyarrow:
+        return None
+    can = "polars-delta can read tables with these features"
+    forced = _planner() == "deltalake"
+    unset = (
+        f" and unset {PLANNER_ENV_VAR}, which selects the deltalake planner"
+        if forced
+        else ""
+    )
+    if root_uses_deltalake:
+        # An ambiguous cloud path goes to deltalake by default, whatever is installed.
+        if _plugin_importable():
+            return (
+                f"this path is read with deltalake by default; {can}: set "
+                f"{PLANNER_ENV_VAR}=plugin to read it natively"
+            )
+        return None
+    if forced and _plugin_importable():
+        return (
+            f"{PLANNER_ENV_VAR}=deltalake selects the deltalake planner, which "
+            f"cannot read this table; {can}: unset it to use polars-delta"
+        )
+    import polars._plr as plr
+
+    if not hasattr(plr, "_delta_plugin_scan"):
+        return None
+    try:
+        _plugin_capsule(plr._IO_PLUGIN_IDS)
+    except ModuleNotFoundError as e:
+        if e.name == "polars_delta":
+            return (
+                f"{can}: install it (`pip install polars-delta`, or `pip install "
+                f"'polars[deltalake]'`){unset}"
+            )
+    except Exception:
+        pass
+    else:
+        return None
+    return f"{can}: upgrade it to a version compatible with this Polars{unset}"
+
+
+def _plugin_importable() -> bool:
+    import polars._plr as plr
+
+    if not hasattr(plr, "_delta_plugin_scan"):
+        return False
+    try:
+        _plugin_capsule(plr._IO_PLUGIN_IDS)
+    except Exception:
+        return False
+    return True
+
+
 def _warn_plugin_unusable(why: str) -> None:
     issue_warning(
         f"polars-delta cannot be used ({why}); upgrade polars-delta to a version "

@@ -1519,6 +1519,110 @@ def test_scan_delta_column_mapping_raises_30179(
             dataset.schema()
 
 
+_V2 = {"minReaderVersion": 2, "minWriterVersion": 5}
+
+
+def _v3(*features: str) -> dict[str, Any]:
+    return {
+        "minReaderVersion": 3,
+        "minWriterVersion": 7,
+        "readerFeatures": list(features),
+        "writerFeatures": list(features),
+    }
+
+
+_CAN = "polars-delta can read tables with these features"
+_INSTALL = (
+    "install it (`pip install polars-delta`, or `pip install 'polars[deltalake]'`)"
+)
+_UNSET = " and unset POLARS_DELTA_PLANNER, which selects the deltalake planner"
+_INSTALL_HINT = f"; {_CAN}: {_INSTALL}"
+_UPGRADE_HINT = f"; {_CAN}: upgrade it to a version compatible with this Polars"
+_FORCED_HINT = f"; POLARS_DELTA_PLANNER=deltalake selects the deltalake planner, which cannot read this table; {_CAN}: unset it to use polars-delta"
+_ROOT_HINT = f"; this path is read with deltalake by default; {_CAN}: set POLARS_DELTA_PLANNER=plugin to read it natively"
+
+
+@pytest.mark.parametrize(
+    ("protocol", "scenario", "hint"),
+    [
+        (_V2, "missing", _INSTALL_HINT),
+        (_v3("columnMapping"), "missing", _INSTALL_HINT),
+        (_v3("typeWidening"), "missing", _INSTALL_HINT),
+        (_v3("typeWidening-preview"), "missing", _INSTALL_HINT),
+        (_v3("columnMapping"), "forced", _FORCED_HINT),
+        (_V2, "forced", _FORCED_HINT),
+        (_v3("columnMapping"), "forced_missing", _INSTALL_HINT + _UNSET),
+        (_v3("columnMapping"), "forced_incompatible", _UPGRADE_HINT + _UNSET),
+        (_v3("columnMapping"), "ambiguous_root", _ROOT_HINT),
+        (_v3("columnMapping"), "ambiguous_root_missing", None),
+        (_v3("columnMapping"), "incompatible", _UPGRADE_HINT),
+        (_v3("columnMapping"), "failed", _UPGRADE_HINT),
+        (_v3("columnMapping"), "native_refused", None),
+        # A feature that neither planner supports gets no hint.
+        (_v3("variantShredding"), "missing", None),
+        (_v3("timestampNtz", "timestampNanos"), "forced", None),
+    ],
+)
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PerformanceWarning")
+@pytest.mark.write_disk
+def test_delta_reader_protocol_error_hints_native_planner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    protocol: dict[str, Any],
+    scenario: str,
+    hint: str | None,
+) -> None:
+    from polars.io.delta import _plugin
+
+    _write_column_mapped_delta_table(tmp_path, protocol)
+    monkeypatch.delenv("POLARS_DELTA_PLANNER", raising=False)
+
+    def unavailable(exc: Exception) -> None:
+        def capsule(_: list[str]) -> None:
+            raise exc
+
+        monkeypatch.setattr(_plugin, "_plugin_capsule", capsule)
+
+    missing = ModuleNotFoundError("no polars_delta", name="polars_delta")
+    incompatible = _plugin.IncompatiblePluginError("no shared contract")
+    if scenario.startswith("forced_"):
+        monkeypatch.setenv("POLARS_DELTA_PLANNER", "deltalake")
+        unavailable(missing if scenario == "forced_missing" else incompatible)
+    elif scenario == "forced":
+        pytest.importorskip("polars_delta")
+        monkeypatch.setenv("POLARS_DELTA_PLANNER", "deltalake")
+    elif scenario.startswith("ambiguous_root"):
+        monkeypatch.setattr(
+            DeltaScanResolver, "_caller_cloud_root_is_ambiguous", lambda _: True
+        )
+        if scenario.endswith("_missing"):
+            unavailable(missing)
+        else:
+            pytest.importorskip("polars_delta")
+    elif scenario == "missing":
+        unavailable(missing)
+    elif scenario == "incompatible":
+        unavailable(incompatible)
+    elif scenario == "failed":
+        unavailable(RuntimeError("cannot load"))
+    else:
+        pytest.importorskip("polars_delta")
+
+        def refuse(*_: Any, **__: Any) -> None:
+            raise NotImplementedError
+
+        monkeypatch.setattr(_plugin, "plugin_scan", refuse)
+
+    with pytest.raises(DeltaProtocolError) as e:
+        pl.scan_delta(str(tmp_path)).collect_schema()
+    message = str(e.value)
+    if hint is None:
+        assert "polars-delta" not in message
+        assert "POLARS_DELTA_PLANNER" not in message
+    else:
+        assert message.endswith(hint)
+
+
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.write_disk
 def test_delta_partition_filter(tmp_path: Path, use_pyarrow: bool) -> None:

@@ -55,8 +55,27 @@ _SUPPORTED_FEATURES = frozenset(
 )
 
 
+# Reader features polars-delta reads (crates/polars-delta/src/delta/schema.rs) that the
+# deltalake route does not; reader version 2 (column mapping) is the same case.
+# deltalake 1.7 reports `timestampWithoutTimezone` as `timestampNtz`, which passes
+# the check; the entry is for versions that keep the raw name.
+_NATIVE_ONLY_FEATURES = frozenset(
+    {
+        "columnMapping",
+        "timestampWithoutTimezone",
+        "typeWidening",
+        "typeWidening-preview",
+    }
+)
+
+
 def _check_reader_protocol(table: DeltaTable) -> None:
-    """Raise if polars cannot read a table with this reader protocol."""
+    """
+    Raise if polars cannot read a table with this reader protocol.
+
+    The error has `native_readable` set when only the deltalake route refuses the
+    table: polars-delta supports it.
+    """
     from deltalake.exceptions import DeltaProtocolError
 
     table_protocol = table.protocol()
@@ -64,7 +83,9 @@ def _check_reader_protocol(table: DeltaTable) -> None:
 
     if min_reader_version == _UNSUPPORTED_READER_VERSION:
         msg = f"delta table requires reader version {min_reader_version} (column mapping), which polars does not support"
-        raise DeltaProtocolError(msg)
+        error = DeltaProtocolError(msg)
+        error.native_readable = True  # type: ignore[attr-defined]
+        raise error
     if min_reader_version > _MAX_READER_VERSION:
         msg = f"delta table requires reader version {min_reader_version}, polars supports up to {_MAX_READER_VERSION}"
         raise DeltaProtocolError(msg)
@@ -74,7 +95,9 @@ def _check_reader_protocol(table: DeltaTable) -> None:
         )
         if len(missing_features) > 0:
             msg = f"delta table requires reader features {sorted(missing_features)}, which polars does not support"
-            raise DeltaProtocolError(msg)
+            error = DeltaProtocolError(msg)
+            error.native_readable = missing_features <= _NATIVE_ONLY_FEATURES  # type: ignore[attr-defined]
+            raise error
 
 
 def _table_id_of(table: DeltaTable) -> str | None:
@@ -194,6 +217,8 @@ class DeltaScanResolver(LazyFrameResolver):
         default=None, init=False, repr=False
     )
     _plugin_table_schema: str | None = field(default=None, init=False, repr=False)
+    # Native planning refused the table, so deltalake's refusal gets no native hint.
+    _native_refused: bool = field(default=False, init=False, repr=False)
     _plugin_metadata_cache: Any = field(default=None, init=False, repr=False)
     # With `use_pyarrow`: the last dataset scan and its table version, so that the
     # schema and the first resolution of a version build one dataset. Not pickled.
@@ -252,6 +277,7 @@ class DeltaScanResolver(LazyFrameResolver):
                     "without such characters or a table that polars-delta supports."
                 )
                 raise ComputeError(msg) from e
+            self._native_refused = True
             self._plugin_enabled = False
             return None
         except ValueError as e:
@@ -709,7 +735,22 @@ class DeltaScanResolver(LazyFrameResolver):
             self._table_version_pinned = True
 
         # Also checks a user-supplied DeltaTable.
-        _check_reader_protocol(table)
+        try:
+            _check_reader_protocol(table)
+        except Exception as e:
+            from polars.io.delta._plugin import deltalake_route_hint
+
+            if not getattr(e, "native_readable", False) or self._native_refused:
+                raise
+            hint = deltalake_route_hint(
+                use_pyarrow=self.use_pyarrow,
+                root_uses_deltalake=self._root_planner == "deltalake"
+                or self._caller_cloud_root_is_ambiguous(),
+            )
+            if hint is None:
+                raise
+            msg = f"{e}; {hint}"
+            raise type(e)(msg) from None
         if not self.use_pyarrow and _delta_cloud_root_is_ambiguous(
             self._native_table_uri()
         ):
@@ -733,6 +774,7 @@ class DeltaScanResolver(LazyFrameResolver):
         state["_plugin_metadata_cache"] = None
         state["_pyarrow_frame"] = None
         state["_plugin_enabled"] = None
+        state["_native_refused"] = False
         state["_root_planner"] = self._root_planner
         return state
 
