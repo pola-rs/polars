@@ -144,6 +144,14 @@ fn polars_to_ffi_err_kind(e: PolarsError) -> (FfiError, Option<std::io::ErrorKin
     let kind = match io_kind {
         Some(std::io::ErrorKind::NotFound) => FfiErrorKind::NOT_FOUND,
         Some(_) => FfiErrorKind::IO,
+        // A scheme nothing here can open: the Python resolver may fall back to deltalake,
+        // which has more storage backends.
+        None if matches!(&e, PolarsError::ComputeError(_))
+            && e.to_string()
+                .contains("no object_store_builder registered for") =>
+        {
+            FfiErrorKind::NOT_IMPLEMENTED
+        },
         None => FfiErrorKind::OTHER,
     };
     (FfiError::new(kind, e.to_string()), io_kind)

@@ -25,6 +25,25 @@ _IGNORED_DELTA_TABLE_OPTIONS = frozenset(
 )
 
 
+# Keys object_store's S3 config parser reads as the endpoint, lower-cased by it.
+_S3_ENDPOINT_KEYS = frozenset(
+    {
+        "aws_endpoint_url",
+        "aws_endpoint",
+        "endpoint_url",
+        "endpoint",
+        "aws_endpoint_url_s3",
+    }
+)
+
+
+def _has_s3_endpoint(storage_options: dict[str, Any] | None) -> bool:
+    return any(
+        str(key).lower() in _S3_ENDPOINT_KEYS and value
+        for key, value in (storage_options or {}).items()
+    )
+
+
 def plugin_planner_required() -> bool:
     return _planner() == "plugin"
 
@@ -144,6 +163,14 @@ def plugin_scan(
     )
     if unsupported:
         msg = f"Delta plugin does not support delta_table_options: {unsupported}"
+        raise NotImplementedError(msg)
+    if dataset.table_uri().startswith("lakefs://") and not _has_s3_endpoint(
+        dataset.storage_options
+    ):
+        # A lakeFS table is read through its S3 gateway. Without an endpoint the
+        # rewritten `s3://` path would address the AWS bucket of that name with the
+        # ambient credentials; deltalake refuses such a call.
+        msg = "a lakeFS table needs `endpoint` in storage_options"
         raise NotImplementedError(msg)
     table = dataset.table_.get()
     if table is not None and not hasattr(table, "_storage_options"):

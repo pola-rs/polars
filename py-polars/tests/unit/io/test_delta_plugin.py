@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 import struct
+import warnings
 import zlib
 from typing import TYPE_CHECKING, Any
 
@@ -559,6 +560,48 @@ def test_delta_plugin_missing_package(
             pl.exceptions.PerformanceWarning, match="Install polars-delta"
         ):
             assert_frame_equal(pl.scan_delta(path).collect(), pl.DataFrame({"a": [1]}))
+
+
+def test_delta_plugin_missing_package_warning_points_at_caller(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _table(tmp_path / "t", [_field("a", "long")], [pl.DataFrame({"a": [1]})])
+    monkeypatch.delenv("POLARS_DELTA_PLANNER")
+    original_import = importlib.import_module
+
+    def missing(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "polars_delta":
+            msg = "No module named 'polars_delta'"
+            raise ModuleNotFoundError(msg, name="polars_delta")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", missing)
+    with pytest.warns(
+        pl.exceptions.PerformanceWarning, match="Install polars-delta"
+    ) as record:
+        lf = pl.scan_delta(path)
+    assert [w.filename for w in record] == [__file__]
+    # The planner is chosen once for the scan: resolving it does not warn again.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1]}))
+        assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1]}))
+
+
+def test_delta_plugin_planner_variable_read_at_collect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uri = "lakefs://repo/main/t"  # The native planner refuses it, deltalake does not.
+    monkeypatch.setenv("POLARS_DELTA_PLANNER", "deltalake")
+    lf = pl.scan_delta(uri)
+    monkeypatch.setenv("POLARS_DELTA_PLANNER", "plugin")
+    with pytest.raises(NotImplementedError, match="endpoint"):
+        lf.collect_schema()
+    # An invalid value raises when the scan is collected, not when it is created.
+    monkeypatch.setenv("POLARS_DELTA_PLANNER", "bogus")
+    lf = pl.scan_delta(uri)
+    with pytest.raises(ValueError, match="unknown POLARS_DELTA_PLANNER"):
+        lf.collect_schema()
 
 
 @pytest.mark.parametrize("required", [False, True])
@@ -1559,6 +1602,28 @@ def test_delta_plugin_checkpoint_replaced_between_head_and_range(
         s3.server.shutdown()
 
 
+def test_delta_plugin_lakefs_without_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deltalake.exceptions import DeltaError
+
+    from polars.io.delta._plugin import _has_s3_endpoint
+
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://127.0.0.1:9")
+    # The rewritten `s3://` path would address an AWS bucket: refuse it natively.
+    with pytest.raises(NotImplementedError, match="endpoint"):
+        pl.scan_delta("lakefs://repo/main/t").collect_schema()
+    # Automatic selection falls back, and deltalake reports the missing endpoint.
+    monkeypatch.delenv("POLARS_DELTA_PLANNER")
+    with pytest.raises(DeltaError, match="is missing in storage options"):
+        pl.scan_delta("lakefs://repo/main/t").collect_schema()
+
+    for key in ["endpoint", "AWS_ENDPOINT_URL", "aws_endpoint", "Endpoint_Url"]:
+        assert _has_s3_endpoint({key: "http://h"})
+    assert not _has_s3_endpoint(None)
+    assert not _has_s3_endpoint({"aws_region": "x", "endpoint": ""})
+
+
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_delta_plugin_lakefs_reads_through_s3_gateway(tmp_path: Path) -> None:
@@ -1956,6 +2021,31 @@ def test_delta_plugin_unknown_delta_table_options(
     monkeypatch.delenv("POLARS_DELTA_PLANNER")
     with pytest.raises(TypeError):
         pl.scan_delta(path, delta_table_options=options).collect()
+
+
+@pytest.mark.parametrize(
+    ("uri", "message"),
+    [
+        # Known to Polars, but with no object store builder registered.
+        ("hdfs://nn/t", "no object_store_builder"),
+        # Not a scheme Polars knows: it would be read as a local path.
+        ("fakescheme://bucket/t", "unsupported URI scheme"),
+        # Needs resolving before an object store can be built for it.
+        ("hf://datasets/org/repo/t", "unsupported URI scheme"),
+    ],
+)
+def test_delta_plugin_unopenable_scheme_falls_back(
+    monkeypatch: pytest.MonkeyPatch, uri: str, message: str
+) -> None:
+    from deltalake.exceptions import DeltaError, TableNotFoundError
+
+    with pytest.raises(NotImplementedError, match=message):
+        pl.scan_delta(uri).collect_schema()
+    # Automatic selection hands the scheme to deltalake, which knows more of them.
+    monkeypatch.delenv("POLARS_DELTA_PLANNER")
+    with pytest.raises((TableNotFoundError, DeltaError, OSError)) as e:
+        pl.scan_delta(uri).collect_schema()
+    assert "polars_delta" not in str(e.value)
 
 
 @pytest.mark.slow

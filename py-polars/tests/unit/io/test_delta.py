@@ -186,6 +186,21 @@ def test_scan_delta(delta_table_path: Path) -> None:
     assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
+def test_scan_delta_pathlike_source(delta_table_path: Path) -> None:
+    from pathlib import PurePath
+
+    expected = pl.scan_delta(str(delta_table_path)).collect()
+    assert_frame_equal(pl.scan_delta(PurePath(delta_table_path)).collect(), expected)
+
+    class Like:
+        def __fspath__(self) -> str:
+            return str(delta_table_path)
+
+    assert_frame_equal(pl.read_delta(Like()), expected)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="source must be"):
+        pl.scan_delta(1)  # type: ignore[arg-type]
+
+
 def test_scan_delta_version(delta_table_path: Path) -> None:
     df1 = pl.scan_delta(delta_table_path, version=0).collect()
     df2 = pl.scan_delta(delta_table_path, version=1).collect()

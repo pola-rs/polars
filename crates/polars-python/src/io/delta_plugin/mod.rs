@@ -216,6 +216,19 @@ pub fn _delta_plugin_decoder_registered() -> bool {
     polars::prelude::deletion::delta_deletion_vector_decoder().is_some()
 }
 
+/// A `scheme://` prefix whose scheme Polars does not know, or `hf://`, which the
+/// object store setup cannot open without resolving it first.
+fn has_unknown_scheme(uri: &str) -> bool {
+    let Some((scheme, _)) = uri.split_once("://") else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && scheme.len() > 1 // A single letter is a Windows drive.
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        && CloudScheme::from_path(uri).is_none_or(|s| matches!(s, CloudScheme::Hf))
+}
+
 #[pyfunction]
 #[pyo3(signature = (capsule, *, table_uri, version, timestamp_ms, projection, filter_columns, statistics_columns, limit, use_metadata_statistics, schema_only=false, verbose, testing_fail, storage_options, credential_provider, metadata_cache))]
 #[allow(clippy::too_many_arguments)]
@@ -239,6 +252,13 @@ pub fn _delta_plugin_scan(
 ) -> PyResult<(PyLazyFrame, i64, String)> {
     let capsule = capsule.cast::<PyCapsule>()?;
     let Dispatch::V2(plugin) = dispatch(capsule).map_err(PyPolarsErr::from)?;
+    if has_unknown_scheme(&table_uri) {
+        // Otherwise it would be read as a local path. The Python resolver may fall back to
+        // deltalake, which has more storage backends.
+        return Err(pyo3::exceptions::PyNotImplementedError::new_err(format!(
+            "{PLUGIN_NAME}: delta: unsupported URI scheme in {table_uri:?}"
+        )));
+    }
     register_decoder(plugin);
     let cloud_options = storage_options
         .extract_opt_cloud_options(CloudScheme::from_path(&table_uri), credential_provider)?;

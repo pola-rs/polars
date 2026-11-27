@@ -204,6 +204,7 @@ class DeltaScanResolver(LazyFrameResolver):
     def _plugin_scan(self, **options: Any) -> tuple[LazyFrame | None, int] | None:
         from polars.io.delta._plugin import (
             IncompatiblePluginError,
+            _planner,
             _warn_plugin_unusable,
             plugin_planner_required,
             plugin_scan,
@@ -217,6 +218,9 @@ class DeltaScanResolver(LazyFrameResolver):
                 msg = "delta: this saved cloud path must be reopened with deltalake"
                 raise ComputeError(msg)
             return None
+        if _planner() is not None:
+            # The environment variable is read at collect, whatever it was at scan.
+            self._plugin_enabled = None
         if self._plugin_enabled is None:
             self._plugin_enabled = use_plugin_planner()
         if not self._plugin_enabled:

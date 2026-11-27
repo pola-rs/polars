@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.expired import RemovedParameter, removed_parameters
@@ -291,10 +292,12 @@ def scan_delta(
 
     table: DeltaTable | None = None
 
-    from pathlib import Path
+    import os
 
     # Path scans must work without importing (or installing) deltalake.
-    if not isinstance(source, (str, Path)):
+    if isinstance(source, os.PathLike) and isinstance(os.fspath(source), str):
+        source = os.fspath(source)
+    if not isinstance(source, str):
         from deltalake import DeltaTable
 
         if isinstance(source, DeltaTable):
@@ -333,5 +336,15 @@ def scan_delta(
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
     )
+
+    if not use_pyarrow:
+        # Choose the planner here, so that a warning about an unusable plugin is
+        # attributed to the caller rather than to the thread resolving the scan.
+        # A restored scan chooses again when it is resolved.
+        from polars.io.delta._plugin import use_plugin_planner
+
+        # An invalid environment value raises when the scan is collected.
+        with contextlib.suppress(ValueError):
+            dataset._plugin_enabled = use_plugin_planner()
 
     return dataset.lazy()
