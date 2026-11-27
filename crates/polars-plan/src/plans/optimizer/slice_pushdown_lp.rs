@@ -8,7 +8,7 @@ use recursive::recursive;
 use crate::plans::optimizer::slice_pushdown_expr;
 use crate::prelude::*;
 
-pub(super) struct SlicePushDown {
+pub struct SlicePushDown {
     nodes_scratch: ScratchUnitVec<Node>,
     maintain_errors: bool,
     pub(super) slice_node_in_optimized_plan: bool,
@@ -18,7 +18,7 @@ pub(super) struct SlicePushDown {
 }
 
 impl SlicePushDown {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             nodes_scratch: ScratchUnitVec::default(),
             // We don't maintain errors on slice to make the behavior predictable across engines.
@@ -31,6 +31,12 @@ impl SlicePushDown {
             ae_slice_pd_state_scratch: ScratchVec::default(),
             optimized_cache_inputs: PlIndexMap::default(),
         }
+    }
+}
+
+impl Default for SlicePushDown {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 use polars_error::feature_gated;
 
 use crate::plans::optimizer::parquet_metadata_prune::prune_parquet_metadata;
-use crate::plans::optimizer::projection_pushdown::projection_pushdown;
+pub use crate::plans::optimizer::projection_pushdown::projection_pushdown;
 use crate::prelude::*;
 
 mod delay_rechunk;
@@ -59,7 +59,7 @@ pub use predicate_pushdown::{
     new_dynamic_pred,
 };
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
-use slice_pushdown_lp::SlicePushDown;
+pub use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{
     AExprSorted, IRPlanSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted,
 };
