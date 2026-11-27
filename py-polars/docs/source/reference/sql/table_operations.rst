@@ -113,10 +113,11 @@ branch, unless with ``IF NOT EXISTS``. ``REPLACE`` and ``DROP`` fail if the name
 the other kind. ``REPLACE`` keeps the retention the statement does not set. To change only
 the retention, give the ref's own snapshot with ``AS OF VERSION``. The ``main`` branch
 cannot be replaced or dropped, and no tag can take its name.
-``RETAIN`` sets how long the ref is kept, in ``DAYS``, ``HOURS`` or ``MINUTES``.
+``RETAIN`` sets how long the ref is kept, in ``DAYS``, ``HOURS`` or ``MINUTES``, counted
+from the time of its snapshot: a ref on an older snapshot can go at the next expiry.
 ``WITH SNAPSHOT RETENTION`` sets how many snapshots a branch keeps (``<n> SNAPSHOTS``), how
 long it keeps them (``<n> <unit>``), or both, in that order. Both only store the setting:
-snapshots are expired by the engine that does it. A table without snapshots has none to
+snapshots are expired by ``CALL expire_snapshots`` or the engine that does it. A table without snapshots has none to
 tag or branch.
 
 Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY`` and
@@ -153,8 +154,8 @@ Run a procedure on a table of a catalog attached with
 
 * Without ``<catalog>``, the default catalog is used.
 * Arguments are given in order, or by name as ``name => value``.
-* Argument values are literals: strings, integers, booleans, ``NULL``, ``map('k', 'v')``
-  or ``array('a', 'b')``.
+* Argument values are literals: strings, integers, booleans, ``NULL``, ``map('k', 'v')``,
+  ``array('a', 'b')`` or ``array(1, 2)``.
 * The ``table`` argument is a string with the table's name in that catalog: ``'ns.t'``, or
   ``'t'`` in the catalog's default namespace. It may start with the catalog's name.
 
@@ -223,6 +224,66 @@ catalog's credentials then may not reach them. Iceberg v3 tables are not support
     CALL lake.system.add_files(
         table => 'sales.orders',
         source_table => 'parquet.`s3://bucket/hive/orders`'
+    )
+
+**expire_snapshots**
+
+Removes old snapshots in one commit, then deletes the files that only they referenced:
+data and delete files, manifests, manifest lists and statistics files. Time travel to a
+removed snapshot fails afterwards.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 60
+
+   * - Argument
+     - Description
+   * - ``table``
+     - The table. Required.
+   * - ``older_than``
+     - Snapshots older than this go, unless a ref keeps them. A timestamp, as in
+       ``FOR TIMESTAMP AS OF``: without an offset, UTC. Default: now minus
+       ``history.expire.max-snapshot-age-ms`` (default 5 days).
+   * - ``retain_last``
+     - The number of a branch's newest snapshots it keeps whatever their age, at least 1.
+       Default: ``history.expire.min-snapshots-to-keep`` (default 1).
+   * - ``max_concurrent_deletes``
+     - Accepted. Has no effect.
+   * - ``stream_results``
+     - Accepted. Has no effect.
+   * - ``snapshot_ids``
+     - Snapshots to remove as well, whatever their age, such as ``array(5781943012)``.
+       The snapshot of a kept branch or tag cannot be removed.
+   * - ``clean_expired_metadata``
+     - ``true`` is not supported yet.
+
+A branch's or tag's own retention (``RETAIN``, ``WITH SNAPSHOT RETENTION``) overrides
+``older_than`` and ``retain_last``. A branch or tag older than its ``RETAIN`` (or
+``history.expire.max-ref-age-ms``) is removed, never ``main``. Otherwise a tag keeps its
+snapshot. Snapshots
+that no branch or tag reaches are kept while newer than ``older_than``. A table with
+``gc.enabled`` set to false is refused. If another writer moves a branch or tag meanwhile,
+the snapshots are chosen again. A branch or tag created meanwhile on a snapshot being
+removed can be lost, and a file added again meanwhile (``add_files``) can be deleted: do
+neither while snapshots expire. Keep ``older_than`` before the start of any read or write
+still running on the table: those may still use the snapshots it removes.
+
+It returns ``deleted_data_files_count``, ``deleted_position_delete_files_count``,
+``deleted_equality_delete_files_count``, ``deleted_manifest_files_count``,
+``deleted_manifest_lists_count`` and ``deleted_statistics_files_count``. Files are deleted
+after the commit, best effort: a file that cannot be deleted is left in place, with a
+warning.
+
+**Example:**
+
+.. code-block:: sql
+
+    -- Remove the snapshots of `sales.orders` older than November, keeping at least the
+    -- ten newest of each branch, and delete the files only they used.
+    CALL lake.system.expire_snapshots(
+      table => 'sales.orders',
+      older_than => TIMESTAMP '2026-11-01 00:00:00',
+      retain_last => 10
     )
 
 **rewrite_data_files**
@@ -675,7 +736,8 @@ the optional ``IF EXISTS`` clause is given.
 
 EXPLAIN
 -------
-Returns the Polars execution plan for a given SQL query.
+Returns the Polars execution plan for a given SQL query, as optimized for the streaming engine,
+which runs queries by default.
 
 **Example:**
 

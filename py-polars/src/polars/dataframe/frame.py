@@ -4871,9 +4871,15 @@ class DataFrame:
         -----
         Columns of required (`NOT NULL`) table fields must not contain nulls.
         Required fields nested in structs or lists are not supported.
+
+        If the table's schema or partition spec changed after the table was loaded,
+        for example by another writer during the write, the commit raises a
+        `ValidationException`. A `Table` target then has the current state, so the
+        write can run again, with data for the current schema.
         """
         from pyiceberg.catalog import load_catalog
 
+        from polars.io.iceberg._sink import _write_transaction
         from polars.io.iceberg._utils import with_table_nullability
 
         if isinstance(target, str):
@@ -4882,15 +4888,17 @@ class DataFrame:
         else:
             table = target
 
-        # Arrow data from Polars is always nullable; required Iceberg fields reject it.
-        data = with_table_nullability(
-            self.to_arrow(compat_level=CompatLevel.oldest()), table.schema()
-        )
-
-        if mode == "append":
-            table.append(data)
-        else:
-            table.overwrite(data)
+        # commits only onto the schema and spec the data is written with
+        with _write_transaction(table) as tx:
+            # Polars' Arrow data is always nullable: required Iceberg fields reject it.
+            data = with_table_nullability(
+                self.to_arrow(compat_level=CompatLevel.oldest()),
+                tx.table_metadata.schema(),
+            )
+            if mode == "append":
+                tx.append(data)
+            else:
+                tx.overwrite(data)
 
     @overload
     def write_delta(

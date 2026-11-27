@@ -1446,6 +1446,7 @@ def test_window_value_frames(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "frame",
     [

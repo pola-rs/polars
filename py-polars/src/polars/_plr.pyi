@@ -55,7 +55,7 @@ StartBy: TypeAlias = Literal[
     "sunday",
 ]
 ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
-RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
+RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero", "to_zero"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinType: TypeAlias = Literal["inner", "left", "right", "full", "semi", "anti", "cross"]
@@ -858,6 +858,7 @@ class PyLazyFrame:
         include_file_paths: str | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
+        extra_columns: Literal["ignore", "raise"] | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_csv(

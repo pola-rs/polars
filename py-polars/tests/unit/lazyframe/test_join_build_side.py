@@ -155,6 +155,7 @@ def test_cross_join_estimate_uses_the_range_a_filter_keeps(tmp_path: Path) -> No
     assert q.select(pl.len()).collect(engine="streaming").item() == 640_000
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("keep", ["head", "tail"])
 def test_cross_join_estimate_uses_the_range_of_sampled_row_groups(
     tmp_path: Path, keep: str
@@ -179,6 +180,7 @@ def test_cross_join_estimate_uses_the_range_of_sampled_row_groups(
     assert q.select(pl.len()).collect(engine="streaming").item() == 40_000
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("n_columns", "n_row_groups"),
     [

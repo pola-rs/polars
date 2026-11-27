@@ -1153,3 +1153,37 @@ def test_window_order_by_multiple_keys_scalar(key: pl.Expr) -> None:
         .height
         == 0
     )
+
+
+def test_over_non_numeric_aggregation_maps_by_groups() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 2, None, 1, None, 3, 2],
+            "h": ["x", "y", "x", "x", "x", "y", "y"],
+            "s": ["a", "b", "c", "d", None, "f", "g"],
+            "b": [True, False, None, False, True, None, False],
+        }
+    )
+    out = df.select(
+        first=pl.col("s").first().over("g"),
+        max_b=pl.col("b").max().over("g"),
+        first_2=pl.col("s").first().over("g", "h"),
+        last_sorted=pl.col("s").last().over("g", order_by="s"),
+        head=pl.col("s").head(2).over("h", mapping_strategy="join"),
+    )
+    expected = pl.DataFrame(
+        {
+            "first": ["a", "b", "c", "a", "c", "f", "b"],
+            "max_b": [True, False, True, True, True, None, False],
+            "first_2": ["a", "b", "c", "a", "c", "f", "b"],
+            "last_sorted": ["d", "g", "c", "d", "c", "f", "g"],
+            "head": [["a", "c"], ["b", "f"], ["a", "c"], ["a", "c"], ["a", "c"]]
+            + [["b", "f"], ["b", "f"]],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+    # Multi-chunk input.
+    df2 = pl.concat([df, df], rechunk=False)
+    out = df2.select(pl.col("s").first().over("g"))
+    assert out["s"].to_list() == expected["first"].to_list() * 2

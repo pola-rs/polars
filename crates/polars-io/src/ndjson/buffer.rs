@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 use std::hash::{Hash, Hasher};
 
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -13,6 +13,8 @@ use polars_utils::format_pl_smallstr;
 use simd_json::prelude::*;
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
 
+use super::core::ExtraKeysCheck;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct BufferKey<'a>(pub(crate) KnownKey<'a>);
 impl Eq for BufferKey<'_> {}
@@ -26,7 +28,46 @@ impl Hash for BufferKey<'_> {
 pub(crate) struct Buffer<'a> {
     name: &'a str,
     ignore_errors: bool,
+    /// Set when unknown struct fields raise.
+    extra_keys: Option<&'a ExtraKeysCheck>,
     buf: AnyValueBuffer<'a>,
+}
+
+/// A value's path in a document, for errors.
+#[derive(Clone, Copy)]
+pub(crate) struct KeyPath<'a> {
+    parent: Option<&'a KeyPath<'a>>,
+    /// `None` for a list element.
+    key: Option<&'a str>,
+}
+
+impl<'a> KeyPath<'a> {
+    pub(crate) fn root(key: &'a str) -> Self {
+        Self {
+            parent: None,
+            key: Some(key),
+        }
+    }
+
+    fn child(&'a self, key: Option<&'a str>) -> Self {
+        Self {
+            parent: Some(self),
+            key,
+        }
+    }
+}
+
+impl Display for KeyPath<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(parent) = self.parent {
+            parent.fmt(f)?;
+        }
+        match self.key {
+            Some(key) if self.parent.is_some() => write!(f, ".{key}"),
+            Some(key) => f.write_str(key),
+            None => f.write_str("[]"),
+        }
+    }
 }
 
 impl Buffer<'_> {
@@ -151,7 +192,8 @@ impl Buffer<'_> {
                 Ok(())
             },
             All(dtype, buf) => {
-                let av = deserialize_all(value, dtype, self.ignore_errors)?;
+                let path = KeyPath::root(self.name);
+                let av = deserialize_all(value, dtype, self.ignore_errors, self.extra_keys, path)?;
                 buf.push(av);
                 Ok(())
             },
@@ -175,22 +217,26 @@ impl Buffer<'_> {
         self.buf.add(AnyValue::Null).expect("should not fail");
     }
 }
-pub(crate) fn init_buffers(
-    schema: &Schema,
+pub(crate) fn init_buffers<'a>(
+    schema: &'a Schema,
     capacity: usize,
     ignore_errors: bool,
-) -> PolarsResult<PlIndexMap<BufferKey<'_>, Buffer<'_>>> {
+    extra_keys: &'a ExtraKeysCheck,
+) -> PolarsResult<PlIndexMap<BufferKey<'a>, Buffer<'a>>> {
     schema
         .iter()
-        .map(|(name, dtype)| {
+        .enumerate()
+        .map(|(i, (name, dtype))| {
             let av_buf = (dtype, capacity).into();
             let key = KnownKey::from(name.as_str());
+            let check_nested = extra_keys.nested.get(i).copied().unwrap_or(false);
             Ok((
                 BufferKey(key),
                 Buffer {
                     name,
                     buf: av_buf,
                     ignore_errors,
+                    extra_keys: check_nested.then_some(extra_keys),
                 },
             ))
         })
@@ -247,6 +293,8 @@ fn deserialize_all<'a>(
     json: &Value,
     dtype: &DataType,
     ignore_errors: bool,
+    extra_keys: Option<&ExtraKeysCheck>,
+    path: KeyPath<'_>,
 ) -> PolarsResult<AnyValue<'a>> {
     if let Value::Static(StaticNode::Null) = json {
         return Ok(AnyValue::Null);
@@ -337,9 +385,10 @@ fn deserialize_all<'a>(
                 }
                 polars_bail!(ComputeError: "expected dtype '{}' in JSON value, got dtype: Array\n\nEncountered value: {}", dtype, json);
             };
+            let path = path.child(None);
             let vals: Vec<AnyValue> = arr
                 .iter()
-                .map(|val| deserialize_all(val, inner_dtype, ignore_errors))
+                .map(|val| deserialize_all(val, inner_dtype, ignore_errors, extra_keys, path))
                 .collect::<PolarsResult<_>>()?;
             let strict = !ignore_errors;
             let s =
@@ -351,16 +400,26 @@ fn deserialize_all<'a>(
             if let DataType::Struct(fields) = dtype {
                 let document = &**doc;
 
-                let vals = fields
-                    .iter()
-                    .map(|field| {
-                        if let Some(value) = document.get(field.name.as_str()) {
-                            deserialize_all(value, &field.dtype, ignore_errors)
-                        } else {
-                            Ok(AnyValue::Null)
-                        }
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()?;
+                let mut n_found = 0;
+                let mut vals = Vec::with_capacity(fields.len());
+                for field in fields {
+                    vals.push(match document.get(field.name.as_str()) {
+                        Some(value) => {
+                            n_found += 1;
+                            let path = path.child(Some(field.name.as_str()));
+                            deserialize_all(value, &field.dtype, ignore_errors, extra_keys, path)?
+                        },
+                        None => AnyValue::Null,
+                    });
+                }
+                if let Some(extra_keys) = extra_keys
+                    && n_found < document.len()
+                    && let Some(key) = document
+                        .keys()
+                        .find(|k| !fields.iter().any(|f| f.name.as_str() == k.as_ref()))
+                {
+                    return Err(extra_keys.err(path.child(Some(key.as_ref()))));
+                }
                 AnyValue::StructOwned(Box::new((vals, fields.clone())))
             } else {
                 if ignore_errors {

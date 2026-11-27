@@ -4,7 +4,6 @@ import contextlib
 import enum
 from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, cast
-from zoneinfo import ZoneInfo
 
 import polars._reexport as pl
 from polars._dependencies import (
@@ -118,6 +117,8 @@ def lit(
             time_unit = "us"
 
         # parse time zone
+        from zoneinfo import ZoneInfo
+
         dtype_tz = getattr(dtype, "time_zone", None)
         value_tz = value.tzinfo
         if value_tz is None:

@@ -2,10 +2,10 @@
 # Some parts are distributed under: https://github.com/pandas-dev/pandas/blob/main/LICENSE
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from polars._dependencies import json
 from polars._utils.unstable import unstable
 from polars.dataframe import DataFrame
 from polars.datatypes.constants import N_INFER_DEFAULT

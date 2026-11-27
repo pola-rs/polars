@@ -194,6 +194,9 @@ pub enum CastingRules {
     /// whereas int to int is considered lossless.
     /// Overflowing is not considered in this flag, that's handled in `strict` casting
     FirstArgLossless,
+    /// Like `FirstArgLossless`, but falls back to the deprecated supertype casting.
+    // @3.0: Replace by `FirstArgLossless`.
+    FirstArgLosslessOrSupertypeWithWarning,
     Supertype(SuperTypeOptions),
 }
 

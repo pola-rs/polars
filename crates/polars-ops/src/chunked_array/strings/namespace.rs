@@ -761,31 +761,45 @@ pub trait StringNameSpaceImpl: AsString {
     fn split_exact(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n + 1, str::split, false)
+        split_to_struct(ca, by, n + 1, str::split, str::split, false)
     }
 
     #[cfg(feature = "dtype-struct")]
     fn split_exact_inclusive(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n + 1, str::split_inclusive, false)
+        split_to_struct(
+            ca,
+            by,
+            n + 1,
+            str::split_inclusive,
+            str::split_inclusive,
+            false,
+        )
     }
 
     #[cfg(feature = "dtype-struct")]
     fn splitn(&self, by: &StringChunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_string();
 
-        split_to_struct(ca, by, n, |s, by| s.splitn(n, by), true)
+        split_to_struct(
+            ca,
+            by,
+            n,
+            |s, by| s.splitn(n, by),
+            |s, by| s.splitn(n, by),
+            true,
+        )
     }
 
     fn split(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-        split_helper(ca, by, str::split)
+        split_helper(ca, by, str::split, str::split)
     }
 
     fn split_inclusive(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-        split_helper(ca, by, str::split_inclusive)
+        split_helper(ca, by, str::split_inclusive, str::split_inclusive)
     }
 
     /// Extract each successive non-overlapping regex match in an individual string as an array.

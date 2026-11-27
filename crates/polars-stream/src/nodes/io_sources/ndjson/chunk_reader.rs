@@ -1,9 +1,10 @@
+use std::sync::Arc;
+
 use polars_buffer::Buffer;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::ndjson;
-use polars_io::prelude::{is_json_line, parse_ndjson};
-#[cfg(feature = "scan_lines")]
+use polars_io::prelude::{ExtraKeysCheck, is_json_line, parse_ndjson};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::compute_node_prelude::*;
@@ -12,6 +13,12 @@ use crate::nodes::compute_node_prelude::*;
 pub enum ChunkReaderBuilder {
     NDJson {
         ignore_errors: bool,
+        /// The full file schema.
+        file_schema: SchemaRef,
+        /// Whether keys outside `file_schema`, at any level, raise.
+        raise_on_extra_keys: bool,
+        /// The file named in errors.
+        source: Option<PlSmallStr>,
     },
     #[cfg(feature = "scan_lines")]
     Lines,
@@ -23,6 +30,7 @@ pub enum ChunkReader {
     NDJson {
         projected_schema: SchemaRef,
         ignore_errors: bool,
+        extra_keys: Arc<ExtraKeysCheck>,
     },
     #[cfg(feature = "scan_lines")]
     Lines {
@@ -32,11 +40,34 @@ pub enum ChunkReader {
 }
 
 impl ChunkReaderBuilder {
-    pub(super) fn build(&self, projected_schema: SchemaRef) -> ChunkReader {
+    pub(super) fn build(&self, projected_schema: SchemaRef, sliced: bool) -> ChunkReader {
         match self {
-            Self::NDJson { ignore_errors } => ChunkReader::NDJson {
-                projected_schema,
-                ignore_errors: *ignore_errors,
+            Self::NDJson {
+                ignore_errors,
+                file_schema,
+                raise_on_extra_keys,
+                source,
+            } => {
+                // A sliced read also parses the rows next to the slice, so it doesn't check.
+                let raise = *raise_on_extra_keys && !sliced;
+                // Unread columns aren't parsed: only reads of every column check the keys.
+                let top_level = raise
+                    && projected_schema.len() == file_schema.len()
+                    && (projected_schema.iter_names()).all(|n| file_schema.contains(n));
+                // Pruned struct columns aren't checked.
+                let nested = (projected_schema.iter())
+                    .map(|(name, dtype)| raise && file_schema.get(name) == Some(dtype))
+                    .collect();
+                let extra_keys = ExtraKeysCheck {
+                    top_level,
+                    nested,
+                    source: source.clone(),
+                };
+                ChunkReader::NDJson {
+                    projected_schema,
+                    ignore_errors: *ignore_errors,
+                    extra_keys: Arc::new(extra_keys),
+                }
             },
             #[cfg(feature = "scan_lines")]
             Self::Lines => {
@@ -71,11 +102,12 @@ impl ChunkReader {
             Self::NDJson {
                 projected_schema,
                 ignore_errors,
+                extra_keys,
             } => {
-                if projected_schema.is_empty() {
+                if projected_schema.is_empty() && !extra_keys.top_level {
                     Ok(DataFrame::empty_with_height(ndjson::count_rows(&chunk)))
                 } else {
-                    parse_ndjson(&chunk, None, projected_schema, *ignore_errors)
+                    parse_ndjson(&chunk, None, projected_schema, *ignore_errors, extra_keys)
                 }
             },
             #[cfg(feature = "scan_lines")]

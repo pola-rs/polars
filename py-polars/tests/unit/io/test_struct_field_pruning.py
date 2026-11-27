@@ -998,6 +998,7 @@ MID_PLAN_QUERIES: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
 ]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("query", MID_PLAN_QUERIES)
 def test_struct_field_pruning_mid_plan_shapes(
     query: Callable[[pl.LazyFrame], pl.LazyFrame], tmp_path: Path

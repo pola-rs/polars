@@ -30,7 +30,7 @@ use polars_plan::dsl::{
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::options::{JoinTypeOptionsIR, RuntimeFilter};
-use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, ExprProperties, FunctionArgMap, IR};
 
 mod fmt;
 mod io;
@@ -61,7 +61,6 @@ use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::Forb
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::rolling_fixed_window::RollingFixedWindow;
-use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
     /// Key used for physical nodes.
@@ -436,8 +435,12 @@ pub enum PhysNodeKind {
 
         /// Columns to project from the file.
         file_projection_builder: ProjectionBuilder,
-        /// Final output schema of morsels being sent out of MultiScan.
+        /// Final output schema of morsels being sent out of MultiScan, as seen by the predicate.
         output_schema: SchemaRef,
+        /// If set, the schema of the morsels actually sent out of MultiScan: `output_schema`
+        /// without the columns that are only read to evaluate `predicate`. Set by
+        /// `fuse_drops`.
+        output_schema_after_predicate: Option<SchemaRef>,
 
         row_index: Option<RowIndex>,
         pre_slice: Option<Slice>,
@@ -1067,6 +1070,7 @@ fn fuse_drops(
             continue;
         }
 
+        let proj_has_one_output = simple_proj_node.output_schemas.len() == 1;
         let PhysNodeKind::SimpleProjection { input: _, columns } = simple_proj_node.kind_mut()
         else {
             unreachable!()
@@ -1089,6 +1093,25 @@ fn fuse_drops(
 
             let input_schema = input_node.output_schema_mut(0);
             *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
+        } else if let PhysNodeKind::MultiScan {
+            predicate: Some(_),
+            output_schema_after_predicate,
+            ..
+        } = &mut input_node.kind
+            && output_schema_after_predicate.is_none()
+            && proj_has_one_output
+            && !columns.is_empty()
+            && columns.len() < input_node.output_schemas[0].len()
+        {
+            // The scan evaluates the predicate on the columns it reads, but does not emit the
+            // columns that were only read for the predicate.
+            let input_schema = &mut input_node.output_schemas[0];
+            let Ok(narrowed) = input_schema.try_project(columns.keys()) else {
+                continue;
+            };
+            let narrowed = Arc::new(narrowed);
+            *output_schema_after_predicate = Some(narrowed.clone());
+            *input_schema = narrowed;
         } else {
             continue;
         }
@@ -1136,7 +1159,7 @@ pub fn build_physical_plan(
 ) -> PolarsResult<(PhysNodeKey, SecondaryMap<PhysNodeKey, Node>)> {
     let original_ir_len = ir_arena.len();
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
-    let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
+    let mut expr_props = ExprProperties::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
     let mut phys_to_ir: SecondaryMap<PhysNodeKey, Node> =
         SecondaryMap::with_capacity(ir_arena.len());
@@ -1148,7 +1171,7 @@ pub fn build_physical_plan(
         &mut phys_to_ir,
         original_ir_len,
         &mut schema_cache,
-        &mut expr_cache,
+        &mut expr_props,
         &mut cache_nodes,
         ctx,
         None,
