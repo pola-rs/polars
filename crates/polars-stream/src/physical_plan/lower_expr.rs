@@ -1456,6 +1456,19 @@ fn lower_exprs_with_ctx(
                 mut evaluation,
                 variant,
             } => {
+                // The lowering below evaluates `evaluation` on the struct zipped with the frame's
+                // columns, which is the frame only if the struct has the frame's height.
+                if !ctx.expr_props.is_length_preserving(inner, ctx.expr_arena)
+                    && evaluation
+                        .iter()
+                        .any(|e| ctx.expr_props.is_frame_dependent(e.node(), ctx.expr_arena))
+                {
+                    let out_name = unique_column_name();
+                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                    continue;
+                }
+
                 // Transform (simplified):
                 //    expr.struct.with_fields(evaluation).alias(name)
                 //      ->
