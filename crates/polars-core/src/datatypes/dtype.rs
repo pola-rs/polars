@@ -167,6 +167,19 @@ impl PartialEq for DataType {
 
 impl Eq for DataType {}
 
+/// The field of `fields` named `name`, looked for at position `i` first (the usual case).
+#[cfg(feature = "dtype-struct")]
+pub(crate) fn find_field<'a>(
+    fields: &'a [Field],
+    i: usize,
+    name: &PlSmallStr,
+) -> Option<&'a Field> {
+    match fields.get(i) {
+        Some(field) if field.name == *name => Some(field),
+        _ => fields.iter().find(|f| f.name == *name),
+    }
+}
+
 impl DataType {
     /// Indicate if this dtype variant has parameters.
     #[inline]
@@ -883,18 +896,16 @@ impl DataType {
             (Duration(tu), Duration(other_tu)) => *tu = pick(*tu, *other_tu),
             (List(inner), List(other_inner)) => inner.merge_time_units(other_inner, pick),
             #[cfg(feature = "dtype-array")]
-            (Array(inner, _), Array(other_inner, _)) => inner.merge_time_units(other_inner, pick),
+            (Array(inner, _), Array(other_inner, _))
+            | (List(inner), Array(other_inner, _))
+            | (Array(inner, _), List(other_inner)) => inner.merge_time_units(other_inner, pick),
             #[cfg(feature = "dtype-struct")]
             (Struct(fields), Struct(other_fields)) => {
                 for (i, field) in fields.iter_mut().enumerate() {
                     if !field.dtype.contains_time_units() {
                         continue;
                     }
-                    let other = match other_fields.get(i) {
-                        Some(other) if other.name == field.name => Some(other),
-                        _ => other_fields.iter().find(|f| f.name == field.name),
-                    };
-                    if let Some(other) = other {
+                    if let Some(other) = find_field(other_fields, i, &field.name) {
                         field.dtype.merge_time_units(&other.dtype, pick);
                     }
                 }

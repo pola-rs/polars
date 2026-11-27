@@ -28,10 +28,12 @@ impl PyDataFrame {
         let schema = schema.map(|wrap| wrap.0);
         let extract = |record: &Bound<PyAny>| {
             let values = record.extract::<Vec<Bound<PyAny>>>()?;
-            let values = values
-                .iter()
-                .map(|v| py_object_to_any_value(v, strict, true, None));
-            values.collect::<PyResult<Vec<_>>>().map(Row)
+            // (pre-sized, as collecting `PyResult`s would discard the size hint)
+            let mut row = Vec::with_capacity(values.len());
+            for v in &values {
+                row.push(py_object_to_any_value(v, strict, true, None)?);
+            }
+            PyResult::Ok(Row(row))
         };
 
         // the leading records infer the schema (none are needed if it is complete)

@@ -17,7 +17,8 @@ use polars_core::prelude::{pack_map_entries, try_unpack_map_entries};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 #[cfg(feature = "dtype-map")]
 use polars_core::utils::polars_arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
-use polars_core::utils::polars_arrow::temporal_conversions::date32_to_date;
+use polars_core::utils::polars_arrow::temporal_conversions::{date32_to_date, date32_to_date_opt};
+use polars_error::polars_err;
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -434,14 +435,8 @@ pub(crate) fn py_object_to_any_value(
             // (fixed offsets become UTC)
             TzKind::Fixed => (aware_timestamp(ob)?, TimeZone::UTC),
             TzKind::Other => {
-                // (only fixed offsets are supported, as in pyo3's `FixedOffset` conversion,
-                // but keeping any sub-second part of the offset)
-                let offset = tzinfo.call_method1(intern!(py, "utcoffset"), (py.None(),))?;
-                if offset.is_none() {
-                    return Err(PyTypeError::new_err(format!(
-                        "{tzinfo:?} is not a fixed offset timezone"
-                    )));
-                }
+                // (keeping any sub-second part of the offset)
+                let offset = fixed_utcoffset(&tzinfo)?;
                 let local = naive_datetime(ob.cast::<PyDateTime>()?)? - unix_epoch;
                 let utc = local - offset.extract::<TimeDelta>()?;
                 (utc.num_microseconds().unwrap(), TimeZone::UTC)
@@ -467,16 +462,21 @@ pub(crate) fn py_object_to_any_value(
         }
     }
 
-    fn get_numpy_datetime(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        get_numpy_temporal(ob, true)
+    fn get_numpy_datetime(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        get_numpy_temporal(ob, true, strict)
     }
 
-    fn get_numpy_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        get_numpy_temporal(ob, false)
+    fn get_numpy_timedelta(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        get_numpy_temporal(ob, false, strict)
     }
 
-    /// Converts a NumPy datetime64/timedelta64 scalar using the unit stored in the value.
-    fn get_numpy_temporal(ob: &Bound<'_, PyAny>, is_datetime: bool) -> PyResult<AnyValue<'static>> {
+    /// Converts a NumPy datetime64/timedelta64 scalar using the unit stored in the value;
+    /// values that are out of range raise if `strict`, else become null.
+    fn get_numpy_temporal(
+        ob: &Bound<'_, PyAny>,
+        is_datetime: bool,
+        strict: bool,
+    ) -> PyResult<AnyValue<'static>> {
         let py = ob.py();
         static DATETIME_DATA: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
         let np_dtype = ob.getattr(intern!(py, "dtype"))?;
@@ -513,8 +513,26 @@ pub(crate) fn py_object_to_any_value(
             Some(tu) if is_datetime => ticks.map(|v| AnyValue::Datetime(v, tu, None)),
             Some(tu) => ticks.map(|v| AnyValue::Duration(v, tu)),
         };
-        if let Some(av) = av {
-            return Ok(av);
+        // (dates and datetimes must also be within the calendar range, ~±262,000 years)
+        let beyond_calendar = match &av {
+            Some(AnyValue::Date(days)) => date32_to_date_opt(*days).is_none(),
+            Some(AnyValue::Datetime(v, tu, _)) => tu.timestamp_to_datetime_opt(*v).is_none(),
+            _ => false,
+        };
+        match av {
+            Some(av) if !beyond_calendar => return Ok(av),
+            _ if !strict => return Ok(AnyValue::Null),
+            _ => {},
+        }
+        // (NumPy can't format some values with a unit multiple, eg: `datetime64[10ms]`)
+        let value = ob
+            .str()
+            .map_or_else(|_| value.to_string(), |s| s.to_string());
+        if beyond_calendar {
+            let err = polars_err!(
+                InvalidOperation: "{value} is beyond the supported calendar range (~±262,000 years)"
+            );
+            return Err(PyPolarsErr::from(err).into());
         }
         // (out-of-range values raise the same error as other temporal conversions)
         let to = match time_unit {
@@ -523,24 +541,26 @@ pub(crate) fn py_object_to_any_value(
             Some(tu) => DataType::Duration(tu),
         };
         let from = np_dtype.getattr(intern!(py, "name"))?;
-        // (NumPy can't format some values with a unit multiple, eg: `datetime64[10ms]`)
-        let value = ob
-            .str()
-            .map_or_else(|_| value.to_string(), |s| s.to_string());
         Err(PyPolarsErr::from(time_unit_conversion_error(from, &to, value)).into())
     }
 
-    /// The ticks and time unit of a pandas `Timestamp` or `Timedelta` (at its own resolution,
-    /// except that seconds become milliseconds); `dtype` builds the matching polars dtype.
-    fn get_pandas_ticks(
+    /// A pandas `Timestamp` (as a naive datetime) or `Timedelta`, at its own resolution (except
+    /// that seconds become milliseconds); values that are out of range raise if `strict`, else
+    /// become null.
+    fn get_pandas_temporal(
         ob: &Bound<'_, PyAny>,
-        dtype: fn(TimeUnit) -> DataType,
-    ) -> PyResult<(i64, TimeUnit)> {
+        is_datetime: bool,
+        strict: bool,
+    ) -> PyResult<AnyValue<'static>> {
         let py = ob.py();
+        let temporal = |ticks, tu| match is_datetime {
+            true => AnyValue::Datetime(ticks, tu, None),
+            false => AnyValue::Duration(ticks, tu),
+        };
         // Older pandas versions have no `unit` attribute (always "ns")
         let Some(unit) = ob.getattr_opt(intern!(py, "unit"))? else {
             let ns = ob.getattr(intern!(py, "value"))?.extract::<i64>()?;
-            return Ok((ns, TimeUnit::Nanoseconds));
+            return Ok(temporal(ns, TimeUnit::Nanoseconds));
         };
         let unit = unit.extract::<PyBackedStr>()?;
         let time_unit = match &*unit {
@@ -557,26 +577,17 @@ pub(crate) fn py_object_to_any_value(
         // `value` (always nanoseconds) is much cheaper than `asm8`, but overflows
         // for values outside the nanosecond range
         match ob.getattr(intern!(py, "value")) {
-            Ok(ns) => return Ok((ns.extract::<i64>()? / time_unit.nanoseconds(), time_unit)),
+            Ok(ns) => {
+                return Ok(temporal(
+                    time_unit.from_nsecs(ns.extract::<i64>()?),
+                    time_unit,
+                ));
+            },
             Err(err) if !err.is_instance_of::<PyOverflowError>(py) => return Err(err),
             Err(_) => {},
         }
-        let ticks = ob
-            .getattr(intern!(py, "asm8"))?
-            .call_method1(intern!(py, "view"), (intern!(py, "i8"),))?
-            .extract::<i64>()?;
-        if &*unit != "s" {
-            return Ok((ticks, time_unit));
-        }
-        match ticks.checked_mul(1_000) {
-            Some(ms) => Ok((ms, time_unit)),
-            None => Err(PyPolarsErr::from(time_unit_conversion_error(
-                format!("{}[s]", ob.get_type().name()?),
-                &dtype(time_unit),
-                ob.str()?,
-            ))
-            .into()),
-        }
+        // (otherwise, as its NumPy value)
+        get_numpy_temporal(&ob.getattr(intern!(py, "asm8"))?, is_datetime, strict)
     }
 
     /// The polars time zone of a (non-null) `tzinfo`; named (`zoneinfo`/`pytz`/`dateutil`) zones
@@ -585,19 +596,21 @@ pub(crate) fn py_object_to_any_value(
         match tz_kind(tzinfo)? {
             TzKind::Fixed => Ok(TimeZone::UTC),
             TzKind::Pytz(name) | TzKind::Named(name) => parse_time_zone(&name),
-            TzKind::Other => {
-                let py = tzinfo.py();
-                if tzinfo
-                    .call_method1(intern!(py, "utcoffset"), (py.None(),))?
-                    .is_none()
-                {
-                    return Err(PyTypeError::new_err(format!(
-                        "{tzinfo} is not a fixed offset timezone"
-                    )));
-                }
-                Ok(TimeZone::UTC)
-            },
+            TzKind::Other => fixed_utcoffset(tzinfo).map(|_| TimeZone::UTC),
         }
+    }
+
+    /// The offset of a fixed-offset `tzinfo` (other zones raise, as in pyo3's `FixedOffset`
+    /// conversion).
+    fn fixed_utcoffset<'py>(tzinfo: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let py = tzinfo.py();
+        let offset = tzinfo.call_method1(intern!(py, "utcoffset"), (py.None(),))?;
+        if offset.is_none() {
+            return Err(PyTypeError::new_err(format!(
+                "{tzinfo:?} is not a fixed offset timezone"
+            )));
+        }
+        Ok(offset)
     }
 
     /// The polars time zone of a (`zoneinfo` or `pytz`) time zone name.
@@ -606,16 +619,20 @@ pub(crate) fn py_object_to_any_value(
             .extract::<PyBackedStr>()?
             .parse::<Tz>()
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        // SAFETY: chrono-tz names are valid time zones.
         Ok(unsafe { TimeZone::from_static(tz.name()) })
     }
 
-    fn get_pandas_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        let (ticks, time_unit) = get_pandas_ticks(ob, DataType::Duration)?;
-        Ok(AnyValue::Duration(ticks, time_unit))
+    fn get_pandas_timedelta(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        get_pandas_temporal(ob, false, strict)
     }
 
-    fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        let (ticks, time_unit) = get_pandas_ticks(ob, |tu| DataType::Datetime(tu, None))?;
+    fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        let av = get_pandas_temporal(ob, true, strict)?;
+        // (a null if out of range, with `strict=False`)
+        let AnyValue::Datetime(ticks, time_unit, _) = av else {
+            return Ok(av);
+        };
         let tzinfo = ob.getattr(intern!(ob.py(), "tzinfo"))?;
         if tzinfo.is_none() {
             return Ok(AnyValue::Datetime(ticks, time_unit, None));
