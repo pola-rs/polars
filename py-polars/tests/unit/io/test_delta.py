@@ -885,6 +885,8 @@ def test_scan_delta_nanosecond_timestamp(
         < pl.lit(datetime(2025, 1, 1), dtype=pl.Datetime("us", time_zone="UTC"))
     )
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    # The reader prunes row groups only with its capabilities.
+    plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
     capfd.readouterr()
 
     assert_frame_equal(q.collect(), df.clear())
