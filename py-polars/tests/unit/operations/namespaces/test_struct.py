@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import (
     ColumnNotFoundError,
+    DuplicateError,
     InvalidOperationError,
     StructFieldNotFoundError,
 )
@@ -41,6 +42,21 @@ def test_rename_fields() -> None:
     df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
     s = df.to_struct("my_struct").struct.rename_fields(["a", "b", "c"])
     assert s.struct.fields == ["a", "b", "c"]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expr"),
+    [
+        (pl.List(pl.Int64), pl.col("a").list.to_struct(["y", "y"])),
+        (pl.Array(pl.Int64, 2), pl.col("a").arr.to_struct(["y", "y"])),
+    ],
+)
+def test_duplicate_field_names_raise_31152(dtype: pl.DataType, expr: pl.Expr) -> None:
+    df = pl.DataFrame({"a": [[1, 2]]}, schema={"a": dtype})
+    with pytest.raises(DuplicateError, match="multiple fields with name 'y' found"):
+        df.select(expr)
+    with pytest.raises(DuplicateError, match="multiple fields with name 'y' found"):
+        df.lazy().select(expr).collect_schema()
 
 
 def test_drop() -> None:
