@@ -40,13 +40,12 @@ impl DateChunked {
         };
         let err = || polars_err!(ComputeError: "cannot format Date with format '{}'", format);
         let items = StrftimeItems::new(format).parse().map_err(|_| err())?;
-        self.physical()
-            .try_apply_into_string_amortized(|val, buf| {
-                date32_to_date(val)
-                    .format_with_items(items.iter())
-                    .write_to(buf)
-            })
-            .map_err(|_| err())
+        self.physical().try_apply_into_string_amortized(|val, buf| {
+            date32_to_date(val)
+                .format_with_items(items.iter())
+                .write_to(buf)
+                .map_err(|_| err())
+        })
     }
 
     /// Convert from Date into String with the given format.

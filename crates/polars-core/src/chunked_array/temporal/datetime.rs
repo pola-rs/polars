@@ -63,15 +63,18 @@ impl DatetimeChunked {
                 self.physical().try_apply_into_string_amortized(|val, buf| {
                     let ndt = tu.timestamp_to_datetime(val);
                     let dt = parsed_time_zone.from_utc_datetime(&ndt);
-                    dt.format_with_items(items.iter()).write_to(buf)
+                    dt.format_with_items(items.iter())
+                        .write_to(buf)
+                        .map_err(|_| err())
                 })
             },
             _ => self.physical().try_apply_into_string_amortized(|val, buf| {
                 let ndt = tu.timestamp_to_datetime(val);
-                ndt.format_with_items(items.iter()).write_to(buf)
+                ndt.format_with_items(items.iter())
+                    .write_to(buf)
+                    .map_err(|_| err())
             }),
-        }
-        .map_err(|_| err())?;
+        }?;
         ca.rename(self.name().clone());
         Ok(ca)
     }

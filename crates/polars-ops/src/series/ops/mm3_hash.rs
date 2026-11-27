@@ -92,7 +92,7 @@ pub fn mm3_hash(s: &Series) -> PolarsResult<Series> {
                 TimeUnit::Nanoseconds => hash_i64_values(ca, |ns| ns.div_euclid(1_000)),
                 TimeUnit::Microseconds => hash_i64_values(ca, |us| us),
                 TimeUnit::Milliseconds => {
-                    let ca = ca.try_apply_nonnull_values_generic::<Int64Type, _, _, _>(|ms| {
+                    let ca = ca.try_apply_nonnull_values_generic::<Int64Type, _, _>(|ms| {
                         ms.checked_mul(1_000).ok_or_else(|| {
                             polars_err!(ComputeError: "datetime out of range for microsecond precision: {ms}ms")
                         })
