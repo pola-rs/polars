@@ -133,7 +133,6 @@ async fn fetch_metadata(
     encryption_sharing: &mut polars_io::parquet::encryption::EncryptionSharing,
     verbose: bool,
 ) -> PolarsResult<()> {
-    use futures::stream::StreamExt;
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
         (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
@@ -200,7 +199,10 @@ async fn fetch_metadata(
         .map(|_| ());
     if out.is_err() {
         drop(futures);
-        while resolver_futures.next().await.is_some() {}
+        // bounded: a plugin call that never returns must not hang the error
+        if crate::utils::drain_bounded(&mut resolver_futures).await && verbose {
+            eprintln!("fetch_metadata: gave up waiting for resolvers still running after an error");
+        }
     }
     out
 }
@@ -1185,7 +1187,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     ctxt.conversion_optimizer
                         .fill_scratch(&temp_expr_irs, ctxt.expr_arena);
 
-                    let input_with_exprs = ctxt.lp_arena.add(IR::HStack {
+                    let lp = IR::HStack {
                         input,
                         exprs: temp_expr_irs,
                         schema,
@@ -1195,7 +1197,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             should_broadcast: true,
                             maintain_dataframe_height: false,
                         },
-                    });
+                    };
+                    let input_with_exprs = run_conversion(lp, ctxt, "unique")?;
                     (
                         input_with_exprs,
                         Some(subset_colnames.into_iter().collect()),
@@ -1339,6 +1342,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                 dt.is_primitive_numeric()
                                     || dt.is_temporal()
                                     || dt == &DataType::Boolean
+                                    || dt.is_decimal()
                             },
                             |name| col(name.clone()).median(),
                             &input_schema,

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use polars_arrow::array::builder::ShareStrategy;
@@ -168,6 +170,18 @@ fn rechunk_once(payload: &mut DataFrame, rechunked: &mut bool) {
     }
 }
 
+/// The columns `idx` of `payload`, or all of them: the columns only the fused predicate reads are
+/// left out, as they are not gathered.
+pub fn output_columns<'a>(payload: &'a DataFrame, idx: Option<&[usize]>) -> Cow<'a, DataFrame> {
+    match idx {
+        None => Cow::Borrowed(payload),
+        Some(idx) => {
+            let columns = idx.iter().map(|i| payload.columns()[*i].clone()).collect();
+            Cow::Owned(unsafe { DataFrame::new_unchecked(payload.height(), columns) })
+        },
+    }
+}
+
 /// Fixes names and does coalescing of columns post-join.
 fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
     if params.args.how == JoinType::Full && params.args.should_coalesce() {
@@ -203,7 +217,21 @@ pub fn with_nulls_for_other_side(
     df_is_left: bool,
     params: &EquiJoinParams,
 ) -> DataFrame {
-    let nulls = DataFrame::full_null(params.payload_schema(!df_is_left), df.height());
+    // `df` has all payload columns of its side, including those only a fused predicate reads.
+    let df = match params.output_idx(df_is_left).as_deref() {
+        Some(idx) => output_columns(&df, Some(idx)).into_owned(),
+        None => df,
+    };
+    with_nulls_for_other_side_projected(df, df_is_left, params)
+}
+
+/// Like `with_nulls_for_other_side`, but `df` has only the output columns of its side.
+pub fn with_nulls_for_other_side_projected(
+    df: DataFrame,
+    df_is_left: bool,
+    params: &EquiJoinParams,
+) -> DataFrame {
+    let nulls = DataFrame::full_null(params.output_side_schema(!df_is_left), df.height());
     let (mut left, right) = if df_is_left { (df, nulls) } else { (nulls, df) };
     unsafe { left.hstack_mut_unchecked(right.columns()) };
     postprocess_join(left, params)
@@ -226,6 +254,9 @@ pub struct ProbeOutput {
     probe_match: Vec<IdxSize>,
     unmatched_probe: Vec<IdxSize>,
     left_is_build: bool,
+    /// The columns of the build and probe payloads that are output, if only some are.
+    build_idx: Option<Arc<[usize]>>,
+    probe_idx: Option<Arc<[usize]>>,
     mark_matches: bool,
     emit_unmatched: bool,
     /// The number of rows of a full output.
@@ -238,10 +269,11 @@ pub struct ProbeOutput {
 
 impl ProbeOutput {
     pub fn new(params: &EquiJoinParams, left_is_build: bool) -> Self {
-        let build_schema = params.payload_schema(left_is_build);
         Self {
-            build: DataFrameBuilder::new(build_schema.clone()),
-            probe: DataFrameBuilder::new(params.payload_schema(!left_is_build).clone()),
+            build: DataFrameBuilder::new(params.output_side_schema(left_is_build).clone()),
+            probe: DataFrameBuilder::new(params.output_side_schema(!left_is_build).clone()),
+            build_idx: params.output_idx(left_is_build).clone(),
+            probe_idx: params.output_idx(!left_is_build).clone(),
             table_match: Vec::new(),
             probe_match: Vec::new(),
             unmatched_probe: Vec::new(),
@@ -249,7 +281,7 @@ impl ProbeOutput {
             mark_matches: params.emit_unmatched(left_is_build),
             emit_unmatched: params.emit_unmatched(!left_is_build),
             limit: get_ideal_morsel_size(),
-            no_build_rows: DataFrame::empty_with_schema(build_schema),
+            no_build_rows: DataFrame::empty_with_schema(params.output_side_schema(left_is_build)),
             null_idxs: Vec::new(),
             order: Vec::new(),
         }
@@ -267,6 +299,52 @@ impl ProbeOutput {
         self.len() >= self.limit
     }
 
+    /// Like `probe`, for joins without a fused predicate. Ordered probes call it once per run of
+    /// rows in one partition, which is often a single row.
+    pub fn probe_unfused(
+        &mut self,
+        table: &ProbeTable,
+        frame: &FrameWithKeys,
+        rows: &[IdxSize],
+        offset: &mut usize,
+    ) {
+        self.probe_keys(
+            table,
+            frame,
+            rows,
+            offset,
+            self.mark_matches,
+            self.emit_unmatched,
+        );
+        self.gather_build(table);
+    }
+
+    /// Finds the matches of the rows `rows` of `frame` from `offset` on in `table_match` and
+    /// `probe_match`, and moves `offset` past the probed rows.
+    fn probe_keys(
+        &mut self,
+        table: &ProbeTable,
+        frame: &FrameWithKeys,
+        rows: &[IdxSize],
+        offset: &mut usize,
+        mark_matches: bool,
+        emit_unmatched: bool,
+    ) {
+        let limit = self.limit.saturating_sub(self.len()).max(1) as IdxSize;
+        self.table_match.clear();
+        *offset += unsafe {
+            table.hash_table.probe_subset(
+                &frame.keys,
+                &rows[*offset..],
+                &mut self.table_match,
+                &mut self.probe_match,
+                mark_matches,
+                emit_unmatched,
+                limit,
+            )
+        } as usize;
+    }
+
     /// Probes `table` with the rows `rows` of `frame` from `offset` on, until all are probed or
     /// the output is full, and moves `offset` past the probed rows. The columns of `frame` must be
     /// single chunks.
@@ -279,72 +357,69 @@ impl ProbeOutput {
         params: &EquiJoinParams,
         state: &ExecutionState,
     ) -> PolarsResult<()> {
-        let limit = self.limit.saturating_sub(self.len()).max(1) as IdxSize;
+        let Some(fused_predicate) = &params.fused_predicate else {
+            self.probe_unfused(table, frame, rows, offset);
+            return Ok(());
+        };
         let probe_start = self.probe_match.len();
         let probed_start = *offset;
-        self.table_match.clear();
-        // With a fused predicate, a pair only matches once the predicate holds, so the unmatched
-        // rows are found after evaluating it.
-        let fused = params.fused_predicate.is_some();
-        *offset += unsafe {
-            table.hash_table.probe_subset(
-                &frame.keys,
-                &rows[*offset..],
-                &mut self.table_match,
-                &mut self.probe_match,
-                self.mark_matches && !fused,
-                self.emit_unmatched && !fused,
-                limit,
-            )
-        } as usize;
+        // With a fused predicate, a pair only matches once the predicate holds, so the matched and
+        // unmatched rows are known after evaluating it.
+        self.probe_keys(table, frame, rows, offset, false, false);
 
-        if let Some(fused_predicate) = &params.fused_predicate {
-            if !self.table_match.is_empty() {
-                let kept = fused_predicate
-                    .retain_matches(
-                        self.left_is_build,
-                        &table.payload,
-                        &mut self.table_match,
-                        &frame.frame,
-                        &mut self.probe_match[probe_start..],
-                        state,
-                    )
-                    .await?;
-                self.table_match.truncate(kept);
-                self.probe_match.truncate(probe_start + kept);
-            }
-            if self.mark_matches {
-                table.hash_table.mark_rows(&self.table_match);
-            }
-            if self.emit_unmatched {
-                // The kept pairs follow the order of the probed rows.
-                let mut kept = self.probe_match[probe_start..].iter().peekable();
-                self.unmatched_probe.clear();
-                for row in &rows[probed_start..*offset] {
-                    if kept.peek() == Some(&row) {
-                        while kept.next_if_eq(&row).is_some() {}
-                    } else {
-                        self.unmatched_probe.push(*row);
-                    }
-                }
-                self.table_match.extend(std::iter::repeat_n(
-                    IdxSize::MAX,
-                    self.unmatched_probe.len(),
-                ));
-                self.probe_match.extend_from_slice(&self.unmatched_probe);
-            }
+        if !self.table_match.is_empty() {
+            let kept = fused_predicate
+                .retain_matches(
+                    self.left_is_build,
+                    &table.payload,
+                    &mut self.table_match,
+                    &frame.frame,
+                    &mut self.probe_match[probe_start..],
+                    state,
+                )
+                .await?;
+            self.table_match.truncate(kept);
+            self.probe_match.truncate(probe_start + kept);
         }
+        if self.mark_matches {
+            table.hash_table.mark_rows(&self.table_match);
+        }
+        if self.emit_unmatched {
+            // The kept pairs follow the order of the probed rows.
+            let mut kept = self.probe_match[probe_start..].iter().peekable();
+            self.unmatched_probe.clear();
+            for row in &rows[probed_start..*offset] {
+                if kept.peek() == Some(&row) {
+                    while kept.next_if_eq(&row).is_some() {}
+                } else {
+                    self.unmatched_probe.push(*row);
+                }
+            }
+            self.table_match.extend(std::iter::repeat_n(
+                IdxSize::MAX,
+                self.unmatched_probe.len(),
+            ));
+            self.probe_match.extend_from_slice(&self.unmatched_probe);
+        }
+        self.gather_build(table);
+        Ok(())
+    }
 
+    /// Gathers the build rows of the matches in `table_match`.
+    fn gather_build(&mut self, table: &ProbeTable) {
+        if self.table_match.is_empty() {
+            return;
+        }
+        let build_payload = output_columns(&table.payload, self.build_idx.as_deref());
         if self.emit_unmatched {
             self.build
-                .opt_gather_extend(&table.payload, &self.table_match, ShareStrategy::Always);
+                .opt_gather_extend(&build_payload, &self.table_match, ShareStrategy::Always);
         } else {
             unsafe {
                 self.build
-                    .gather_extend(&table.payload, &self.table_match, ShareStrategy::Always)
+                    .gather_extend(&build_payload, &self.table_match, ShareStrategy::Always)
             };
         }
-        Ok(())
     }
 
     /// Adds the probe rows `rows` of the current probe frame without a match.
@@ -363,9 +438,10 @@ impl ProbeOutput {
     /// Gathers the probe rows of the matches from `payload`, the current probe frame, whose
     /// columns must be single chunks.
     pub fn gather_probe(&mut self, payload: &DataFrame) {
+        let payload = output_columns(payload, self.probe_idx.as_deref());
         unsafe {
             self.probe
-                .gather_extend(payload, &self.probe_match, ShareStrategy::Always)
+                .gather_extend(&payload, &self.probe_match, ShareStrategy::Always)
         };
         self.probe_match.clear();
     }
@@ -541,15 +617,12 @@ impl ProbePartitions {
                     );
 
                     while probe_group_start < probe_group_end {
-                        out.probe(
+                        out.probe_unfused(
                             p,
                             &frame,
                             &materialized_idxsize_range[..probe_group_end],
                             &mut probe_group_start,
-                            params,
-                            &state.in_memory_exec_state,
-                        )
-                        .await?;
+                        );
 
                         if out.is_full() || probe_group_start == probe_partitions.len() {
                             rechunk_once(&mut frame.frame, &mut payload_rechunked);

@@ -192,24 +192,14 @@ impl AExpr {
                     Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
                     Sum { input: expr, .. } => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        let dt = match field.dtype() {
-                            dt if matches!(dt, String | Binary | BinaryOffset)
-                                || dt.is_nested()
-                                || dt.is_object() =>
-                            {
-                                polars_bail!(
-                                    InvalidOperation: "`sum` operation not supported for dtype `{dt}`"
-                                )
-                            },
-                            Boolean => Some(IDX_DTYPE),
-                            UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
-                            #[cfg(feature = "dtype-decimal")]
-                            Decimal(_, scale) => Some(Decimal(DEC128_MAX_PREC, *scale)),
-                            _ => None,
-                        };
-                        if let Some(dt) = dt {
-                            field.set_dtype(dt);
-                        }
+                        let dt = field.dtype();
+                        polars_ensure!(
+                            dt.is_primitive_numeric()
+                                || dt.is_decimal()
+                                || matches!(dt, Boolean | Duration(_) | Null | Unknown(_)),
+                            InvalidOperation: "`sum` operation not supported for dtype `{dt}`"
+                        );
+                        field.set_dtype(sum_output_dtype(dt));
                         Ok(field)
                     },
                     Median(expr) | Mean(expr) | Std(expr, _) | Var(expr, _) => {
@@ -221,20 +211,9 @@ impl AExpr {
                             _ => unreachable!(),
                         };
                         let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let dt = field[0].dtype();
-                        let supported = match dt {
-                            Null | Unknown(_) | Boolean => true,
-                            #[cfg(feature = "dtype-decimal")]
-                            Decimal(_, _) => true,
-                            dt if dt.is_primitive_numeric() => true,
-                            dt if dt.is_temporal() => allow_temporal,
-                            _ => false,
-                        };
-                        polars_ensure!(
-                            supported,
-                            InvalidOperation: "`{op}` operation not supported for dtype `{dt}`"
-                        );
-                        FieldsMapper::new(&field).moment_dtype()
+                        let mapper = FieldsMapper::new(&field);
+                        mapper.ensure_moment_input(op, allow_temporal)?;
+                        mapper.moment_dtype()
                     },
                     Implode {
                         input,
@@ -792,6 +771,18 @@ fn get_arithmetic_field(
                 right_field.dtype,
                 try_get_supertype(&left_field.dtype, &right_field.dtype)?,
             );
+        },
+        // Boolean with integer is rejected by the arm above.
+        op @ (Operator::Or | Operator::And | Operator::Xor)
+            if ![&left_field.dtype, &right_field.dtype]
+                .into_iter()
+                .all(|dt| {
+                    dt.is_bool()
+                        || dt.is_integer()
+                        || matches!(dt, Null | Unknown(UnknownKind::Any))
+                }) =>
+        {
+            polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
         },
         _ => {
             match (&left_field.dtype, &right_field.dtype) {

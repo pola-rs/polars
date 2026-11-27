@@ -32,7 +32,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable
+    from collections.abc import Callable, Collection, Iterable
 
     import pyarrow as pa
     import pyiceberg.catalog
@@ -88,6 +88,24 @@ class _AlreadyCommitted(Exception):
 
     def __init__(self, table: pyiceberg.table.Table) -> None:
         self.table = table
+
+
+class _WriteDirs:
+    """The directories the executions of one attach of a sink write into.
+
+    Its cleanup may remove them. Serializing gives that up: the commit may then happen
+    elsewhere. A copy starts with none.
+    """
+
+    def __init__(self) -> None:
+        self.dirs: list[str] = []
+
+    def __getstate__(self) -> tuple[()]:
+        self.dirs.clear()
+        return ()
+
+    def __setstate__(self, _state: tuple[()]) -> None:
+        self.dirs = []
 
 
 @dataclass(kw_only=True)
@@ -174,9 +192,18 @@ def _copy_table_state(src: pyiceberg.table.Table, dst: pyiceberg.table.Table) ->
 
 
 def _already_committed(metadata: TableMetadata, sink_uuid: str) -> bool:
-    return any(
-        s.summary is not None and s.summary.get(_SINK_UUID_PROPERTY) == sink_uuid
-        for s in metadata.snapshots
+    return _committed_snapshot_id(metadata, sink_uuid) is not None
+
+
+def _committed_snapshot_id(metadata: TableMetadata, sink_uuid: str) -> int | None:
+    """The id of the newest snapshot the sink committed, or None if it has none."""
+    return next(
+        (
+            s.snapshot_id
+            for s in reversed(metadata.snapshots)
+            if s.summary is not None and s.summary.get(_SINK_UUID_PROPERTY) == sink_uuid
+        ),
+        None,
     )
 
 
@@ -348,9 +375,19 @@ def _raise_if_spec_changed(
 
 
 def _sink_transaction(
-    table: pyiceberg.table.Table, sink_uuid: str, spec_id: int | None
+    table: pyiceberg.table.Table,
+    sink_uuid: str,
+    spec_id: int | None,
+    *,
+    schema_id: int | None = None,
+    check: Callable[[TableMetadata], None] | None = None,
 ) -> Transaction:
-    """A transaction that commits only while `spec_id` (written for) is the default."""
+    """
+    A transaction that commits only while `spec_id` (written for) is the default.
+
+    With `schema_id`, also only while that schema is the current one. `check` is
+    called with the table's metadata before each retry, and may raise.
+    """
     from pyiceberg.exceptions import ValidationException
     from pyiceberg.table import Transaction
     from pyiceberg.table.update import AssertDefaultSpecId
@@ -365,6 +402,14 @@ def _sink_transaction(
             # pyiceberg would write the files' partition values under the new spec
             if spec_id is not None and self._table.metadata.default_spec_id != spec_id:
                 raise ValidationException(_SPEC_CHANGED)
+            if (
+                schema_id is not None
+                and self._table.metadata.current_schema_id != schema_id
+            ):
+                msg = "the table schema changed during the write"
+                raise ValidationException(msg)
+            if check is not None:
+                check(self._table.metadata)
             super()._rebuild_snapshot_updates()
 
     if spec_id is None:
@@ -1313,6 +1358,9 @@ class IcebergSinkState:
     # The partition spec of the partition keys.
     partition_spec_id: int | None
     commit_result_df: NoPickleOption[pl.DataFrame]
+    # The directories of the executions of the state's one attach, one per resolve,
+    # until a commit lands. Shared with the engine's copy, as `commit_result_df`.
+    write_dirs: _WriteDirs | None
     # Data files the commit replaces, instead of appending or overwriting.
     replace_files: _ReplaceFiles | _HandBack | None = None
 
@@ -1432,6 +1480,7 @@ class IcebergSinkState:
             sort_order_id=None,
             partition_spec_id=None,
             commit_result_df=NoPickleOption(),
+            write_dirs=None,
             replace_files=replace_files,
         )
 
@@ -1542,6 +1591,12 @@ class IcebergSinkState:
         )
 
     def attach_sink(self, lf: pl.LazyFrame) -> pl.LazyFrame:
+        # one attach per state, recorded before anything can fail: cleanup owns only the
+        # files of this attach's executions
+        if self.write_dirs is not None:
+            msg = "an Iceberg sink state can be attached only once"
+            raise RuntimeError(msg)
+        self.write_dirs = _WriteDirs()
         if self.create_if_not_exists:
             from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -1596,6 +1651,11 @@ class IcebergSinkState:
 
         import polars as pl
 
+        # this execution's own directory; a copy of the state (as on another worker) has
+        # no list to record it in, and its cleanup deletes nothing
+        write_dir = gen_uuid_v7().hex()
+        if self.write_dirs is not None:
+            self.write_dirs.dirs.append(write_dir)
         table = self.table()
         table_metadata = table.metadata
         table_properties = table_metadata.properties
@@ -1709,7 +1769,10 @@ class IcebergSinkState:
         return lf.sink_parquet(  # type: ignore[call-overload]
             pl.PartitionBy(
                 _normalize_windows_iceberg_file_uri(
-                    self.sink_base_path(object_storage_enabled=object_storage_enabled)
+                    self.sink_base_path(
+                        object_storage_enabled=object_storage_enabled,
+                        write_dir=write_dir,
+                    )
                 ),
                 file_path_provider=PlIcebergPathProviderConfig(
                     object_storage_partitioned_paths=object_storage_partitioned_paths
@@ -1731,6 +1794,13 @@ class IcebergSinkState:
             lazy=True,
         )._ldf
 
+    def committed_snapshot_id(self) -> int | None:
+        """The id of the newest snapshot this sink committed, after `commit()`.
+
+        None when the commit created no snapshot, or when that snapshot has expired.
+        """
+        return _committed_snapshot_id(self.table().metadata, self.sink_uuid_str)
+
     def commit(self, sinked_files: list[_IcebergSinkedFile]) -> pl.DataFrame:
         """Commit the sinked files to the table.
 
@@ -1739,6 +1809,8 @@ class IcebergSinkState:
         has expired, or if the table is rolled back while the re-execution is in
         flight: no catalog requirement can detect the latter.
         """
+        from pyiceberg.exceptions import CommitStateUnknownException
+
         import polars as pl
         import polars._utils.logging
 
@@ -1755,7 +1827,12 @@ class IcebergSinkState:
         # may have expired while the data was written.
         refresh_file_io(table)
 
-        self._commit(table, sinked_files, verbose=verbose)
+        try:
+            self._commit(table, sinked_files, verbose=verbose)
+        except CommitStateUnknownException:
+            self._keep_written_files()
+            raise
+        self._keep_written_files()
 
         self.commit_result_df.set(
             pl.DataFrame(
@@ -2093,7 +2170,13 @@ class IcebergSinkState:
         )
         state.sink_uuid_str = self.sink_uuid_str
         rows = _scan_iceberg_files(table, tasks, self.iceberg_storage_properties)
-        state.attach_sink(rows.remove(predicate)).collect()
+        try:
+            state.attach_sink(rows.remove(predicate)).collect()
+        except Exception as error:
+            # its files are in its own directory, which the caller does not know
+            if (remaining := state.remove_written_files()) is not None:
+                error.add_note(f"data files may remain under '{remaining}'")
+            raise
         assert hand_back.files is not None
         return hand_back.files, hand_back.sort_order_id
 
@@ -2170,10 +2253,19 @@ class IcebergSinkState:
             elapsed = perf_counter() - start_instant
             eprint(f"IcebergSinkState[commit]: finish create table ({elapsed:.3f}s)")
 
-    def written_files_dir(self) -> tuple[str, bool]:
-        """The directory of this sink's data files, and whether it is the sink's own.
+    def _keep_written_files(self) -> None:
+        """After a commit that landed or may have: no cleanup may remove its files."""
+        if self.write_dirs is not None and not isinstance(
+            self.replace_files, _HandBack
+        ):
+            self.write_dirs.dirs.clear()
 
-        The object-storage layout puts them next to other writers' files.
+    def written_files_dir(self) -> tuple[str, bool]:
+        """The directory of this execution's data files, and whether it is its own.
+
+        The object-storage layout puts them next to other writers' files. Without
+        exactly one execution of this attach (none resolved here, or several), the
+        directory is not its own.
         """
         from pyiceberg.table import TableProperties
         from pyiceberg.utils.properties import property_as_bool
@@ -2183,8 +2275,13 @@ class IcebergSinkState:
             TableProperties.OBJECT_STORE_ENABLED,
             TableProperties.OBJECT_STORE_ENABLED_DEFAULT,
         )
-        location = self.sink_base_path(object_storage_enabled=object_storage_enabled)
-        return location, not object_storage_enabled
+        # one execution: its own directory; none or several: the sink's
+        write_dirs = [] if self.write_dirs is None else self.write_dirs.dirs
+        write_dir = write_dirs[0] if len(write_dirs) == 1 else None
+        location = self.sink_base_path(
+            object_storage_enabled=object_storage_enabled, write_dir=write_dir
+        )
+        return location, not object_storage_enabled and write_dir is not None
 
     def remove_written_files(self) -> str | None:
         """Delete the data files of a sink whose commit did not land, best effort.
@@ -2231,7 +2328,9 @@ class IcebergSinkState:
         }
         return load_file_io({**table.io.properties, **user}, location=table.location())
 
-    def sink_base_path(self, *, object_storage_enabled: bool) -> str:
+    def sink_base_path(
+        self, *, object_storage_enabled: bool, write_dir: str | None = None
+    ) -> str:
         from polars.io.iceberg._plugin import _data_location
 
         sink_base_path = _data_location(self.table())
@@ -2239,7 +2338,9 @@ class IcebergSinkState:
         if object_storage_enabled:
             return sink_base_path
 
-        return f"{sink_base_path}{self.sink_uuid_str}/"
+        sink_dir = f"{sink_base_path}{self.sink_uuid_str}/"
+        # each execution writes into a directory that only its own cleanup removes
+        return sink_dir if write_dir is None else f"{sink_dir}{write_dir}/"
 
 
 @dataclass(frozen=True, kw_only=True)

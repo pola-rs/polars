@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ShapeError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1018,6 +1018,30 @@ def test_over_literal_or_scalar_24756(expr: pl.Expr, over: pl.Expr) -> None:
     assert out.shape == (3, 1)
 
 
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.lit(5).over(pl.lit(None)), [5, 5, 5]),
+        (pl.lit(5).over(pl.lit(1)), [5, 5, 5]),
+        (pl.lit(5).over(pl.lit(1)).sum(), [15]),
+    ],
+)
+def test_over_literal_function_and_partition_31006(
+    expr: pl.Expr, expected: list[int]
+) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    out = lf.select(expr).collect()
+    assert_frame_equal(
+        out, pl.DataFrame({"literal": expected}, schema={"literal": pl.Int32})
+    )
+
+
+def test_over_literal_partition_error_31006() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    with pytest.raises(InvalidOperationError, match="cum_sum"):
+        lf.select(pl.lit(5).over(pl.lit(None).cum_sum())).collect()
+
+
 def test_over_multiple_keys_non_numeric_output() -> None:
     df = pl.DataFrame(
         {
@@ -1129,3 +1153,37 @@ def test_window_order_by_multiple_keys_scalar(key: pl.Expr) -> None:
         .height
         == 0
     )
+
+
+def test_over_non_numeric_aggregation_maps_by_groups() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 2, None, 1, None, 3, 2],
+            "h": ["x", "y", "x", "x", "x", "y", "y"],
+            "s": ["a", "b", "c", "d", None, "f", "g"],
+            "b": [True, False, None, False, True, None, False],
+        }
+    )
+    out = df.select(
+        first=pl.col("s").first().over("g"),
+        max_b=pl.col("b").max().over("g"),
+        first_2=pl.col("s").first().over("g", "h"),
+        last_sorted=pl.col("s").last().over("g", order_by="s"),
+        head=pl.col("s").head(2).over("h", mapping_strategy="join"),
+    )
+    expected = pl.DataFrame(
+        {
+            "first": ["a", "b", "c", "a", "c", "f", "b"],
+            "max_b": [True, False, True, True, True, None, False],
+            "first_2": ["a", "b", "c", "a", "c", "f", "b"],
+            "last_sorted": ["d", "g", "c", "d", "c", "f", "g"],
+            "head": [["a", "c"], ["b", "f"], ["a", "c"], ["a", "c"], ["a", "c"]]
+            + [["b", "f"], ["b", "f"]],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+    # Multi-chunk input.
+    df2 = pl.concat([df, df], rechunk=False)
+    out = df2.select(pl.col("s").first().over("g"))
+    assert out["s"].to_list() == expected["first"].to_list() * 2

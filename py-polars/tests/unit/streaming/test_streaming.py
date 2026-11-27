@@ -13,6 +13,7 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from polars._typing import EngineType, JoinStrategy, PolarsIntegerType
@@ -511,6 +512,7 @@ def test_streaming_int_range_over_length(
     assert_frame_equal(q.collect(), expected)
 
 
+@pytest.mark.slow
 def test_streaming_error_does_not_panic_on_teardown(tmp_path: Path, capfd: Any) -> None:
     # Leaving the task scope at the first error used to cancel a task while a
     # sibling was joining it: "joined on cancelled task", printed by the panic
@@ -531,3 +533,26 @@ def test_streaming_row_index_overflow_is_an_error(engine: EngineType) -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}).with_row_index(offset=offset)
     with pytest.raises(pl.exceptions.ComputeError, match="overflows"):
         lf.collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda lf: lf.with_row_index().drop("a"),
+        lambda lf: lf.with_row_index().drop("c"),
+        lambda lf: lf.with_row_index().drop("index"),
+        lambda lf: lf.with_row_index().select("index", "c"),
+        lambda lf: lf.with_row_index().select("c", "index"),
+        lambda lf: lf.with_row_index("i", 5).select("b", "i").slice(2, 3),
+        lambda lf: lf.with_row_index().drop("b").filter(pl.col("a") > 2).tail(3),
+    ],
+)
+def test_streaming_with_row_index_then_projection(
+    build: Callable[[pl.LazyFrame], pl.LazyFrame],
+) -> None:
+    # a projection above `with_row_index` that drops or reorders columns used to panic
+    # in streaming over some sources (scan_database's resolver)
+    lf = pl.LazyFrame({"a": range(10), "b": range(10, 20), "c": range(20, 30)})
+    assert_frame_equal(
+        build(lf).collect(engine="streaming"), build(lf).collect(engine="in-memory")
+    )

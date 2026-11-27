@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
-use polars_core::prelude::{DataType, SchemaRef};
+use polars_core::prelude::{DataType, Schema, SchemaRef};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
@@ -80,6 +80,9 @@ pub struct DatabaseScanConfig {
     pub backend: BackendChoice,
     /// The planned schema. Every partition is cast to it.
     pub schema: SchemaRef,
+    /// Inferred Google BigQuery JSON dtypes for validation before casting. A Null leaf
+    /// marks an unobserved JSON kind with a String fallback.
+    pub bigquery_sampled_schema: Schema,
     pub columns: Arc<[ColumnMeta]>,
     pub stats: TableStats,
     /// Set by each resolution ([`compile_scan`](super::compile_scan)).
@@ -107,6 +110,23 @@ pub struct DatabaseScanConfig {
     /// (MariaDB, Trino): a read without pushdown doesn't wrap it for conversions.
     #[serde(default)]
     pub derived_order_dropped: bool,
+    /// SQLite: the database was found to parse float literals exactly (`sqlite_floats_exact`):
+    /// float comparisons are pushed only then.
+    #[serde(default)]
+    pub sqlite_floats_exact: bool,
+    /// A SQL Server query with a column of no name: the derived table the read wraps it in lists
+    /// the schema's names in its alias (`(q) AS "_pl"("a", "column_1")`), as SQL Server refuses
+    /// a derived table with an unnamed column.
+    #[serde(default)]
+    pub unnamed_columns: bool,
+    /// Columns the planner found unreadable right, with why: raised when one is read.
+    #[serde(default)]
+    pub refused_columns: Vec<(PlSmallStr, PlSmallStr)>,
+    /// How the relations the source names resolved on the planning session
+    /// ([`catalog::resolution_fingerprint`](super::catalog::resolution_fingerprint)); every session
+    /// of a read over connections the user made (a pool's) must resolve them the same.
+    #[serde(default)]
+    pub resolution: Option<Vec<String>>,
     /// Partition bounds already queried, by the bounds SQL: optimizing the plan again
     /// (another `collect`, `explain`) doesn't query them again. The outer partitions are
     /// open-ended, so stale bounds only skew partition sizes, never lose rows.
@@ -122,6 +142,15 @@ pub(crate) fn session_setup_runs(connection: &ConnectionSpec, kind: &BackendKind
 pub type BoundsCache = Arc<Mutex<PlHashMap<String, (Option<f64>, Option<f64>)>>>;
 
 impl DatabaseScanConfig {
+    /// The columns the alias of a derived table over the query lists (`unnamed_columns`).
+    pub fn derived_columns(&self) -> Vec<PlSmallStr> {
+        if self.unnamed_columns {
+            self.schema.iter_names().cloned().collect()
+        } else {
+            vec![]
+        }
+    }
+
     pub fn column(&self, name: &str) -> Option<&ColumnMeta> {
         self.columns.iter().find(|c| c.name == name)
     }
@@ -207,6 +236,7 @@ impl PartialEq for DatabaseScanConfig {
         self.fingerprint == other.fingerprint
             && self.dialect == other.dialect
             && self.backend == other.backend
+            && self.bigquery_sampled_schema == other.bigquery_sampled_schema
             && self.compiled == other.compiled
             && self.connection_share == other.connection_share
     }
@@ -218,6 +248,7 @@ impl Hash for DatabaseScanConfig {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.fingerprint.hash(state);
         self.dialect.hash(state);
+        self.bigquery_sampled_schema.hash(state);
         self.compiled.hash(state);
     }
 }

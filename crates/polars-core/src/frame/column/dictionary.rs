@@ -254,6 +254,17 @@ pub struct DictionaryColumn {
     materialized: OnceLock<Series>,
 }
 
+/// Whether every valid code is below `dict_len`. Reads the arrays, not the sorted flag or other
+/// metadata of `codes`, which safe code can set wrongly.
+fn codes_in_bounds(codes: &UInt32Chunked, dict_len: usize) -> bool {
+    use polars_compute::min_max::MinMaxKernel;
+    codes
+        .downcast_iter()
+        .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+        .max()
+        .is_none_or(|m| (m as usize) < dict_len)
+}
+
 impl DictionaryColumn {
     /// # Safety
     /// Every valid code must be in bounds for `dict`.
@@ -263,7 +274,7 @@ impl DictionaryColumn {
         codes: UInt32Chunked,
     ) -> Self {
         debug_assert!(
-            codes.max().is_none_or(|m| (m as usize) < dict.len()),
+            codes_in_bounds(&codes, dict.len()),
             "dictionary code out of bounds"
         );
         Self {
@@ -281,7 +292,7 @@ impl DictionaryColumn {
         codes: UInt32Chunked,
     ) -> PolarsResult<Self> {
         polars_ensure!(
-            codes.max().is_none_or(|m| (m as usize) < dict.len()),
+            codes_in_bounds(&codes, dict.len()),
             ComputeError: "dictionary code out of bounds"
         );
         Ok(unsafe { Self::new_unchecked(name, dict, codes) })
@@ -428,8 +439,15 @@ impl DictionaryColumn {
         out
     }
 
-    pub fn clear(&self) -> Self {
-        self.with_codes(self.codes.clear())
+    /// An empty column that holds no dictionary of its own to keep alive: it adopts the
+    /// dictionary of the first column appended to it.
+    pub fn new_empty(name: PlSmallStr) -> Self {
+        let dict = SharedDictionary::new(Utf8ViewArray::new_empty(
+            polars_arrow::datatypes::ArrowDataType::Utf8View,
+        ));
+        let codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, Vec::new());
+        // SAFETY: there are no rows.
+        unsafe { Self::new_unchecked(name, dict, codes) }
     }
 
     /// Appends `other`'s codes. With another dictionary, `other`'s values that this dictionary
@@ -443,15 +461,45 @@ impl DictionaryColumn {
     /// the existing dictionary's views, lookup and cached hashes, so this method returns false
     /// when that extension would copy more existing entries than `other` has rows.
     pub fn try_append(&mut self, other: &DictionaryColumn) -> bool {
+        if other.is_empty() {
+            return true;
+        }
         if self.dict.id != other.dict.id {
+            if self.is_empty() {
+                // Nothing to keep: take `other`'s dictionary and codes, as they are.
+                self.dict = other.dict.clone();
+                self.codes = other.codes.clone().with_name(self.codes.name().clone());
+                self.sorted = IsSorted::Not;
+                self.materialized = OnceLock::new();
+                return true;
+            }
             let max_len = (self.len() + other.len()).min(u32::MAX as usize);
             if self.dict.len() > max_len {
                 return false;
             }
+            // With fewer rows than dictionary entries, resolve only the values that rows use, so
+            // that appending a small morsel costs its rows, not the size of its dictionary.
+            let used = if other.len() < other.dict.len() {
+                other.used_codes(other.len())
+            } else {
+                None
+            };
             let mut added = Vec::new();
             let mut added_code_of = PlHashMap::<&str, u32>::new();
-            let mut remap = Vec::with_capacity(other.dict.len());
-            for v in other.dict.values.values_iter() {
+            let mut remap = Vec::with_capacity(match &used {
+                Some((used, _)) => used.len(),
+                None => other.dict.len(),
+            });
+            let values = &other.dict.values;
+            let to_resolve: Box<dyn Iterator<Item = &str> + '_> = match &used {
+                // SAFETY: used codes are valid codes, which are in bounds (invariant).
+                Some((used, _)) => Box::new(
+                    used.iter()
+                        .map(|c| unsafe { values.value_unchecked(*c as usize) }),
+                ),
+                None => Box::new(values.values_iter()),
+            };
+            for v in to_resolve {
                 let c = match self.dict.code_of(v) {
                     Some(c) => c,
                     None => {
@@ -470,10 +518,27 @@ impl DictionaryColumn {
             if !added.is_empty() && self.dict.len() > other.len() {
                 return false;
             }
-            // Null slots may hold any value, out of bounds too.
-            let other_codes = other
-                .codes
-                .apply_values(|c| remap.get(c as usize).copied().unwrap_or(0));
+            let other_codes = match used {
+                Some((_, row_slots)) => {
+                    let codes = other.codes.rechunk();
+                    let arr = codes.downcast_as_array();
+                    // Null rows have slot 0, which is out of bounds if no row is valid.
+                    let new_codes: Vec<u32> = row_slots
+                        .iter()
+                        .map(|s| remap.get(*s as usize).copied().unwrap_or(0))
+                        .collect();
+                    let arr = PrimitiveArray::<u32>::new(
+                        ArrowDataType::UInt32,
+                        new_codes.into(),
+                        arr.validity().cloned(),
+                    );
+                    UInt32Chunked::with_chunk(PlSmallStr::EMPTY, arr)
+                },
+                // Null slots may hold any value, out of bounds too.
+                None => other
+                    .codes
+                    .apply_values(|c| remap.get(c as usize).copied().unwrap_or(0)),
+            };
             if !added.is_empty() {
                 self.dict = self.dict.extended(&added);
             }
@@ -571,7 +636,9 @@ impl DictionaryColumn {
     /// per input value.
     ///
     /// Only values that rows use are evaluated, so `f` errors exactly when it would on the rows.
-    /// When that is not fewer values than rows, `f` is evaluated on the materialized column.
+    /// When that is not fewer values than rows, `f` is evaluated on the materialized column. A
+    /// dictionary larger than the rows (a slice or filter) is not a reason: `used_codes` finds the
+    /// used values in time linear in the rows.
     pub fn apply_elementwise(
         &self,
         f: impl FnOnce(&Series) -> PolarsResult<Series>,
@@ -680,7 +747,9 @@ pub fn dictionary_codes_enabled() -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::chunked_array::cast::CastOptions;
     use crate::chunked_array::flags::StatisticsFlags;
+    use crate::frame::ChunkCursor;
 
     fn dict_column(dict: &[&str], codes: &[Option<u32>]) -> DictionaryColumn {
         let values = Utf8ViewArray::from_slice_values(dict);
@@ -729,6 +798,49 @@ mod test {
                 s("z"),
             ]
         );
+    }
+
+    #[test]
+    fn try_append_remaps_only_used_codes() {
+        // `b` has fewer rows than dictionary entries, one of its rows is null with a code out of
+        // the used ones, and the unused entries (never looked up) include a value `a` lacks.
+        let mut a = dict_column(
+            &["x", "y", "w"],
+            &[Some(0), Some(1), Some(2), Some(0), Some(1)],
+        );
+        let b = dict_column(
+            &[
+                "unused-1", "z", "x", "unused-2", "unused-3", "y", "unused-4",
+            ],
+            &[Some(1), None, Some(2), Some(5), Some(2)],
+        );
+        assert!(a.try_append(&b));
+        // Only "z" was added: the unused values are not.
+        assert_eq!(a.dict().len(), 4);
+        assert_eq!(a.dict().code_of("unused-1"), None);
+        a.check_invariants();
+        let s = |v: &str| Some(v.to_owned());
+        assert_eq!(values(&a)[5..], [s("z"), None, s("x"), s("y"), s("x")]);
+        // All rows null: nothing is looked up and nothing added.
+        let mut a = dict_column(&["x", "y", "w"], &[Some(0), Some(1), Some(2)]);
+        let b = dict_column(&["p", "q", "r", "s"], &[None, None]);
+        assert!(a.try_append(&b));
+        assert_eq!(a.dict().len(), 3);
+        assert_eq!(values(&a)[3..], [None, None]);
+        a.check_invariants();
+    }
+
+    #[test]
+    fn try_append_to_empty_adopts_the_other_dictionary() {
+        let mut a = dict_column(&["old-1", "old-2"], &[Some(0)]).slice((0usize, 0usize));
+        let b = dict_column(&["x", "y", "z"], &[Some(2), None, Some(0)]);
+        assert!(a.is_empty());
+        assert!(a.try_append(&b));
+        assert_eq!(a.dict().id(), b.dict().id());
+        a.check_invariants();
+        let s = |v: &str| Some(v.to_owned());
+        assert_eq!(values(&a), [s("z"), None, s("x")]);
+        assert_eq!(a.name(), "s");
     }
 
     #[test]
@@ -842,6 +954,152 @@ mod test {
                 .collect::<Vec<_>>(),
             [Some("a"), Some("b"), Some("c"), Some("b"), Some("c")],
         );
+    }
+
+    #[test]
+    fn try_new_ignores_sorted_flag() {
+        let values = Utf8ViewArray::from_slice_values(["a"]);
+        let mut codes = UInt32Chunked::from_slice(PlSmallStr::EMPTY, &[5, 0]);
+        codes.set_sorted_flag(IsSorted::Ascending);
+        let dict = SharedDictionary::new(values);
+        assert!(DictionaryColumn::try_new("s".into(), dict, codes).is_err());
+    }
+
+    #[test]
+    fn clear_keeps_a_dictionary_column_without_its_dictionary() {
+        let col = Column::from(dict_column(&["x", "y"], &[Some(0), Some(1)]));
+        let mut empty = col.clear();
+        let d = empty.as_dictionary_column().unwrap();
+        assert_eq!(d.dict().len(), 0);
+        assert_eq!(empty.dtype(), &DataType::String);
+        assert_eq!(empty.len(), 0);
+        // It adopts the dictionary of the next column appended, and stays coded.
+        empty.append(&col).unwrap();
+        let d = empty.as_dictionary_column().unwrap();
+        assert_eq!(d.dict().len(), 2);
+        assert_eq!(empty.str().unwrap().get(1), Some("y"));
+    }
+
+    #[test]
+    fn try_append_empty_other_is_a_no_op() {
+        let mut a = dict_column(&["x", "y", "z"], &[Some(0)]);
+        let id = a.dict().id();
+        let b = dict_column(&["q"], &[]);
+        assert!(a.try_append(&b));
+        assert_eq!(a.dict().id(), id);
+        assert_eq!(a.len(), 1);
+    }
+
+    #[test]
+    fn apply_elementwise_on_a_filtered_big_dictionary_stays_coded() {
+        let dict: Vec<String> = (0..2000).map(|i| format!("value-{i}")).collect();
+        let dict: Vec<&str> = dict.iter().map(String::as_str).collect();
+        let codes: Vec<Option<u32>> = (0..200).map(|i| Some((i % 5) * 7)).collect();
+        let col = dict_column(&dict, &codes);
+        let out = col.apply_elementwise(|s| Ok(s.clone())).unwrap();
+        // Only the 5 used values were evaluated: the result has a 5-value dictionary.
+        let d = out.as_dictionary_column().expect("stays coded");
+        assert_eq!(d.dict().len(), 5);
+        assert_eq!(out.str().unwrap().get(8), Some("value-21"));
+    }
+
+    #[test]
+    fn strict_cast_counts_rows() {
+        let codes: Vec<Option<u32>> = (0..100).map(|i| Some(u32::from(i >= 90))).collect();
+        let col = Column::from(dict_column(&["bad", "1"], &codes));
+        let err = col.strict_cast(&DataType::Int64).unwrap_err().to_string();
+        assert!(err.contains("90 out of 100"), "{err}");
+        let err = col
+            .cast_with_options(&DataType::Int64, CastOptions::Strict)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("90 out of 100"), "{err}");
+        let ok = Column::from(dict_column(&["2", "1"], &codes));
+        assert_eq!(
+            ok.strict_cast(&DataType::Int64)
+                .unwrap()
+                .i64()
+                .unwrap()
+                .get(95),
+            Some(1)
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-struct")]
+    fn strict_cast_to_nested_checks_the_fields() {
+        let col = Column::from(dict_column(&["bad", "1"], &[Some(0), Some(1), Some(1)]));
+        let dtype = DataType::Struct(vec![Field::new("n".into(), DataType::Int64)]);
+        // The equivalent String column raises; so must the dictionary column.
+        assert!(col.as_materialized_series().strict_cast(&dtype).is_err());
+        assert!(col.strict_cast(&dtype).is_err());
+        assert!(col.cast_with_options(&dtype, CastOptions::Strict).is_err());
+    }
+
+    #[test]
+    fn split_chunks_of_a_dictionary_only_frame() {
+        let values = Utf8ViewArray::from_slice_values(["x", "y"]);
+        let mut codes = UInt32Chunked::from_slice(PlSmallStr::EMPTY, &[0, 1, 0]);
+        codes
+            .append(&UInt32Chunked::from_slice(PlSmallStr::EMPTY, &[1, 1]))
+            .unwrap();
+        assert_eq!(codes.chunks().len(), 2);
+        let col =
+            DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes).unwrap();
+        let mut df = DataFrame::new_infer_height(vec![Column::from(col)]).unwrap();
+        assert_eq!(df.first_col_n_chunks(), 2);
+        let parts: Vec<DataFrame> = df.split_chunks().collect();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].height(), 3);
+        assert_eq!(parts[1].height(), 2);
+        for p in &parts {
+            assert_eq!(p.columns()[0].len(), p.height());
+        }
+        let last = parts[1].columns()[0]
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .clone();
+        assert_eq!(last.get(0), Some("y"));
+    }
+
+    #[test]
+    fn chunk_iterators_and_split_follow_dictionary_code_chunks() {
+        let values = Utf8ViewArray::from_slice_values(["x", "y"]);
+        let mut codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, vec![0; 1000]);
+        codes
+            .append(&UInt32Chunked::from_vec(PlSmallStr::EMPTY, vec![1; 1000]))
+            .unwrap();
+        let col =
+            DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes).unwrap();
+        let df = DataFrame::new_infer_height(vec![Column::from(col)]).unwrap();
+        assert_eq!(df.iter_chunks(CompatLevel::newest(), false).count(), 2);
+        assert_eq!(df.iter_chunks_physical().count(), 2);
+        let parts = crate::utils::split(&df, 2);
+        assert_eq!(parts.len(), 2);
+        assert!(parts.iter().all(|p| p.height() == 1000));
+        let parts = crate::utils::split_and_flatten(&df, 2);
+        assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn chunk_cursor_of_an_unaligned_frame_follows_the_series_chunks() {
+        let values = Utf8ViewArray::from_slice_values(["x", "y"]);
+        let mut codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, vec![0; 1000]);
+        codes
+            .append(&UInt32Chunked::from_vec(PlSmallStr::EMPTY, vec![1; 1000]))
+            .unwrap();
+        let d =
+            DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes).unwrap();
+        let ints = Column::new("i".into(), (0..2000i64).collect::<Vec<_>>());
+        let df = DataFrame::new_infer_height(vec![Column::from(d), ints]).unwrap();
+        // Unaligned, as callers of `iter_chunks` that rechunk lazily may hold it: the cursor must
+        // follow the series column (as the batches select its chunks by index).
+        assert_eq!(df.first_col_n_chunks(), 1);
+        assert_eq!(df.first_col_chunk_lengths().collect::<Vec<_>>(), [2000]);
+        let mut cursor = ChunkCursor::new(&df);
+        assert_eq!(cursor.next(), Some((0, 2000)));
+        assert_eq!(cursor.next(), None);
     }
 
     #[test]

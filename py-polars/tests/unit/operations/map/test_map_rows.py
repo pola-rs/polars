@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -87,6 +88,7 @@ def test_map_rows_object_dtype() -> None:
     assert_frame_equal(out, pl.DataFrame({"map": [1, 1, 1, 1, 1]}))
 
 
+@pytest.mark.parametrize("value", [1, None, datetime(2020, 1, 1)])
 @pytest.mark.parametrize(
     ("last_row", "msg"),
     [
@@ -94,10 +96,10 @@ def test_map_rows_object_dtype() -> None:
         ((), "row at index 2 has length 0 (expected 1)"),
     ],
 )
-def test_map_rows_ragged(last_row: tuple[Any, ...], msg: str) -> None:
+def test_map_rows_ragged(value: Any, last_row: tuple[Any, ...], msg: str) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     with pytest.raises(ShapeError, match=re.escape(msg)):
-        df.map_rows(lambda r: (r[0],) if r[0] < 3 else last_row)
+        df.map_rows(lambda r: (value,) if r[0] < 3 else last_row)
 
 
 def test_map_rows_nested_across_batches() -> None:

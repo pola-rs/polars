@@ -45,6 +45,7 @@ def assert_matches_in_memory(q: pl.LazyFrame, out: pl.DataFrame) -> None:
     assert_frame_equal(out, q.collect(engine="in-memory"))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("descending", [False, True])
 def test_top_k_skips_row_groups(
     descending: bool,
@@ -63,6 +64,7 @@ def test_top_k_skips_row_groups(
     assert "Runtime ranges skipped" in log
 
 
+@pytest.mark.slow
 def test_top_k_multiple_keys_skips_row_groups(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -78,6 +80,7 @@ def test_top_k_multiple_keys_skips_row_groups(
     assert "Runtime ranges skipped" in log
 
 
+@pytest.mark.slow
 def test_top_k_maintain_order_keeps_file_order(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -91,6 +94,7 @@ def test_top_k_maintain_order_keeps_file_order(
     assert "Reading row groups by" not in log
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("dtype", "values"),
     [
@@ -166,6 +170,7 @@ def test_top_k_with_filter_matches_in_memory(tmp_path: Path) -> None:
         assert_matches_in_memory(q, q.collect(engine="streaming"))
 
 
+@pytest.mark.slow
 def test_top_k_threshold_lowers_after_heap_is_full(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:

@@ -1,3 +1,4 @@
+import pytest
 from hypothesis import given
 
 import polars as pl
@@ -5,11 +6,13 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes, series
 
 
+@pytest.mark.slow
 @given(s=series(allow_null=False))
 def test_has_nulls_series_no_nulls(s: pl.Series) -> None:
     assert s.has_nulls() is False
 
 
+@pytest.mark.slow
 @given(df=dataframes(allow_null=False))
 def test_has_nulls_expr_no_nulls(df: pl.DataFrame) -> None:
     result = df.select(pl.all().has_nulls())
@@ -29,6 +32,7 @@ def test_has_nulls_series_parametric(s: pl.Series) -> None:
     assert result == s.is_null().any()
 
 
+@pytest.mark.slow
 @given(
     lf=dataframes(
         excluded_dtypes=[

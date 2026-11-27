@@ -202,10 +202,36 @@ pub enum CallArg {
     Map(Vec<(String, String)>),
     /// `array('a', ...)`.
     Array(Vec<String>),
+    /// `array(1, ...)`.
+    IntArray(Vec<i64>),
+    /// A timestamp, as microseconds since the epoch (UTC): an `older_than` argument.
+    Timestamp(i64),
 }
 
 /// The procedures `CALL` runs, with their arguments in positional order (`table` first).
 pub(crate) const CALL_PROCEDURES: &[(&str, &[&str])] = &[
+    (
+        "add_files",
+        &[
+            "table",
+            "source_table",
+            "partition_filter",
+            "check_duplicate_files",
+            "parallelism",
+        ],
+    ),
+    (
+        "expire_snapshots",
+        &[
+            "table",
+            "older_than",
+            "retain_last",
+            "max_concurrent_deletes",
+            "stream_results",
+            "snapshot_ids",
+            "clean_expired_metadata",
+        ],
+    ),
     (
         "rewrite_data_files",
         &["table", "strategy", "sort_order", "options", "where"],
@@ -314,7 +340,20 @@ pub(crate) fn call_parts(function: &Function) -> PolarsResult<CallParts> {
             args.iter().all(|(given, _)| given.as_str() != *name),
             SQLInterface: "argument '{}' of procedure '{}' is given twice", name, procedure
         );
-        args.push((name.to_string(), call_arg(value)?));
+        let value = match *name {
+            // The forms of `FOR TIMESTAMP AS OF`: no offset is UTC.
+            "older_than" if !is_null(value) => Some(CallArg::Timestamp(
+                crate::time_travel::timestamp_micros(value).map_err(|_| {
+                    polars_err!(
+                        SQLInterface: "CALL {}: `older_than` takes an ISO timestamp or date, \
+                        such as TIMESTAMP '2026-11-01 00:00:00'; found `{}`",
+                        procedure, value
+                    )
+                })?,
+            )),
+            _ => call_arg(value)?,
+        };
+        args.push((name.to_string(), value));
     }
     args.sort_by_key(|(name, _)| signature.iter().position(|known| known == name));
     let args = args
@@ -334,6 +373,21 @@ pub(crate) fn table_name_parts(name: &str) -> Option<Vec<String>> {
     let name = parser.parse_object_name(false).ok()?;
     parser.expect_token(&Token::EOF).ok()?;
     name_parts(&name)
+}
+
+/// An integer literal, possibly negative; not a string of digits.
+fn int_literal(value: &Expr) -> Option<i64> {
+    match value {
+        Expr::Value(v) => match &v.value {
+            Value::Number(n, _) => n.parse().ok(),
+            _ => None,
+        },
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } => int_literal(expr).and_then(i64::checked_neg),
+        _ => None,
+    }
 }
 
 /// A `CALL` argument value; `None` for `NULL`.
@@ -373,7 +427,24 @@ fn call_arg(value: &Expr) -> PolarsResult<Option<CallArg>> {
                 },
                 _ => None,
             };
+            let ints = || match &function.args {
+                FunctionArguments::List(list)
+                    if list.duplicate_treatment.is_none() && list.clauses.is_empty() =>
+                {
+                    list.args
+                        .iter()
+                        .map(|arg| match arg {
+                            FunctionArg::Unnamed(FunctionArgExpr::Expr(value)) => {
+                                int_literal(value)
+                            },
+                            _ => None,
+                        })
+                        .collect::<Option<Vec<i64>>>()
+                },
+                _ => None,
+            };
             match values {
+                None if name.eq_ignore_ascii_case("array") => ints().map(CallArg::IntArray),
                 Some(values) if name.eq_ignore_ascii_case("array") => Some(CallArg::Array(values)),
                 Some(values) if name.eq_ignore_ascii_case("map") && values.len() % 2 == 0 => {
                     Some(CallArg::Map(
@@ -392,7 +463,7 @@ fn call_arg(value: &Expr) -> PolarsResult<Option<CallArg>> {
         Some(arg) => Ok(Some(arg)),
         None => polars_bail!(
             SQLInterface: "CALL arguments must be literals: strings, integers, booleans, NULL, \
-            map('k', 'v', ...) or array('a', ...); found `{}`",
+            map('k', 'v', ...), array('a', ...) or array(1, ...); found `{}`",
             value
         ),
     }
@@ -430,7 +501,8 @@ pub struct MergePlan {
     pub not_matched: Vec<MergeClausePlan>,
 }
 
-/// A change to a catalog table's top-level columns, properties or partitioning, by an `ALTER TABLE`.
+/// A change to a catalog table's top-level columns, properties, layout, tags or branches, by an
+/// `ALTER TABLE`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CatalogAlter {
     /// `ADD [COLUMN] [IF NOT EXISTS] <name> <type>`: a nullable column.
@@ -484,6 +556,56 @@ pub enum CatalogAlter {
         /// The sort fields, in the order written.
         fields: Vec<CatalogSortField>,
     },
+    /// `CREATE [OR REPLACE] TAG | BRANCH`, `CREATE TAG | BRANCH IF NOT EXISTS` or
+    /// `REPLACE TAG | BRANCH`: point a tag or branch at a snapshot.
+    SetRef {
+        /// A tag or a branch.
+        kind: CatalogRefKind,
+        /// The name, as written (case kept).
+        name: String,
+        /// What to do when a ref of the name exists, or doesn't.
+        mode: CatalogRefMode,
+        /// `AS OF VERSION <snapshot id>`; none for the current snapshot.
+        snapshot_id: Option<i64>,
+        /// `RETAIN <n> <unit>`: how long the ref is kept, in milliseconds.
+        max_ref_age_ms: Option<i64>,
+        /// `WITH SNAPSHOT RETENTION <n> SNAPSHOTS`: the snapshots a branch keeps, at least.
+        min_snapshots_to_keep: Option<i32>,
+        /// `WITH SNAPSHOT RETENTION <n> <unit>`: how long a branch keeps its snapshots, in
+        /// milliseconds.
+        max_snapshot_age_ms: Option<i64>,
+    },
+    /// `DROP TAG | BRANCH [IF EXISTS] <name>`.
+    DropRef {
+        /// A tag or a branch.
+        kind: CatalogRefKind,
+        /// The name, as written (case kept).
+        name: String,
+        /// `IF EXISTS`.
+        if_exists: bool,
+    },
+}
+
+/// The kind of a named Iceberg snapshot reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogRefKind {
+    /// A tag: a name for one snapshot.
+    Tag,
+    /// A branch: a line of snapshots that writes can extend.
+    Branch,
+}
+
+/// What a statement that sets a tag or branch does with an existing ref of its name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogRefMode {
+    /// `CREATE`: the name must be free.
+    Create,
+    /// `CREATE ... IF NOT EXISTS`: nothing happens when the name is taken.
+    CreateIfNotExists,
+    /// `REPLACE`: the ref must exist.
+    Replace,
+    /// `CREATE OR REPLACE`: either.
+    CreateOrReplace,
 }
 
 /// A partition field of a catalog table: an Iceberg transform of a column or a struct field.

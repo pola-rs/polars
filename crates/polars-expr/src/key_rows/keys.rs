@@ -401,6 +401,7 @@ impl KeyRowKeys {
         layout: Arc<KeyRowLayout>,
         random_state: &PlRandomState,
         null_is_valid: bool,
+        build_combined_codes: bool,
     ) -> Self {
         assert_eq!(columns.len(), layout.cols.len());
         let len = columns[0].len();
@@ -421,7 +422,11 @@ impl KeyRowKeys {
         for (col, dc) in cols.iter().zip(&dict_codes) {
             col.hash_into(&mut hashes, random_state, dc.as_ref());
         }
-        let combined_codes = CombinedCodes::new(columns, &dict_codes);
+        let combined_codes = if build_combined_codes {
+            CombinedCodes::new(columns, &dict_codes)
+        } else {
+            None
+        };
         let validity = if null_is_valid {
             None
         } else {
@@ -470,6 +475,10 @@ impl KeyRowKeys {
         };
         size_of_val(self.hashes.values().as_slice())
             + self.validity.as_ref().map_or(0, |v| v.len().div_ceil(8))
+            + self
+                .combined_codes
+                .as_ref()
+                .map_or(0, |cc| size_of_val(cc.codes.as_slice()))
             + data
     }
 

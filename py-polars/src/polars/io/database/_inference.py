@@ -68,9 +68,9 @@ def dtype_from_database_typename(
     while m := re.fullmatch(r"(?:NULLABLE|LOWCARDINALITY)\((.+)\)", value):
         value = m.group(1)
 
-    # a quoted type argument (eg: ClickHouse "DATETIME64(3, 'UTC')") names a time
-    # zone or an enum's values, which aren't read here: infer from the values instead
-    if "'" in value:
+    # Infer from data for composite types (including arrays of rows) and types
+    # with quoted arguments (eg: ClickHouse "DATETIME64(3, 'UTC')").
+    if "'" in value or re.search(r"\b(ROW|STRUCT|MAP)\s*[(<]", value):
         if raise_unmatched:
             msg = f"cannot infer dtype from {original_value!r} string value"
             raise ValueError(msg)

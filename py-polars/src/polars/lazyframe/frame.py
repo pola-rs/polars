@@ -4,7 +4,6 @@ import contextlib
 import io
 import warnings
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, reduce
 from io import BytesIO, StringIO
@@ -45,6 +44,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
     parse_into_list_of_expressions_require_selectors,
+    parse_quantile_into_expression,
 )
 from polars._utils.parse.expr import parse_list_into_selector
 from polars._utils.serde import serialize_polars_object
@@ -186,8 +186,6 @@ if TYPE_CHECKING:
     T = TypeVar("T")
     P = ParamSpec("P")
 
-
-_COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
 # Name of the placeholder column used by `LazyFrame._with_height_column()`.
 _HEIGHT_COLUMN = "__POLARS_INTERNAL_HEIGHT_COLUMN"
@@ -7362,7 +7360,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7871,7 +7869,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3.0 ┆ 1.0 │
         └─────┴─────┘
         """  # noqa: W505
-        quantile_py = parse_into_expression(quantile)
+        quantile_py = parse_quantile_into_expression(quantile)
         return self._height_preserving(
             lambda lf: lf._from_pyldf(lf._ldf.quantile(quantile_py, interpolation))
         )

@@ -902,6 +902,7 @@ def test_list_implode_concat_agg_schema_23974(maintain_order: bool) -> None:
     assert q.collect_schema() == out.schema
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("inner_dtype", [pl.Int32, pl.Date])
 def test_list_physical_repr_many_slices(inner_dtype: PolarsDataType) -> None:
     # Every slice keeps the whole values array; together they exceed the maximum length.

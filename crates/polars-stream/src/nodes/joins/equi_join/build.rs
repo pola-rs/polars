@@ -257,7 +257,10 @@ impl BuildState {
         } else {
             None
         };
-        let num_partitions = stored_partitions.unwrap_or(state.num_pipelines);
+        let table_rows = stats.table_rows(null_rows_in_tables);
+        let num_partitions = stored_partitions.unwrap_or_else(|| {
+            tuning.num_in_memory_tables(table_rows, table_bytes, state.num_pipelines)
+        });
         let partitioner = HashPartitioner::new(num_partitions, 0);
         let partition_keys = sketch.estimate() / num_partitions;
 
@@ -330,11 +333,6 @@ impl BuildState {
             Some(BuildTarget::Stored(stored)) => stored,
             _ => unreachable!(),
         });
-        let table_rows = if null_rows_in_tables {
-            stats.rows
-        } else {
-            stats.rows - stats.null_rows
-        };
         let mut partitions: Vec<JoinPartition> = targets
             .into_iter()
             .map(|target| match target {

@@ -31,6 +31,7 @@ def df() -> pl.DataFrame:
         ("apply(l, lambda x: x::VARCHAR)", [["1", "2"], ["3", None], None, []]),
         ("list_apply(l, lambda x: 1)", [[1, 1], [1, 1], None, []]),
         ("array_apply(s, lambda x: x.a)", [[1], [2, 3], None, []]),
+        ("array_apply(s, lambda a: a.a)", [[1], [2, 3], None, []]),
         ("list_filter(l, lambda x: x > 1)", [[2], [3], None, []]),
         ("array_filter(l, lambda x: x % 2)", [[1], [3], None, []]),
         ("filter(l, lambda x: x IS NULL)", [[], [None], None, []]),

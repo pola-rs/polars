@@ -112,22 +112,16 @@ pub(crate) fn decompress(
     }
 }
 
-/// replace double quotes by single ones
-///
-/// This function assumes that bytes is wrapped in the quoting character.
+/// Replace double quotes by single ones, returning the number of bytes written.
 ///
 /// # Safety
 ///
-/// The caller must ensure that:
-///     - Output buffer must have enough capacity to hold `bytes.len()`
-///     - bytes ends with the quote character e.g.: `"`
-///     - bytes length > 1.
-pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [MaybeUninit<u8>]) -> usize {
-    debug_assert!(bytes.len() > 1);
+/// `buf` must have room for `bytes.len()` bytes.
+pub(super) unsafe fn unescape_field(bytes: &[u8], quote: u8, buf: &mut [MaybeUninit<u8>]) -> usize {
     let mut prev_quote = false;
 
     let mut count = 0;
-    for c in bytes.get_unchecked(1..bytes.len() - 1) {
+    for c in bytes {
         if *c == quote {
             if prev_quote {
                 prev_quote = false;

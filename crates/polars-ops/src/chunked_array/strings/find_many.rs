@@ -1,27 +1,13 @@
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use polars_arrow::array::Utf8ViewArray;
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, Match, MatchKind};
+use polars_arrow::array::{BinaryViewArray, Utf8ViewArray};
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
 
-fn build_ac(
-    patterns: &StringChunked,
-    ascii_case_insensitive: bool,
-    leftmost: bool,
-) -> PolarsResult<AhoCorasick> {
-    AhoCorasickBuilder::new()
-        .match_kind(if leftmost {
-            MatchKind::LeftmostFirst
-        } else {
-            MatchKind::Standard
-        })
-        .ascii_case_insensitive(ascii_case_insensitive)
-        .build(patterns.downcast_iter().flatten().flatten())
-        .map_err(|e| polars_err!(ComputeError: "could not build aho corasick automaton {}", e))
-}
+use super::utf8::{byte_to_char_idx, is_utf8_codepoint_start};
 
-fn build_ac_arr(
-    patterns: &Utf8ViewArray,
+fn build_ac<P: AsRef<[u8]>>(
+    patterns: impl IntoIterator<Item = P>,
     ascii_case_insensitive: bool,
     leftmost: bool,
 ) -> PolarsResult<AhoCorasick> {
@@ -32,7 +18,7 @@ fn build_ac_arr(
             MatchKind::Standard
         })
         .ascii_case_insensitive(ascii_case_insensitive)
-        .build(patterns.into_iter().flatten())
+        .build(patterns)
         .map_err(|e| polars_err!(ComputeError: "could not build aho corasick automaton {}", e))
 }
 
@@ -61,7 +47,11 @@ pub fn contains_any(
         keep_nulls: true,
     })?;
     let patterns = patterns.str()?;
-    let ac = build_ac(patterns, ascii_case_insensitive, false)?;
+    let ac = build_ac(
+        patterns.downcast_iter().flatten().flatten(),
+        ascii_case_insensitive,
+        false,
+    )?;
 
     Ok(unary_elementwise(ca, |opt_val| {
         opt_val.map(|val| ac.find(val).is_some())
@@ -129,7 +119,11 @@ pub fn replace_all(
         .flatten()
         .collect::<Vec<_>>();
 
-    let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
+    let ac = build_ac(
+        patterns.downcast_iter().flatten().flatten(),
+        ascii_case_insensitive,
+        leftmost,
+    )?;
 
     Ok(ca.apply_into_string_amortized(|val, buf| {
         ac.replace_all_with(val, buf, |m, _, dst| {
@@ -184,7 +178,11 @@ pub fn extract_many(
                             let pat = pat.str()?;
                             let pat = pat.rechunk();
                             let pat = pat.downcast_as_array();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
+                            let ac = build_ac(
+                                pat.into_iter().flatten(),
+                                ascii_case_insensitive,
+                                leftmost,
+                            )?;
                             push_str(val, &mut builder, &ac, overlapping);
                         },
                     }
@@ -203,7 +201,11 @@ pub fn extract_many(
                 keep_nulls: true,
             })?;
             let patterns = patterns.str()?;
-            let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
+            let ac = build_ac(
+                patterns.downcast_iter().flatten().flatten(),
+                ascii_case_insensitive,
+                leftmost,
+            )?;
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
 
@@ -229,7 +231,11 @@ pub fn extract_many(
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
                             let pat = pat.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
+                            let ac = build_ac(
+                                pat.into_iter().flatten(),
+                                ascii_case_insensitive,
+                                leftmost,
+                            )?;
                             push_str(val, &mut builder, &ac, overlapping);
                         },
                     }
@@ -242,27 +248,62 @@ pub fn extract_many(
 }
 
 type B = ListPrimitiveChunkedBuilder<UInt32Type>;
-fn push_idx(val: &str, builder: &mut B, ac: &AhoCorasick, overlapping: bool) {
-    if overlapping {
-        let iter = ac.find_overlapping_iter(val);
-        let iter = iter.map(|m| m.start() as u32);
-        builder.append_values_iter(iter);
-    } else {
-        let iter = ac.find_iter(val);
-        let iter = iter.map(|m| m.start() as u32);
-        builder.append_values_iter(iter);
+
+fn find_ac_impl(
+    val: &[u8],
+    builder: &mut B,
+    ac: &AhoCorasick,
+    overlapping: bool,
+    char_offsets: bool,
+) {
+    match (char_offsets, overlapping) {
+        (false, false) => builder.append_values_iter(ac.find_iter(val).map(|m| m.start() as u32)),
+        (false, true) => {
+            builder.append_values_iter(ac.find_overlapping_iter(val).map(|m| m.start() as u32))
+        },
+        (true, false) => push_char_offsets(val, builder, ac, ac.find_iter(val)),
+        (true, true) => push_char_offsets(val, builder, ac, ac.find_overlapping_iter(val)),
     }
 }
 
-pub fn find_many(
-    ca: &StringChunked,
+/// Push the character offsets of the `matches` of `ac` in UTF-8 `val`.
+fn push_char_offsets(
+    val: &[u8],
+    builder: &mut B,
+    ac: &AhoCorasick,
+    matches: impl Iterator<Item = Match>,
+) {
+    // Only an empty pattern can match inside a character.
+    let may_split_chars = ac.min_pattern_len() == 0;
+    // Overlapping matches are ordered by their end, so a start can be before the previous one.
+    let mut byte_idx = 0;
+    let mut char_idx = 0;
+    let iter = matches
+        .map(|m| m.start())
+        .filter(|&i| !may_split_chars || val.get(i).is_none_or(|&b| is_utf8_codepoint_start(b)))
+        .map(|i| {
+            if i >= byte_idx {
+                char_idx += byte_to_char_idx(&val[byte_idx..], i - byte_idx);
+            } else {
+                char_idx -= byte_to_char_idx(&val[i..], byte_idx - i);
+            }
+            byte_idx = i;
+            char_idx as u32
+        });
+    builder.append_values_iter(iter);
+}
+
+fn find_many_impl(
+    ca: &BinaryChunked,
     patterns: &ListChunked,
     ascii_case_insensitive: bool,
     overlapping: bool,
     leftmost: bool,
+    char_offsets: bool,
 ) -> PolarsResult<ListChunked> {
     polars_ensure!(!overlapping | !leftmost, InvalidOperation: "can not match overlapping patterns when leftmost == True");
-    type B = ListPrimitiveChunkedBuilder<UInt32Type>;
+    let patterns = patterns.cast(&DataType::List(Box::new(DataType::Binary)))?;
+    let patterns = patterns.list()?;
     match (ca.len(), patterns.len()) {
         (1, _) => match ca.get(0) {
             None => Ok(ListChunked::full_null_with_dtype(
@@ -281,12 +322,13 @@ pub fn find_many(
                     match pat {
                         None => builder.append_null(),
                         Some(pat) => {
-                            let pat = pat.as_ref();
-                            let pat = pat.str()?;
-                            let pat = pat.rechunk();
-                            let pat = pat.downcast_as_array();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
-                            push_idx(val, &mut builder, &ac, overlapping);
+                            let pat = pat.as_ref().binary()?.rechunk();
+                            let ac = build_ac(
+                                pat.downcast_as_array().into_iter().flatten(),
+                                ascii_case_insensitive,
+                                leftmost,
+                            )?;
+                            find_ac_impl(val, &mut builder, &ac, overlapping, char_offsets);
                         },
                     }
                 }
@@ -303,13 +345,17 @@ pub fn find_many(
                 empty_as_null: false,
                 keep_nulls: true,
             })?;
-            let patterns = patterns.str()?;
-            let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
+            let patterns = patterns.binary()?;
+            let ac = build_ac(
+                patterns.downcast_iter().flatten().flatten(),
+                ascii_case_insensitive,
+                leftmost,
+            )?;
             let mut builder = B::new(ca.name().clone(), ca.len(), ca.len() * 2, DataType::UInt32);
 
             for opt_val in ca.iter() {
                 if let Some(val) = opt_val {
-                    push_idx(val, &mut builder, &ac, overlapping);
+                    find_ac_impl(val, &mut builder, &ac, overlapping, char_offsets);
                 } else {
                     builder.append_null();
                 }
@@ -325,15 +371,62 @@ pub fn find_many(
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
-                            let pat = pat.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
-                            push_idx(val, &mut builder, &ac, overlapping);
+                            let pat = pat.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+                            let ac = build_ac(
+                                pat.into_iter().flatten(),
+                                ascii_case_insensitive,
+                                leftmost,
+                            )?;
+                            find_ac_impl(val, &mut builder, &ac, overlapping, char_offsets);
                         },
                     }
                 }
             }
             Ok(builder.finish())
         },
-        (a, b) => polars_bail!(length_mismatch = "str.find_many", a, b),
+        (a, b) => {
+            let name = if char_offsets {
+                "str.find_many"
+            } else {
+                "bin.find_many"
+            };
+            polars_bail!(length_mismatch = name, a, b)
+        },
     }
+}
+
+/// Find the character offsets of the matches of `patterns` in each string.
+pub fn find_many(
+    ca: &StringChunked,
+    patterns: &ListChunked,
+    ascii_case_insensitive: bool,
+    overlapping: bool,
+    leftmost: bool,
+) -> PolarsResult<ListChunked> {
+    find_many_impl(
+        &ca.as_binary(),
+        patterns,
+        ascii_case_insensitive,
+        overlapping,
+        leftmost,
+        true,
+    )
+}
+
+/// Find the byte offsets of the matches of `patterns` in each binary value.
+pub fn bin_find_many(
+    ca: &BinaryChunked,
+    patterns: &ListChunked,
+    ascii_case_insensitive: bool,
+    overlapping: bool,
+    leftmost: bool,
+) -> PolarsResult<ListChunked> {
+    find_many_impl(
+        ca,
+        patterns,
+        ascii_case_insensitive,
+        overlapping,
+        leftmost,
+        false,
+    )
 }

@@ -495,6 +495,10 @@ impl Series {
 
         use DataType::*;
         match s.dtype() {
+            Boolean => s
+                .cast(&Float64)
+                .unwrap()
+                .agg_quantile(groups, quantile, method),
             #[cfg(feature = "dtype-f16")]
             Float16 => s.f16().unwrap().agg_quantile(groups, quantile, method),
             Float32 => s.f32().unwrap().agg_quantile(groups, quantile, method),

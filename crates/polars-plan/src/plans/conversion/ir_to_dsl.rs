@@ -394,6 +394,17 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Contains => B::Contains,
                 IB::StartsWith => B::StartsWith,
                 IB::EndsWith => B::EndsWith,
+                IB::Find => B::Find,
+                #[cfg(feature = "find_many")]
+                IB::FindMany {
+                    ascii_case_insensitive,
+                    overlapping,
+                    leftmost,
+                } => B::FindMany {
+                    ascii_case_insensitive,
+                    overlapping,
+                    leftmost,
+                },
                 #[cfg(feature = "binary_encoding")]
                 IB::HexDecode(v) => B::HexDecode(v),
                 #[cfg(feature = "binary_encoding")]

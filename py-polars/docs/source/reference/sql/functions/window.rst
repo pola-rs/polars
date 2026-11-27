@@ -487,6 +487,10 @@ values (peers) get the same result. Without ``ORDER BY``, the frame is the whole
 * ``BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING``
 * ``ROWS BETWEEN <n> PRECEDING AND CURRENT ROW`` (not for ``MIN`` and ``MAX`` of strings,
   or ``SUM``, ``MIN`` and ``MAX`` of decimals)
+* ``ROWS BETWEEN UNBOUNDED PRECEDING AND <m> PRECEDING`` and ``ROWS BETWEEN <n> PRECEDING AND
+  <m> PRECEDING`` (the latter for the types that ``<n> PRECEDING AND CURRENT ROW`` takes), the rows before the current
+  one; the first rows have an empty frame, whose ``COUNT`` and ``TOTAL`` are 0 and other
+  aggregates NULL, as has every row when the frame starts after it ends
 
 ``FIRST_VALUE``, ``LAST_VALUE`` and ``NTH_VALUE`` support these frames, and ``ROWS`` frames
 that start or end ``<n> PRECEDING`` or ``<n> FOLLOWING``. With ``RANGE`` or ``GROUPS``,

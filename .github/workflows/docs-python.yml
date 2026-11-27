@@ -2,6 +2,11 @@ name: Build Python documentation
 
 on:
   pull_request:
+    types:
+      - opened
+      - ready_for_review
+      - reopened
+      - synchronize
     paths:
       - py-polars/docs/**
       - py-polars/src/polars/**
@@ -31,6 +36,7 @@ concurrency:
 
 jobs:
   build-python-docs:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - name: Parse the tag to find the major version of Polars

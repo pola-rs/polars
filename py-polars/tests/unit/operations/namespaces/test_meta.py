@@ -28,7 +28,7 @@ def test_root_and_output_names() -> None:
     assert e.meta.output_name() == "foo"
     assert e.meta.root_names() == ["foo", "groups"]
 
-    e = pl.sum("foo").slice(pl.len() - 10, pl.col("bar"))
+    e = pl.sum("foo").slice(pl.len() - 10, pl.col("bar").first())
     assert e.meta.output_name() == "foo"
     assert e.meta.root_names() == ["foo", "bar"]
 

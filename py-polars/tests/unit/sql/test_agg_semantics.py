@@ -246,6 +246,7 @@ def test_sum_avg_distinct_empty_table() -> None:
         "VARIANCE(1)",
         "FIRST(1)",
         "SUM(1 + 1)",
+        "SUM(1 - 4)",
         "COUNT(DISTINCT 1)",
         "QUANTILE_CONT(1, 0.5)",
         "ARRAY_AGG(DISTINCT 1 ORDER BY 1 + 0)",

@@ -592,6 +592,83 @@ mod tests {
     };
 
     #[test]
+    fn string_views_and_offsets_produce_the_same_plain_pages() {
+        let values = [
+            Some("abc"),
+            None,
+            Some(""),
+            Some("long enough to be external"),
+            Some("tail"),
+        ];
+        let pages = |array: Box<dyn Array>| {
+            let field = Field::new("s".into(), array.dtype().clone(), true);
+            let options = WriteOptions {
+                statistics: StatisticsOptions::default(),
+                version: Version::V1,
+                compression: CompressionOptions::Uncompressed,
+                data_page_size: Some(32),
+            };
+            let mut columns = array_to_columns(
+                array,
+                to_parquet_type(&field).unwrap(),
+                options,
+                &[Encoding::Plain],
+            )
+            .unwrap();
+            columns
+                .pop()
+                .unwrap()
+                .map(|page| {
+                    let crate::parquet::page::Page::Data(page) = page.unwrap() else {
+                        panic!("expected a plain data page");
+                    };
+                    (page.num_values(), page.buffer().to_vec())
+                })
+                .collect::<Vec<_>>()
+        };
+        let offsets = pages(Utf8Array::<i64>::from_iter(values).boxed());
+        assert!(offsets.len() > 1);
+        assert_eq!(pages(Utf8ViewArray::from_slice(values).boxed()), offsets);
+    }
+
+    #[test]
+    fn dictionary_statistics_only_include_referenced_values() {
+        use crate::parquet::page::Page;
+        use crate::parquet::statistics::Statistics;
+
+        let plain = Int32Array::from([Some(1), None, Some(3), None]);
+        let dict = DictionaryArray::try_from_keys(
+            UInt32Array::from([Some(1), None, Some(3), None]),
+            Int32Array::from([Some(-99), Some(1), None, Some(3), Some(99)]).boxed(),
+            false,
+        )
+        .unwrap();
+        for array in [plain.boxed(), dict.boxed()] {
+            let type_ =
+                to_parquet_type(&Field::new("a".into(), array.dtype().clone(), true)).unwrap();
+            let options = WriteOptions {
+                statistics: StatisticsOptions::full(),
+                version: Version::V1,
+                compression: CompressionOptions::Uncompressed,
+                data_page_size: None,
+            };
+            let mut columns =
+                array_to_columns(array, type_, options, &[Encoding::RleDictionary]).unwrap();
+            assert!(matches!(columns[0].next(), Some(Ok(Page::Dict(_)))));
+            let Some(Ok(Page::Data(page))) = columns[0].next() else {
+                panic!("expected a dictionary-encoded data page");
+            };
+            let Statistics::Int32(stats) = page.statistics().unwrap().unwrap() else {
+                panic!("expected Int32 statistics");
+            };
+            assert_eq!(
+                (stats.min_value, stats.max_value, stats.null_count),
+                (Some(1), Some(3), Some(2))
+            );
+        }
+    }
+
+    #[test]
     fn test_struct() {
         let boolean = BooleanArray::from_slice([false, false, true, true]).boxed();
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
@@ -996,6 +1073,198 @@ mod tests {
             if version == Version::V2 {
                 assert_eq!(page.null_count(), Some(3));
             }
+        }
+    }
+
+    fn write_list_pages(
+        array: &dyn Array,
+        data_page_size: usize,
+        mut check_page: impl FnMut(&crate::parquet::page::DataPage, usize),
+    ) {
+        let type_ = to_parquet_type(&Field::new("a".into(), array.dtype().clone(), true)).unwrap();
+        for version in [Version::V1, Version::V2] {
+            let options = WriteOptions {
+                statistics: StatisticsOptions::empty(),
+                version,
+                compression: CompressionOptions::Uncompressed,
+                data_page_size: Some(data_page_size),
+            };
+            let mut columns =
+                array_to_columns(array.to_boxed(), type_.clone(), options, &[Encoding::Plain])
+                    .unwrap();
+            let mut rows = 0;
+            for page in columns.remove(0) {
+                let Page::Data(page) = page.unwrap() else {
+                    panic!("expected a data page");
+                };
+                assert!(page.buffer().len() <= data_page_size);
+                check_page(&page, rows);
+                rows += page.num_rows().unwrap();
+            }
+            assert_eq!(rows, array.len());
+        }
+    }
+
+    #[test]
+    fn test_skewed_u8_lists() {
+        // The first and last rows are sliced off, leaving four adjacent rows of 144
+        // UInt8 elements each, followed by empty rows. Each encoded row fits, but two
+        // do not fit because Parquet writes each value as a four-byte INT32.
+        let offsets = [0, 1, 145, 289, 433, 577]
+            .into_iter()
+            .chain(std::iter::repeat_n(577, 2_000))
+            .chain([578])
+            .collect::<Vec<i64>>();
+        let array = ListArray::new(
+            ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::UInt8,
+                false,
+            ))),
+            offsets.try_into().unwrap(),
+            UInt8Array::from_slice([7; 578]).boxed(),
+            None,
+        )
+        .sliced(1, 2_004);
+
+        write_list_pages(&array, 1024, |page, start| {
+            let rows = page.num_rows().unwrap();
+            let nonempty = (start + rows).min(4) - start.min(4);
+            assert!(nonempty <= 1);
+            assert_eq!(page.num_values(), nonempty * 144 + rows - nonempty);
+        });
+    }
+
+    #[test]
+    fn test_empty_and_null_lists() {
+        const ROWS: usize = 1024;
+        let empty_leaves = [
+            BinaryViewArray::from_slice_values::<&[u8], _>([]).boxed(),
+            BinaryArray::<i64>::from_slice::<&[u8], _>([]).boxed(),
+        ];
+        for leaf in empty_leaves {
+            let array = ListArray::new(
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "item".into(),
+                    leaf.dtype().clone(),
+                    false,
+                ))),
+                vec![0i64; ROWS + 1].try_into().unwrap(),
+                leaf,
+                Some((0..ROWS).map(|i| i % 2 == 0).collect()),
+            );
+            write_list_pages(&array, 64, |page, _| {
+                assert_eq!(page.num_values(), page.num_rows().unwrap());
+                assert_eq!(page.num_nulls, Some(page.num_values()));
+            });
+        }
+    }
+
+    #[test]
+    fn test_nested_empty_and_null_lists() {
+        const ROWS: usize = 64;
+        const CHILDREN: usize = 16;
+        let leaves = BinaryViewArray::from_slice_values::<&[u8], _>([]).boxed();
+        let children = ListArray::new(
+            ArrowDataType::List(Box::new(Field::new(
+                "item".into(),
+                leaves.dtype().clone(),
+                false,
+            ))),
+            vec![0i32; ROWS * CHILDREN + 1].try_into().unwrap(),
+            leaves,
+            Some((0..ROWS * CHILDREN).map(|i| i % 2 == 0).collect()),
+        );
+        let array = ListArray::new(
+            ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                children.dtype().clone(),
+                true,
+            ))),
+            (0..=ROWS as i64)
+                .map(|i| i * CHILDREN as i64)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            children.boxed(),
+            Some((0..ROWS).map(|i| i % 2 == 0).collect()),
+        );
+        write_list_pages(&array, 64, |page, start| {
+            let rows = page.num_rows().unwrap();
+            let nonnull = (start..start + rows).filter(|i| i % 2 == 0).count();
+            assert_eq!(page.num_values(), nonnull * CHILDREN + rows - nonnull);
+            assert!(page.num_values() * 2 <= 64);
+        });
+    }
+
+    /// Pages are cut by their size in bytes, not by the average value size, so a few large
+    /// values among many small ones do not end up in a single oversized page.
+    #[test]
+    fn test_skewed_value_sizes() {
+        const PAGE_SIZE: usize = 1024;
+        // Room for the levels on top of the values and their 4-byte length prefixes.
+        const PAGE_OVERHEAD: usize = 64;
+
+        let small = vec![0u8; 1];
+        let large = vec![0u8; 300];
+        let values: Vec<&[u8]> = std::iter::repeat_n(small.as_slice(), 1000)
+            .chain(std::iter::repeat_n(large.as_slice(), 4))
+            .chain(std::iter::repeat_n(small.as_slice(), 1000))
+            .collect();
+        let num_rows = values.len();
+
+        let view = BinaryViewArray::from_slice_values(&values).boxed();
+        let large_binary = BinaryArray::<i64>::from_slice(&values).boxed();
+        let strings: Vec<String> = values
+            .iter()
+            .map(|v| String::from_utf8(v.to_vec()).unwrap())
+            .collect();
+        let large_utf8 = Utf8Array::<i64>::from_slice(&strings).boxed();
+        let list = ListArray::<i64>::new(
+            ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::BinaryView,
+                false,
+            ))),
+            (0..=num_rows as i64)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            view.clone(),
+            None,
+        )
+        .boxed();
+
+        let options = WriteOptions {
+            statistics: StatisticsOptions::empty(),
+            version: Version::V1,
+            compression: CompressionOptions::Uncompressed,
+            data_page_size: Some(PAGE_SIZE),
+        };
+
+        for array in [view, large_binary, large_utf8, list] {
+            let type_ =
+                to_parquet_type(&Field::new("a".into(), array.dtype().clone(), false)).unwrap();
+            let mut columns =
+                array_to_columns(array.clone(), type_, options, &[Encoding::Plain]).unwrap();
+
+            let mut rows_written = 0;
+            for page in columns.remove(0) {
+                let Page::Data(page) = page.unwrap() else {
+                    panic!("expected a data page");
+                };
+                rows_written += page.num_values();
+                if page.num_values() > 1 {
+                    assert!(
+                        page.buffer().len() <= PAGE_SIZE + PAGE_OVERHEAD,
+                        "{:?}: page of {} values is {} bytes",
+                        array.dtype(),
+                        page.num_values(),
+                        page.buffer().len(),
+                    );
+                }
+            }
+            assert_eq!(rows_written, num_rows);
         }
     }
 }

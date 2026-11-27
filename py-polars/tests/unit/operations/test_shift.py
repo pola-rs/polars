@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from contextlib import nullcontext
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ShapeError
+from polars.exceptions import SchemaError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -55,13 +57,15 @@ def test_shift_fill_value() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
     # use exprs
-    out = ldf.with_columns(
-        pl.col("a").shift(n=-2, fill_value=pl.col("b").mean())
-    ).collect()
+    with pytest.deprecated_call():
+        out = ldf.with_columns(
+            pl.col("a").shift(n=-2, fill_value=pl.col("b").mean())
+        ).collect()
     assert not out["a"].has_nulls()
 
     # use df method
-    out = ldf.shift(n=2, fill_value=pl.col("b").std()).collect()
+    with pytest.deprecated_call():
+        out = ldf.shift(n=2, fill_value=pl.col("b").std()).collect()
     assert not out["a"].has_nulls()
 
 
@@ -103,7 +107,8 @@ def test_shift_frame_with_fill() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    result = df.shift(fill_value=0)
+    with pytest.deprecated_call():
+        result = df.shift(fill_value=0)
     expected = pl.DataFrame(
         {
             "foo": [0, 1, 2],
@@ -226,26 +231,38 @@ def test_shift_and_fill_n_exceeds_len(
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize(
-    ("fill_value", "expected", "dtype"),
+    ("fill_value", "expected", "dtype", "deprecated"),
     [
-        (Decimal("1.25"), [Decimal("1.25"), Decimal("1.25")], pl.Decimal(38, 2)),
-        (Decimal("1.2"), [Decimal("1.20"), Decimal("1.25")], pl.Decimal(38, 2)),
-        (7, [Decimal("7.00"), Decimal("1.25")], pl.Decimal(38, 2)),
-        (pl.col("s").last(), [Decimal("2.50"), Decimal("1.25")], pl.Decimal(38, 2)),
+        (Decimal("1.25"), [Decimal("1.25"), Decimal("1.25")], pl.Decimal(38, 2), False),
+        (Decimal("1.2"), [Decimal("1.20"), Decimal("1.25")], pl.Decimal(38, 2), True),
+        (7, [Decimal("7.00"), Decimal("1.25")], pl.Decimal(38, 2), False),
+        (
+            pl.col("s").last(),
+            [Decimal("2.50"), Decimal("1.25")],
+            pl.Decimal(38, 2),
+            False,
+        ),
         (
             pl.lit(Decimal("1.2345"), dtype=pl.Decimal(10, 4)),
             [Decimal("1.2345"), Decimal("1.2500")],
             pl.Decimal(38, 4),
+            True,
         ),
     ],
 )
 def test_shift_fill_value_decimal_30544(
-    fill_value: Any, expected: list[Decimal], dtype: pl.DataType, engine: Any
+    fill_value: Any,
+    expected: list[Decimal],
+    dtype: pl.DataType,
+    deprecated: bool,
+    engine: Any,
 ) -> None:
     lf = pl.LazyFrame(
         {"s": pl.Series([Decimal("1.25"), Decimal("2.50")], dtype=pl.Decimal(38, 2))}
     )
-    out = lf.select(pl.col("s").shift(1, fill_value=fill_value)).collect(engine=engine)
+    q = lf.select(pl.col("s").shift(1, fill_value=fill_value))
+    with pytest.deprecated_call() if deprecated else nullcontext():
+        out = q.collect(engine=engine)
     assert_frame_equal(out, pl.DataFrame({"s": pl.Series(expected, dtype=dtype)}))
 
 
@@ -270,3 +287,92 @@ def test_shift_fill_value_list_logical(
     s = pl.Series("s", values, dtype=dtype)
     out = s.shift(1, fill_value=pl.lit(fill_value, dtype=dtype))
     assert_series_equal(out, pl.Series("s", [fill_value, values[0]], dtype=dtype))
+
+
+def test_shift_fill_value_other_time_zone_31073() -> None:
+    lf = pl.LazyFrame(
+        {"a": [datetime(2020, 1, 1), None]},
+        schema={"a": pl.Datetime("us", "UTC")},
+    )
+    fill = pl.lit(datetime(2000, 1, 1), dtype=pl.Datetime("us", "UTC"))
+    a_ams = pl.col("a").dt.convert_time_zone("Europe/Amsterdam")
+    tz = ZoneInfo("Europe/Amsterdam")
+    dtype = pl.Datetime("us", "Europe/Amsterdam")
+
+    out = lf.select(a_ams.shift(fill_value=fill)).collect()
+    expected = pl.DataFrame(
+        {"a": [datetime(2000, 1, 1, 1, tzinfo=tz), datetime(2020, 1, 1, 1, tzinfo=tz)]},
+        schema={"a": dtype},
+    )
+    assert_frame_equal(out, expected)
+
+    out = lf.with_columns(b=a_ams.max().shift(fill_value=fill)).collect()
+    expected = pl.DataFrame(
+        {
+            "a": [datetime(2020, 1, 1, tzinfo=UTC), None],
+            "b": [datetime(2000, 1, 1, 1, tzinfo=tz)] * 2,
+        },
+        schema={"a": pl.Datetime("us", "UTC"), "b": dtype},
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_shift_fill_value_cast_to_input_dtype_31073() -> None:
+    s = pl.Series("a", [datetime(2020, 1, 1), None], dtype=pl.Datetime("ns"))
+    out = s.shift(1, fill_value=datetime(2000, 1, 1))
+    expected = pl.Series(
+        "a", [datetime(2000, 1, 1), datetime(2020, 1, 1)], dtype=pl.Datetime("ns")
+    )
+    assert_series_equal(out, expected)
+
+    s = pl.Series("a", [Decimal("1.50"), None], dtype=pl.Decimal(10, 2))
+    out = s.shift(1, fill_value=7)
+    expected = pl.Series(
+        "a", [Decimal("7.00"), Decimal("1.50")], dtype=pl.Decimal(10, 2)
+    )
+    assert_series_equal(out, expected)
+
+
+def test_shift_fill_value_supertype_deprecated_31073() -> None:
+    s = pl.Series("a", [1, 2], dtype=pl.Int8)
+    with pytest.deprecated_call(match="will raise an error in 3.0"):
+        out = s.shift(1, fill_value=1.5)
+    assert_series_equal(out, pl.Series("a", [1.5, 1.0], dtype=pl.Float64))
+
+
+def test_shift_fill_value_no_supertype_31073() -> None:
+    s = pl.Series("a", [1, 2])
+    with pytest.raises(SchemaError, match="failed to determine supertype"):
+        s.shift(1, fill_value=b"x")
+
+
+def test_shift_fill_value_array_with_list_fill_31073() -> None:
+    s = pl.Series("a", [[1], [2]], dtype=pl.Array(pl.Int64, 1))
+    out = s.shift(1, fill_value=pl.lit([7]))
+    expected = pl.Series("a", [[7], [1]], dtype=pl.Array(pl.Int64, 1))
+    assert_series_equal(out, expected)
+
+
+def test_shift_fill_value_float_literal_keeps_float32_31073(
+    recwarn: pytest.WarningsRecorder,
+) -> None:
+    s = pl.Series("a", [1.5, 2.5], dtype=pl.Float32)
+    expected = pl.Series("a", [0.1, 1.5], dtype=pl.Float32)
+    assert_series_equal(s.shift(1, fill_value=0.1), expected)
+    assert len(recwarn) == 0
+
+
+def test_shift_fill_value_datetime_literal_time_unit_31073(
+    recwarn: pytest.WarningsRecorder,
+) -> None:
+    fill = datetime(2021, 1, 1, 12)
+    s = pl.Series("a", [datetime(2020, 1, 1), None], dtype=pl.Datetime("ns"))
+    expected = pl.Series("a", [fill, datetime(2020, 1, 1)], dtype=pl.Datetime("ns"))
+    assert_series_equal(s.shift(1, fill_value=fill), expected)
+    assert len(recwarn) == 0
+
+    s = pl.Series("a", [datetime(2020, 1, 1), None], dtype=pl.Datetime("ms"))
+    with pytest.deprecated_call(match="will raise an error in 3.0"):
+        out = s.shift(1, fill_value=fill)
+    expected = pl.Series("a", [fill, datetime(2020, 1, 1)], dtype=pl.Datetime("ms"))
+    assert_series_equal(out, expected)

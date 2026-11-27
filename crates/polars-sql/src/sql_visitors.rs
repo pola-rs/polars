@@ -13,7 +13,7 @@ use sqlparser::ast::{
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
-use crate::context::{RelationName, match_qualifier, object_name_to_string};
+use crate::context::{RelationName, is_using_left_key, match_qualifier, object_name_to_string};
 use crate::dyn_visit::{self, visit_expressions};
 
 // ---------------------------------------------------------------------------
@@ -274,7 +274,9 @@ pub(crate) fn check_ambiguous_column(
     let mut tables: Vec<_> = joined_aliases
         .iter()
         .filter(|(t, cols)| {
-            cols.contains_key(col) && !using_cols.iter().any(|(ut, uc)| ut == *t && uc == col)
+            // A hidden USING key is the relation's own column.
+            cols.get(col).is_some_and(|name| !is_using_left_key(name))
+                && !using_cols.iter().any(|(ut, uc)| ut == *t && uc == col)
         })
         .map(|(t, _)| t.as_str())
         .collect();

@@ -553,6 +553,12 @@ impl Translator<'_> {
         // string literals too
         let placeholder =
             self.binds_params() && (s.contains('%') || (self.sqlalchemy() && s.contains(':')));
+        // Google's BigQuery DB-API unescapes %% even without bound parameters.
+        let bigquery_percent = s.contains("%%")
+            && crate::database::planner::is_google_bigquery(
+                self.dialect(),
+                &self.config.backend.kind,
+            );
         // the renderer (sqlglot) writes `\\` and control characters (NUL, `\n`, `\t`, `\r`, `\b`,
         // `\x1a`, and more in older versions) as backslash escapes
         let escape =
@@ -598,7 +604,13 @@ impl Translator<'_> {
                 DialectName::Sqlite | DialectName::Clickhouse
             )
             && (s.contains('\\') || s.contains("''"));
-        !(placeholder || escape || backslash_escapes || nul || question || quotes)
+        !(placeholder
+            || bigquery_percent
+            || escape
+            || backslash_escapes
+            || nul
+            || question
+            || quotes)
     }
 
     /// Whether a literal compared with the column means the same value to the database.
@@ -607,6 +619,20 @@ impl Translator<'_> {
     /// decimal literal wider than its precision (DuckDB `HUGEINT` is read as
     /// `Decimal(38, 0)` but holds 39 digits) isn't a valid value.
     fn literal_fits(&self, name: &str, av: &AnyValue<'_>) -> bool {
+        if let Some(s) = av.get_str()
+            && self.literal_too_long(name, s)
+        {
+            return false;
+        }
+        // A Trino `char(n)` is read padded with blanks, and compared without them (`'a  '`
+        // read, `c = 'a  '` false): a literal ending in a blank may match what the
+        // database doesn't.
+        if let Some(s) = av.get_str()
+            && s.ends_with(' ')
+            && self.maybe_trino_char(name)
+        {
+            return false;
+        }
         // Spark widens a FLOAT column to DOUBLE for the comparison: only a literal that is
         // exactly an f32 (as a double) meets the stored value (`float(1.1) = 1.1` is false).
         if self.dialect() == DialectName::Databricks
@@ -669,6 +695,30 @@ impl Translator<'_> {
             return !sub_second;
         }
         true
+    }
+
+    /// Whether `text`, written as a string literal compared with the column, is past what the
+    /// database takes ([`DialectName::max_string_literal`]). A quote is written twice. Where the
+    /// column type is unknown, the national limit applies too. Such a filter is not pushed
+    /// (Polars applies it).
+    fn literal_too_long(&self, name: &str, text: &str) -> bool {
+        let dialect = self.dialect();
+        let Some(max_bytes) = dialect.max_string_literal(false) else {
+            return false;
+        };
+        let quotes = text.bytes().filter(|&b| b == b'\'').count();
+        if text.len() + quotes > max_bytes {
+            return true;
+        }
+        let national = self
+            .config
+            .column(name)
+            .and_then(|c| c.db_type.as_deref())
+            .is_none_or(|t| t.trim_start().to_ascii_lowercase().starts_with('n'));
+        national
+            && dialect
+                .max_string_literal(true)
+                .is_some_and(|max| text.encode_utf16().count() + quotes > max)
     }
 
     /// The fractional-second digits of a MySQL `DATETIME` / `TIMESTAMP` column, if declared.
@@ -753,6 +803,21 @@ impl Translator<'_> {
 
     /// A boolean expression as SQL, with its class. `None` when it can't be pushed.
     pub fn translate(&self, node: &Node) -> Option<(SqlExpr, Class)> {
+        let (expr, class) = self.translate_node(node)?;
+        // A test for NULL on a MySQL column of unknown type is widened to keep zero dates
+        // (`zero_dates_as_null`): a superset.
+        if class == Class::Exact
+            && self.config.columns.iter().any(|c| {
+                crate::database::planner::zero_date_candidate(self.config, c)
+                    && crate::database::planner::tests_null(&expr, &c.name)
+            })
+        {
+            return Some((expr, Class::Superset));
+        }
+        Some((expr, class))
+    }
+
+    fn translate_node(&self, node: &Node) -> Option<(SqlExpr, Class)> {
         match node {
             Node::And(..) | Node::Or(..) => {
                 let or = matches!(node, Node::Or(..));
@@ -852,6 +917,10 @@ impl Translator<'_> {
         if !self.writable(&SqlLiteral::String(pat.into())) {
             return None;
         }
+        // (a Trino `char(n)`: see `literal_fits`)
+        if pat.ends_with(' ') && self.maybe_trino_char(name) {
+            return None;
+        }
         // ClickHouse's `LIKE` misreads a pattern that holds a NUL: `s LIKE '%\0'` matches
         // every row.
         if self.dialect() == DialectName::Clickhouse && pat.contains('\0') {
@@ -874,9 +943,13 @@ impl Translator<'_> {
                 self.dialect().quote_ident(name)
             ))
         } else {
-            SqlExpr::col(name.clone())
+            // (a DuckDB TIMETZ read as text: `LIKE` on the column itself is a binder error)
+            self.compared(name)
         };
         let pattern = format!("{prefix}{}{suffix}", self.escape_like(pat));
+        if self.literal_too_long(name, &pattern) {
+            return None;
+        }
         let class = if strings.equality_exact && !self.dialect().like_case_insensitive() {
             Class::Exact
         } else if self.dialect().like_matches_per_character()
@@ -904,7 +977,11 @@ impl Translator<'_> {
 
     /// Whether a date or timestamp literal is within what the dialect's types hold.
     fn temporal_in_range(&self, av: &AnyValue<'_>) -> bool {
-        let (lo, hi) = self.dialect().temporal_literal_days();
+        let (lo, hi) = if matches!(av, AnyValue::Date(_)) {
+            self.dialect().date_literal_days()
+        } else {
+            self.dialect().temporal_literal_days()
+        };
         let days = match av {
             AnyValue::Date(d) => *d as i64,
             AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _) => {
@@ -925,6 +1002,14 @@ impl Translator<'_> {
         if self.dialect() == DialectName::Databricks
             && matches!(av, AnyValue::Date(_))
             && days <= DATABRICKS_GAP_END_DAYS
+        {
+            return false;
+        }
+        // Oracle normalises a DATE or TIMESTAMP literal in the gap (1582-10-05..14) to 1582-10-15,
+        // so the comparison runs against a day Polars never wrote: every operator then admits or
+        // drops the 1582-10-15 row. Stored values read back right.
+        if self.dialect() == DialectName::Oracle
+            && (ORACLE_GAP_START_DAYS..DATABRICKS_GAP_END_DAYS).contains(&days)
         {
             return false;
         }
@@ -1090,6 +1175,37 @@ impl Translator<'_> {
             })
     }
 
+    /// Whether a column may be a Trino `char(n)`: its type is that, or isn't known.
+    fn maybe_trino_char(&self, name: &str) -> bool {
+        self.dialect() == DialectName::Trino
+            && self
+                .config
+                .column(name)
+                .and_then(|c| c.db_type.as_deref())
+                .is_none_or(|t| t.trim().to_ascii_lowercase().starts_with("char"))
+    }
+
+    /// Whether a SQL Server date-time column's values are ones a microsecond literal
+    /// compares exactly, as far as its declared type tells: not the legacy `datetime` and
+    /// `smalldatetime`, nor fractional seconds beyond 6 digits (`datetime2`, `time` and
+    /// `datetimeoffset` without digits have 7), nor a type that isn't known.
+    fn mssql_temporal_matches(&self, name: &str) -> bool {
+        let Some(t) = self.config.column(name).and_then(|c| c.db_type.as_deref()) else {
+            return false;
+        };
+        let t = t.trim().to_ascii_lowercase();
+        let (base, args) = t.split_once('(').unwrap_or((&t, ""));
+        match base.trim() {
+            "datetime" | "smalldatetime" => false,
+            "datetime2" | "datetimeoffset" | "time" => args
+                .trim_end_matches(')')
+                .trim()
+                .parse::<u32>()
+                .is_ok_and(|scale| scale <= 6),
+            _ => true,
+        }
+    }
+
     /// The class of `column <op> literal`, from the column's type and semantics.
     fn leaf_class(&self, name: &str, dtype: &DataType, op: CmpOp) -> Option<Class> {
         match dtype {
@@ -1097,20 +1213,12 @@ impl Translator<'_> {
             // is its epoch count, which the database compares as a number (MySQL: 20231231).
             dt if dt.is_integer() => (!self.temporal_db_type(name)).then_some(Class::Exact),
             DataType::Boolean => self.dialect().supports_boolean().then_some(Class::Exact),
-            // SQL Server's legacy `datetime` holds 1/300 s ticks, which the microsecond
-            // literal doesn't match exactly.
-            DataType::Datetime(_, _)
-                if self.dialect() == DialectName::Mssql
-                    && self
-                        .config
-                        .column(name)
-                        .and_then(|c| c.db_type.as_deref())
-                        .is_some_and(|t| {
-                            matches!(
-                                t.trim().to_ascii_lowercase().as_str(),
-                                "datetime" | "smalldatetime"
-                            )
-                        }) =>
+            // SQL Server's legacy `datetime` holds 1/300 s ticks, and `datetime2(7)`,
+            // `time(7)` and `datetimeoffset(7)` 100 ns, which every driver cuts to
+            // microseconds: the microsecond literal doesn't match them exactly. Without
+            // the column's type (a synonym, a failed lookup) it may be any of them.
+            DataType::Datetime(_, _) | DataType::Time
+                if self.dialect() == DialectName::Mssql && !self.mssql_temporal_matches(name) =>
             {
                 None
             },
@@ -1120,6 +1228,22 @@ impl Translator<'_> {
             // A MySQL `TIMESTAMP` literal is read in the session time zone, UTC only after
             // the session setup.
             DataType::Datetime(_, Some(_)) if self.mysql_without_setup() => None,
+            // A Python driver's `TIMESTAMP` is read as its UTC instant (the bridge converts a live
+            // session's), while a naive literal is compared in the session time zone: a column of
+            // unknown type may be one.
+            DataType::Datetime(_, None)
+                if self.mysql_without_setup()
+                    && matches!(
+                        self.config.backend.kind,
+                        BackendKind::Python { .. } | BackendKind::Sqlalchemy
+                    )
+                    && self
+                        .config
+                        .column(name)
+                        .is_some_and(crate::database::planner::type_unknown) =>
+            {
+                None
+            },
             // A naive literal is a `TIMESTAMP_NTZ`, which Databricks compares with a
             // `TIMESTAMP` (LTZ) column in the session's time zone: only a column known to
             // be an NTZ one is compared.
@@ -1189,9 +1313,10 @@ impl Translator<'_> {
             {
                 None
             },
-            // An indexed MariaDB `DOUBLE(M, D)` rounds an equality literal to `D` digits.
+            // An indexed MariaDB `FLOAT(M, D)` / `DOUBLE(M, D)` compares a literal as rounded to
+            // `D` digits where a scan reads the value unrounded: `=` misses the stored value,
+            // and `>=` an indexed `DOUBLE(M, D)` row equal to the literal.
             dt if dt.is_float()
-                && !op.is_ordering()
                 && matches!(
                     self.dialect(),
                     DialectName::Mysql | DialectName::Singlestore
@@ -1209,6 +1334,14 @@ impl Translator<'_> {
             // as a float is compared as it is stored.
             dt if dt.is_float() && self.dialect() == DialectName::Databricks => {
                 matches!(self.spark_float(name), Some("double" | "float")).then_some(Class::Exact)
+            },
+            // A SQLite that parses float literals inexactly misses the stored value
+            // (`sqlite_floats_exact`): no float comparison is pushed.
+            dt if dt.is_float()
+                && self.dialect() == DialectName::Sqlite
+                && !self.config.sqlite_floats_exact =>
+            {
+                None
             },
             dt if dt.is_float() => self
                 .dialect()
@@ -1355,6 +1488,8 @@ fn literal_comparable(col: &DataType, lit: &DataType) -> bool {
 
 /// 1582-10-15, the first day of the Gregorian calendar, in days since the epoch.
 const DATABRICKS_GAP_END_DAYS: i64 = -141_427;
+/// 1582-10-05, the first day of the Julian-Gregorian gap; the gap ends before `DATABRICKS_GAP_END_DAYS`.
+const ORACLE_GAP_START_DAYS: i64 = -141_437;
 
 /// The deepest an expression may nest in a statement: the renderer recurses through it (in
 /// Python, whose stack is short), and so does the database.
@@ -1421,7 +1556,7 @@ fn widens(from: &DataType, to: &DataType) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -1486,7 +1621,7 @@ mod tests {
     }
 
     /// A table scan of `columns` (`(name, dtype, db_type)`).
-    fn config(
+    pub(crate) fn config(
         dialect: DialectName,
         kind: BackendKind,
         columns: &[(&str, DataType, Option<&str>)],
@@ -1533,6 +1668,7 @@ mod tests {
                     .collect(),
             ),
             columns: metas.into(),
+            bigquery_sampled_schema: Default::default(),
             stats: Default::default(),
             compiled: None,
             connection_share: None,
@@ -1542,11 +1678,15 @@ mod tests {
             volatility_unchecked: false,
             user_schema: false,
             derived_order_dropped: false,
+            sqlite_floats_exact: true,
+            refused_columns: vec![],
+            unnamed_columns: false,
+            resolution: None,
             bounds_cache: Default::default(),
         }
     }
 
-    fn adbc(driver: &str) -> BackendKind {
+    pub(crate) fn adbc(driver: &str) -> BackendKind {
         BackendKind::Adbc {
             driver: driver.into(),
         }
@@ -1598,6 +1738,73 @@ mod tests {
     }
 
     #[test]
+    fn mssql_temporal_comparisons_follow_the_declared_type() {
+        let naive = DataType::Datetime(TimeUnit::Microseconds, None);
+        let ts = cmp("eq", "ts", "datetime[us]", "1719835200000000");
+        let c = |t| {
+            config(
+                DialectName::Mssql,
+                adbc("mssql"),
+                &[("ts", naive.clone(), t)],
+            )
+        };
+        assert_eq!(class_of(&c(Some("datetime2(6)")), &ts), Some(Class::Exact));
+        assert_eq!(class_of(&c(Some("date")), &ts), Some(Class::Exact));
+        for t in ["datetime2(7)", "datetime2", "datetime", "smalldatetime"] {
+            assert_eq!(class_of(&c(Some(t)), &ts), None, "{t}");
+        }
+        assert_eq!(class_of(&c(None), &ts), None);
+        let time = |t| {
+            config(
+                DialectName::Mssql,
+                adbc("mssql"),
+                &[("t", DataType::Time, t)],
+            )
+        };
+        let t = cmp("eq", "t", "time", "3600000000000");
+        assert_eq!(class_of(&time(Some("time(3)")), &t), Some(Class::Exact));
+        assert_eq!(class_of(&time(Some("time")), &t), None);
+        // `float` and `real` aren't compared exactly
+        let f = config(
+            DialectName::Mssql,
+            adbc("mssql"),
+            &[("f", DataType::Float64, Some("float"))],
+        );
+        assert_eq!(class_of(&f, &cmp("eq", "f", "f64", "0.5")), None);
+    }
+
+    #[test]
+    fn sqlite_float_comparisons_need_exact_parsing() {
+        let mut c = config(
+            DialectName::Sqlite,
+            adbc("sqlite"),
+            &[("f", DataType::Float64, Some("REAL"))],
+        );
+        let eq = cmp("eq", "f", "f64", "0.1");
+        assert_eq!(class_of(&c, &eq), Some(Class::Exact));
+        c.sqlite_floats_exact = false;
+        assert_eq!(class_of(&c, &eq), None);
+    }
+
+    #[test]
+    fn trino_literals_with_trailing_blanks_are_not_pushed() {
+        // a `char(n)` is read padded, but compared without the blanks
+        let c = config(
+            DialectName::Trino,
+            adbc("trino"),
+            &[("s", DataType::String, Some("char(3)"))],
+        );
+        assert!(class_of(&c, &cmp("eq", "s", "str", "a")).is_some());
+        assert_eq!(class_of(&c, &cmp("eq", "s", "str", "a  ")), None);
+        let varchar = config(
+            DialectName::Trino,
+            adbc("trino"),
+            &[("s", DataType::String, Some("varchar(10)"))],
+        );
+        assert!(class_of(&varchar, &cmp("eq", "s", "str", "a  ")).is_some());
+    }
+
+    #[test]
     fn databricks_aware_comparison_on_ntz_column() {
         // #422: a column typed as aware that is a `TIMESTAMP_NTZ` is not compared
         let utc = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
@@ -1616,6 +1823,33 @@ mod tests {
         assert_eq!(class_of(&ltz, &aware), Some(Class::Exact));
         let ltz_naive = c(naive, Some("timestamp"));
         assert_eq!(class_of(&ltz_naive, &plain), None);
+    }
+
+    #[test]
+    fn mysql_naive_comparison_on_a_column_of_unknown_type() {
+        // a Python driver's `TIMESTAMP` is read as UTC, but compared in the session time zone
+        let naive = DataType::Datetime(TimeUnit::Microseconds, None);
+        let plain = cmp("eq", "ts", "datetime[us]", "1719835200000000");
+        let pymysql = BackendKind::Python {
+            module: "pymysql".into(),
+        };
+        let c = |kind, t| config(DialectName::Singlestore, kind, &[("ts", naive.clone(), t)]);
+        assert_eq!(class_of(&c(pymysql.clone(), None), &plain), None);
+        assert_eq!(
+            class_of(
+                &c(pymysql.clone(), Some(crate::database::planner::MYSQL_DATE)),
+                &plain
+            ),
+            None
+        );
+        assert_eq!(
+            class_of(&c(pymysql, Some("datetime")), &plain),
+            Some(Class::Exact)
+        );
+        assert_eq!(
+            class_of(&c(adbc("mysql"), None), &plain),
+            Some(Class::Exact)
+        );
     }
 
     #[test]
@@ -2004,6 +2238,96 @@ mod tests {
             class_of(&pg, &cmp("eq", "d", "date", "-141427")),
             Some(Class::Exact)
         );
+    }
+
+    #[test]
+    fn clickhouse_date_literals_stay_in_the_date_range() {
+        // ClickHouse prunes parts by converting the constant to `Date` (1970-01-01 ..
+        // 2149-06-06, less a margin for functions of it), which wraps: a literal outside
+        // loses rows
+        let cfg = config(
+            DialectName::Clickhouse,
+            adbc("clickhouse"),
+            &[("d", DataType::Date, Some("Date32"))],
+        );
+        let t = Translator { config: &cfg };
+        for days in [-1, 0, 6, 65_501, 65_536, 120_529] {
+            assert!(!t.temporal_in_range(&AnyValue::Date(days)), "{days}");
+        }
+        for days in [7, 8, 65_500] {
+            assert!(t.temporal_in_range(&AnyValue::Date(days)), "{days}");
+        }
+        // a `DateTime` has no such wrap: timestamps keep the wider range
+        let us = AnyValue::Datetime(-86_400_000_000, TimeUnit::Microseconds, None);
+        assert!(t.temporal_in_range(&us));
+    }
+
+    #[test]
+    fn oracle_string_literals_past_its_limit_are_not_pushed() {
+        let mut c = config(
+            DialectName::Oracle,
+            adbc("oracle"),
+            &[
+                ("v", DataType::String, Some("VARCHAR2")),
+                ("n", DataType::String, Some("NVARCHAR2")),
+                ("u", DataType::String, None),
+            ],
+        );
+        // byte-wise comparison (the session setup's `NLS_COMP=BINARY`): every operator pushes
+        let mut metas = c.columns.to_vec();
+        for m in &mut metas {
+            m.strings = StringSemantics {
+                empty_is_null: true,
+                ..StringSemantics::BINARY
+            };
+        }
+        c.columns = metas.into();
+        let is_in = |col: &str, values: &str| {
+            format!(
+                r#"{{"op": "is_in", "args": [{{"col": "{col}"}}], "nulls_equal": false,
+                "values": {{"dtype": "str", "values": [{values}]}}}}"#
+            )
+        };
+        let pushed = |col: &str, text: &str| {
+            let ops = ["eq", "neq", "starts_with", "contains_literal"];
+            let mut docs: Vec<String> = ops.iter().map(|op| cmp(op, col, "str", text)).collect();
+            docs.push(is_in(col, &format!(r#""x", "{text}""#)));
+            docs.iter()
+                .map(|d| translate_doc(&c, d).is_some())
+                .collect::<Vec<_>>()
+        };
+        // 4000 bytes in the database character set (a quote is written twice)
+        assert_eq!(pushed("v", &"a".repeat(3000)), [true; 5]);
+        assert_eq!(pushed("v", &"a".repeat(3997)), [true; 5]);
+        assert_eq!(pushed("v", &"a".repeat(4001)), [false; 5]);
+        assert_eq!(pushed("v", &"\u{20ac}".repeat(1332)), [true; 5]);
+        assert_eq!(pushed("v", &"\u{20ac}".repeat(1400)), [false; 5]);
+        // an NVARCHAR2 column: 2000 UTF-16 units
+        assert_eq!(pushed("n", &"a".repeat(1990)), [true; 5]);
+        assert_eq!(pushed("n", &"a".repeat(3000)), [false; 5]);
+        // an unknown type is held to the stricter limit
+        assert_eq!(pushed("u", &"a".repeat(3000)), [false; 5]);
+    }
+
+    #[test]
+    fn oracle_dates_in_the_gregorian_gap() {
+        // Oracle normalises a DATE/TIMESTAMP literal in 1582-10-05..14 to 1582-10-15
+        let cfg = config(
+            DialectName::Oracle,
+            adbc("oracle"),
+            &[("d", DataType::Date, Some("DATE"))],
+        );
+        let t = Translator { config: &cfg };
+        let us =
+            |days: i64| AnyValue::Datetime(days * 86_400_000_000, TimeUnit::Microseconds, None);
+        for days in [-141_437, -141_433, -141_428] {
+            assert!(!t.temporal_in_range(&AnyValue::Date(days as i32)), "{days}");
+            assert!(!t.temporal_in_range(&us(days)), "{days}");
+        }
+        for days in [-141_438, -141_427, -141_426, 0] {
+            assert!(t.temporal_in_range(&AnyValue::Date(days as i32)), "{days}");
+            assert!(t.temporal_in_range(&us(days)), "{days}");
+        }
     }
 
     #[test]

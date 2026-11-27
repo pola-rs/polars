@@ -241,9 +241,12 @@ and URLs with ``SQLContext(allow_file_reads=False, allow_file_writes=False)``.
     SELECT * FROM 'data/events.parquet'
     SELECT region, COUNT(*) FROM 'data/sales_*.csv' GROUP BY region
 
+.. _time_travel:
+
 **Time travel:** a table of an attached catalog (see
 :meth:`SQLContext.register_catalog`) can be read as of a snapshot, a branch or tag, or
-a time. The clause follows the table name or its alias, and takes a literal.
+a time. The clause follows the table name or its alias, and takes a literal. Tags and
+branches are made with :ref:`ALTER TABLE <alter_table>`.
 
 * ``[FOR] VERSION AS OF <version>`` or ``AT (VERSION => <version>)``: an integer is a
   snapshot id, a string a branch or tag.

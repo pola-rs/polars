@@ -2,6 +2,7 @@ use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
 use pyo3::prelude::*;
 
 use crate::PySeries;
+use crate::conversion::py_int_to_u128;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::utils::EnterPolarsExt;
@@ -34,6 +35,15 @@ impl PySeries {
 }
 
 macro_rules! impl_op {
+    ($op:ident, $name:ident, u128) => {
+        #[pymethods]
+        impl PySeries {
+            fn $name(&self, py: Python<'_>, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
+                let rhs = py_int_to_u128(rhs)?;
+                py.enter_polars_series(|| self.series.read().$op(rhs))
+            }
+        }
+    };
     ($op:ident, $name:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {

@@ -5,22 +5,20 @@ name: Release polars-database
 #
 # The version is the `version` of the wrapper crate `py-polars/polars-database/Cargo.toml`, which
 # must be the one in its `pyproject.toml` (the wheels take theirs from there) and in
-# `crates/polars-database/Cargo.toml` (the module's `__version__`), and the tag must be
-# `polars-database-<version>`. The plugin is an abi3 wheel, so one wheel per target covers every
-# supported Python version.
+# `crates/polars-database/Cargo.toml` (the module's `__version__`). The plugin is an abi3 wheel,
+# so one wheel per target covers every supported Python version.
 #
-# The `version` job resolves the tag to a commit once; the other jobs build that commit, so a tag
-# that moves during the run can't mix two revisions in one release.
+# The `version` job resolves the commit once; the other jobs build that commit. After publishing,
+# the release tags it `polars-database-<version>`.
 
 on:
   workflow_dispatch:
     inputs:
-      # Tag `polars-database-<version>` of this repository to release.
-      tag:
-        description: Tag polars-database-<version>
+      # Commit to release. If omitted, use the latest commit of the branch the workflow runs on.
+      sha:
+        description: Commit SHA
         type: string
-        required: true
-      # Create the sdist and build the wheels, but do not publish to PyPI.
+      # Create the sdist and build the wheels, but do not publish to PyPI or tag the commit.
       dry-run:
         description: Dry run
         type: boolean
@@ -51,27 +49,18 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      # The commit every job builds: the tag's.
+      # The commit every job builds.
       sha: ${{ steps.commits.outputs.sha }}
+      tag: ${{ steps.tag.outputs.tag }}
+      # Whether the tag exists already, on this commit (a rerun).
+      tagged: ${{ steps.tag.outputs.tagged }}
     steps:
-      # A branch name would be accepted as a ref too, so make sure the release is built from a tag.
-      - name: Check the tag exists
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          if ! git ls-remote --exit-code --tags "https://github.com/${{ github.repository }}" "refs/tags/$TAG"; then
-            echo "::error::${{ github.repository }} has no tag $TAG"
-            exit 1
-          fi
-
       - uses: actions/checkout@v7
         with:
-          ref: refs/tags/${{ inputs.tag }}
+          ref: ${{ inputs.sha }}
 
       - name: Read polars-database version
         id: version
-        env:
-          TAG: ${{ inputs.tag }}
         run: |
           VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("py-polars/polars-database/Cargo.toml", "rb"))["package"]["version"])')
           echo "polars-database version: $VERSION"
@@ -87,10 +76,6 @@ jobs:
             echo "::error::crates/polars-database version $LIB_VERSION does not match $VERSION"
             exit 1
           fi
-          if [[ "$TAG" != "polars-database-$VERSION" ]]; then
-            echo "::error::tag $TAG does not match polars-database version $VERSION (expected polars-database-$VERSION)"
-            exit 1
-          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Resolve commit
@@ -99,6 +84,22 @@ jobs:
           SHA=$(git rev-parse HEAD)
           echo "commit: $SHA"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      # A tag on another commit means the version was released before: bump it.
+      - name: Check the tag
+        id: tag
+        env:
+          TAG: polars-database-${{ steps.version.outputs.version }}
+          SHA: ${{ steps.commits.outputs.sha }}
+        run: |
+          # The last line is the commit, also for an annotated tag (`<tag>^{}`).
+          TAGGED=$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | tail -n 1 | cut -f 1)
+          if [[ -n "$TAGGED" && "$TAGGED" != "$SHA" ]]; then
+            echo "::error::$TAG already tags $TAGGED: bump the polars-database version to release $SHA"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tagged=$([[ -n "$TAGGED" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   create-sdist:
     needs: [version]
@@ -250,8 +251,8 @@ jobs:
             fi
           done
 
-      # A moved tag releases the same version again: with `skip-existing` alone that went
-      # green while PyPI kept the old files. The version may be on PyPI only as files of
+      # A release of the same version from another commit: with `skip-existing` alone that
+      # went green while PyPI kept the old files. The version may be on PyPI only as files of
       # these very builds (a rerun after some were uploaded): each file PyPI lists must
       # match one of `dist/` by SHA-256, or the release fails. After a partial upload, use
       # "Re-run failed jobs": "Re-run all jobs" rebuilds `dist/`, which won't match.
@@ -270,7 +271,7 @@ jobs:
           local = {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in pathlib.Path("dist").iterdir()}
           bad = sorted(n for n, d in listed.items() if local.get(n) != d)
           if bad:
-              print(f"::error::polars-database is already on PyPI with files that differ from this build: {bad}. Bump the version in Cargo.toml and pyproject.toml, and release a new tag")
+              print(f"::error::polars-database is already on PyPI with files that differ from this build: {bad}. Bump the version in Cargo.toml and pyproject.toml, and release again")
               sys.exit(1)
           print(f"PyPI holds {len(listed)} file(s) of this build already")
           PY
@@ -288,3 +289,17 @@ jobs:
           # the check above made sure what exists is this build's
           skip-existing: true
           verbose: true
+
+  tag:
+    needs: [version, publish-to-pypi]
+    if: inputs.dry-run == false && needs.version.outputs.tagged == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the released commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          SHA: ${{ needs.version.outputs.sha }}
+        run: gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$TAG" -f sha="$SHA"

@@ -182,9 +182,7 @@ pub(crate) fn row_slice_ranges(
     byte_size: usize,
     options: WriteOptions,
 ) -> impl Iterator<Item = (usize, usize)> {
-    const DEFAULT_PAGE_SIZE: usize = 1024 * 1024; // 1 MB
-    let max_page_size = options.data_page_size.unwrap_or(DEFAULT_PAGE_SIZE);
-    let max_page_size = max_page_size.min(2usize.pow(31) - 2usize.pow(25)); // allowed maximum page size
+    let max_page_size = max_page_size(options);
 
     let bytes_per_row = if number_of_rows == 0 {
         0
@@ -199,6 +197,200 @@ pub(crate) fn row_slice_ranges(
             let length = (offset + rows_per_page).min(number_of_rows) - offset;
             (offset, length)
         })
+}
+
+fn max_page_size(options: WriteOptions) -> usize {
+    const DEFAULT_PAGE_SIZE: usize = 1024 * 1024; // 1 MB
+    let max_page_size = options.data_page_size.unwrap_or(DEFAULT_PAGE_SIZE);
+    max_page_size.min(2usize.pow(31) - 2usize.pow(25)) // allowed maximum page size
+}
+
+/// Parquet's Plain encoding prefixes variable-length values with 4 byte lengths
+const LENGTH_PREFIX: usize = size_of::<u32>();
+
+enum LeafSizes<'a> {
+    Offsets(&'a [i64]),
+    Views(&'a [View]),
+    Boolean,
+    FixedWidth(usize),
+}
+
+impl<'a> LeafSizes<'a> {
+    /// `None` if all values of `array` have the same size.
+    fn new(array: &'a dyn Array) -> Option<Self> {
+        let any = array.as_any();
+        Some(match array.dtype().to_storage() {
+            ArrowDataType::LargeBinary => Self::Offsets(
+                any.downcast_ref::<BinaryArray<i64>>()
+                    .unwrap()
+                    .offsets()
+                    .as_slice(),
+            ),
+            ArrowDataType::LargeUtf8 => Self::Offsets(
+                any.downcast_ref::<Utf8Array<i64>>()
+                    .unwrap()
+                    .offsets()
+                    .as_slice(),
+            ),
+            ArrowDataType::BinaryView => {
+                Self::Views(any.downcast_ref::<BinaryViewArray>().unwrap().views())
+            },
+            ArrowDataType::Utf8View => {
+                Self::Views(any.downcast_ref::<Utf8ViewArray>().unwrap().views())
+            },
+            _ => return None,
+        })
+    }
+
+    fn from_physical_type(physical_type: ParquetPhysicalType) -> Option<Self> {
+        Some(match physical_type {
+            ParquetPhysicalType::Boolean => Self::Boolean,
+            ParquetPhysicalType::Int32 | ParquetPhysicalType::Float => Self::FixedWidth(4),
+            ParquetPhysicalType::Int64 | ParquetPhysicalType::Double => Self::FixedWidth(8),
+            ParquetPhysicalType::Int96 => Self::FixedWidth(12),
+            ParquetPhysicalType::FixedLenByteArray(width) => Self::FixedWidth(width),
+            ParquetPhysicalType::ByteArray => return None,
+        })
+    }
+
+    fn bytes_in(&self, start: usize, end: usize) -> usize {
+        let len = end - start;
+        match *self {
+            Self::Offsets(offsets) => ((offsets[end] - offsets[start]) as usize)
+                .saturating_add(len.saturating_mul(LENGTH_PREFIX)),
+            Self::Views(views) => views[start..end]
+                .iter()
+                .map(|v| (v.length as usize).saturating_add(LENGTH_PREFIX))
+                .fold(0usize, usize::saturating_add),
+            Self::Boolean => len.div_ceil(8),
+            Self::FixedWidth(width) => len.saturating_mul(width),
+        }
+    }
+
+    /// Splits the rows before the first row that would take the page over the target.
+    /// A single row larger than the target gets a page of its own.
+    fn slice_ranges(
+        &self,
+        nested: &[Nested],
+        number_of_rows: usize,
+        max_page_size: usize,
+        level_bytes: usize,
+    ) -> Vec<(usize, usize)> {
+        // A repeated entry costs at least one byte here, so the clamped page size
+        // also bounds the value count on every page that holds multiple rows.
+        let nested_bytes = |start, end| {
+            let (start, end, num_values) = nested_span(nested, start, end);
+            self.bytes_in(start, end)
+                .saturating_add(num_values.saturating_mul(level_bytes))
+        };
+        match *self {
+            Self::Views(_) if level_bytes > 0 => {
+                let row_sizes = (0..number_of_rows).map(|row| nested_bytes(row, row + 1));
+                slice_ranges_from_row_sizes(max_page_size, row_sizes, number_of_rows)
+            },
+            Self::Views(views) => {
+                let row_sizes = views[..number_of_rows]
+                    .iter()
+                    .map(|v| (v.length as usize).saturating_add(LENGTH_PREFIX));
+                slice_ranges_from_row_sizes(max_page_size, row_sizes, number_of_rows)
+            },
+            _ if level_bytes > 0 => {
+                search_slice_ranges(number_of_rows, max_page_size, nested_bytes)
+            },
+            _ => search_slice_ranges(number_of_rows, max_page_size, |start, end| {
+                self.bytes_in(start, end)
+            }),
+        }
+    }
+}
+
+/// Page ranges for rows whose size can be computed from the range endpoints.
+/// For a fixed start, `range_bytes` must be non-decreasing in the end.
+fn search_slice_ranges(
+    number_of_rows: usize,
+    max_page_size: usize,
+    range_bytes: impl Fn(usize, usize) -> usize,
+) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    while start < number_of_rows {
+        let fits = |end| range_bytes(start, end) <= max_page_size;
+
+        // The page ends at the largest end that fits, but always holds at least one row.
+        let end = if number_of_rows - start == 1 || !fits(start + 2) {
+            start + 1
+        } else if fits(number_of_rows) {
+            number_of_rows
+        } else {
+            // `lo` is a valid end and `hi` does not fit.
+            let mut lo = start + 2;
+            let mut hi = number_of_rows;
+            while hi - lo > 1 {
+                let mid = lo + (hi - lo) / 2;
+                if fits(mid) {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            lo
+        };
+        ranges.push((start, end - start));
+        start = end;
+    }
+    ranges
+}
+
+/// Page ranges for rows whose sizes are only known one row at a time.
+fn slice_ranges_from_row_sizes(
+    max_page_size: usize,
+    row_sizes: impl Iterator<Item = usize>,
+    number_of_rows: usize,
+) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    let mut page_bytes = 0usize;
+    for (row, size) in row_sizes.enumerate() {
+        if size > max_page_size.saturating_sub(page_bytes) && row > start {
+            ranges.push((start, row - start));
+            start = row;
+            page_bytes = 0;
+        }
+        page_bytes = page_bytes.saturating_add(size);
+    }
+    if start < number_of_rows {
+        ranges.push((start, number_of_rows - start));
+    }
+    ranges
+}
+
+/// Leaf span and upper bound on the number of level entries for a row range.
+fn nested_span(nested: &[Nested], mut start: usize, mut end: usize) -> (usize, usize, usize) {
+    let mut list_slots = 0usize;
+    for level in nested {
+        let len = end - start;
+        match level {
+            Nested::List(l) => {
+                start = l.offsets.as_slice()[start] as usize;
+                end = l.offsets.as_slice()[end] as usize;
+            },
+            Nested::LargeList(l) => {
+                start = l.offsets.as_slice()[start] as usize;
+                end = l.offsets.as_slice()[end] as usize;
+            },
+            Nested::FixedSizeList(l) => {
+                start *= l.width;
+                end *= l.width;
+            },
+            Nested::Struct(_) | Nested::Primitive(_) => continue,
+        }
+        list_slots = list_slots.saturating_add(len);
+    }
+    // A null or empty container emits one entry in place of its descendants. Counting
+    // every list slot and leaf also bounds entries emitted by null structs, which replace
+    // at least one of those entries.
+    let num_values = (end - start).saturating_add(list_slots);
+    (start, end, num_values)
 }
 
 fn decimal_length_from_precision(precision: usize) -> usize {
@@ -323,26 +515,42 @@ pub fn array_to_pages(
 
     let nested = nested.to_vec();
     let number_of_rows = nested[0].len();
-    // note: this is not correct if the array is sliced - the estimation should happen on the
-    // primitive after sliced for parquet
-    let byte_size = estimated_bytes_size(primitive_array);
+    let level_bytes = nested::level_bytes_per_value(&nested);
+    // A column average can hide groups of large rows in a variable-length column.
+    let sizes = LeafSizes::new(primitive_array).or_else(|| {
+        if level_bytes > 0 {
+            LeafSizes::from_physical_type(type_.physical_type)
+        } else {
+            None
+        }
+    });
+    let ranges = sizes.map(|sizes| {
+        sizes.slice_ranges(&nested, number_of_rows, max_page_size(options), level_bytes)
+    });
+    let byte_size = if ranges.is_none() {
+        estimated_bytes_size(primitive_array)
+    } else {
+        0
+    };
     let primitive_array = primitive_array.to_boxed();
 
-    let pages =
-        row_slice_ranges(number_of_rows, byte_size, options).map(move |(offset, length)| {
-            let mut right_array = primitive_array.clone();
-            let mut right_nested = nested.clone();
-            slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
+    let to_page = move |(offset, length)| {
+        let mut right_array = primitive_array.clone();
+        let mut right_nested = nested.clone();
+        slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
 
-            array_to_page(
-                right_array.as_ref(),
-                type_.clone(),
-                &right_nested,
-                options,
-                encoding,
-            )
-        });
-    Ok(DynIter::new(pages))
+        array_to_page(
+            right_array.as_ref(),
+            type_.clone(),
+            &right_nested,
+            options,
+            encoding,
+        )
+    };
+    Ok(match ranges {
+        Some(ranges) => DynIter::new(ranges.into_iter().map(to_page)),
+        None => DynIter::new(row_slice_ranges(number_of_rows, byte_size, options).map(to_page)),
+    })
 }
 
 /// Converts an [`Array`] to a [`CompressedPage`] based on options, descriptor and `encoding`.
@@ -1202,5 +1410,259 @@ fn get_primitive_dtype_encoding(dtype: &ArrowDataType) -> Encoding {
         | PhysicalType::Primitive(_) => Encoding::RleDictionary,
         // remaining is plain
         _ => Encoding::Plain,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arrow::write::pages::to_nested;
+
+    type Ranges = Vec<(usize, usize)>;
+
+    /// The straightforward greedy pass that [`LeafSizes::slice_ranges`] must match.
+    fn reference_slice_ranges(
+        number_of_rows: usize,
+        max_page_size: usize,
+        bytes_until: impl Fn(usize) -> usize,
+    ) -> Vec<(usize, usize)> {
+        let mut ranges = Vec::new();
+        let mut start = 0;
+        let mut start_bytes = bytes_until(0);
+        let mut prev_bytes = start_bytes;
+        for row in 1..=number_of_rows {
+            let bytes = bytes_until(row);
+            if bytes - start_bytes > max_page_size && row - 1 > start {
+                ranges.push((start, row - 1 - start));
+                start = row - 1;
+                start_bytes = prev_bytes;
+            }
+            prev_bytes = bytes;
+        }
+        if start < number_of_rows {
+            ranges.push((start, number_of_rows - start));
+        }
+        ranges
+    }
+
+    /// A small deterministic generator (splitmix64), so failures reproduce.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            z ^ (z >> 31)
+        }
+
+        fn below(&mut self, n: u64) -> usize {
+            (self.next() % n) as usize
+        }
+    }
+
+    /// Mostly short values, with occasional runs of large ones.
+    fn skewed_values(rng: &mut Rng, len: usize) -> Vec<Vec<u8>> {
+        let mut values = Vec::with_capacity(len);
+        while values.len() < len {
+            let (run, max_len) = match rng.below(20) {
+                0 => (1 + rng.below(4), 5000),
+                1 => (1, 0),
+                _ => (1, 40),
+            };
+            for _ in 0..run.min(len - values.len()) {
+                values.push(vec![b'x'; rng.below(max_len as u64 + 1)]);
+            }
+        }
+        values
+    }
+
+    fn large_list(rng: &mut Rng, values: Box<dyn Array>) -> Box<dyn Array> {
+        let mut offsets = vec![0i64];
+        while (*offsets.last().unwrap() as usize) < values.len() {
+            let remaining = values.len() - *offsets.last().unwrap() as usize;
+            offsets.push(*offsets.last().unwrap() + rng.below(4).min(remaining) as i64);
+        }
+        let dtype = ArrowDataType::LargeList(Box::new(Field::new(
+            "item".into(),
+            values.dtype().clone(),
+            false,
+        )));
+        ListArray::<i64>::new(dtype, offsets.try_into().unwrap(), values, None).boxed()
+    }
+
+    fn arrays(rng: &mut Rng, len: usize) -> Vec<Box<dyn Array>> {
+        let values = skewed_values(rng, len);
+        let strings: Vec<String> = values
+            .iter()
+            .map(|v| String::from_utf8(v.clone()).unwrap())
+            .collect();
+        let flat: Vec<Box<dyn Array>> = vec![
+            BinaryArray::<i64>::from_slice(&values).boxed(),
+            Utf8Array::<i64>::from_slice(&strings).boxed(),
+            BinaryViewArray::from_slice_values(&values).boxed(),
+            Utf8ViewArray::from_slice_values(&strings).boxed(),
+        ];
+        let mut arrays = flat.clone();
+        for leaf in &flat[..] {
+            arrays.push(large_list(rng, leaf.clone()));
+        }
+        // Sliced arrays: `offsets[0] != 0`, list offsets that do not start at 0, and views without
+        // a known total length.
+        for array in arrays.clone() {
+            if array.len() > 2 {
+                let offset = 1 + rng.below(array.len() as u64 / 2);
+                let length = rng.below((array.len() - offset) as u64 + 1);
+                arrays.push(array.sliced(offset, length));
+            }
+        }
+        arrays
+    }
+
+    /// The new ranges and the reference ranges for `array`.
+    fn ranges(array: &dyn Array, max_page_size: usize) -> (Ranges, Ranges) {
+        let type_ = to_parquet_type(&Field::new("a".into(), array.dtype().clone(), false)).unwrap();
+        let nested = to_nested(array, &type_).unwrap().remove(0);
+        let mut leaves = Vec::new();
+        to_leaves(array, &mut leaves);
+        let leaf = leaves.remove(0);
+        let number_of_rows = nested[0].len();
+
+        let sizes = LeafSizes::new(leaf.as_ref()).unwrap();
+        let lengths: Vec<usize> = match &sizes {
+            LeafSizes::Offsets(offsets) => {
+                offsets.windows(2).map(|w| (w[1] - w[0]) as usize).collect()
+            },
+            LeafSizes::Views(views) => views.iter().map(|v| v.length as usize).collect(),
+            _ => unreachable!(),
+        };
+        let mut prefix = vec![0];
+        for len in lengths {
+            prefix.push(prefix.last().unwrap() + len + LENGTH_PREFIX);
+        }
+
+        let level_bytes = nested::level_bytes_per_value(&nested);
+        let actual = sizes.slice_ranges(&nested, number_of_rows, max_page_size, level_bytes);
+        let expected = if let Some(list) = array.as_any().downcast_ref::<ListArray<i64>>() {
+            let mut row_prefix = vec![0];
+            for offsets in list.offsets().as_slice().windows(2) {
+                let start = offsets[0] as usize;
+                let end = offsets[1] as usize;
+                // Budget one byte each for repetition and definition per leaf and list slot.
+                let levels = 2 * (end - start + 1);
+                row_prefix.push(row_prefix.last().unwrap() + prefix[end] - prefix[start] + levels);
+            }
+            reference_slice_ranges(number_of_rows, max_page_size, |row| row_prefix[row])
+        } else {
+            reference_slice_ranges(number_of_rows, max_page_size, |row| prefix[row])
+        };
+        (actual, expected)
+    }
+
+    #[test]
+    fn test_slice_ranges_match_reference() {
+        let mut rng = Rng(30312);
+        for len in [0, 1, 2, 3, 10, 100, 1000, 5000] {
+            for array in arrays(&mut rng, len) {
+                for max_page_size in [0, 1, 4, 5, 37, 100, 1000, 5004, 10_000, 1 << 20] {
+                    let (actual, expected) = ranges(array.as_ref(), max_page_size);
+                    assert_eq!(
+                        actual,
+                        expected,
+                        "{:?}, {} rows, max_page_size {max_page_size}",
+                        array.dtype(),
+                        array.len(),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_slice_ranges_split_unrepresentable_count() {
+        // Two rows of 2^30 empty child lists each. Together they would emit 2^31
+        // level entries even though there are no leaves.
+        let width = 1usize << 30;
+        let nested = [
+            Nested::fixed_size_list(None, false, width, 2),
+            Nested::fixed_size_list(None, false, 0, width * 2),
+            Nested::primitive(None, false, 0),
+        ];
+        let sizes = LeafSizes::FixedWidth(4);
+        let options = WriteOptions {
+            statistics: StatisticsOptions::empty(),
+            version: Version::V1,
+            compression: CompressionOptions::Uncompressed,
+            data_page_size: Some(usize::MAX),
+        };
+        let ranges = sizes.slice_ranges(
+            &nested,
+            2,
+            max_page_size(options),
+            nested::level_bytes_per_value(&nested),
+        );
+        assert_eq!(ranges, [(0, 1), (1, 1)]);
+    }
+
+    #[test]
+    fn test_page_value_count_limit() {
+        let type_ = to_parquet_type(&Field::new("a".into(), ArrowDataType::Int32, false)).unwrap();
+        let ParquetType::PrimitiveType(type_) = type_ else {
+            unreachable!();
+        };
+        let limit = i32::MAX as usize;
+        for version in [Version::V1, Version::V2] {
+            let options = WriteOptions {
+                statistics: StatisticsOptions::empty(),
+                version,
+                compression: CompressionOptions::Uncompressed,
+                data_page_size: None,
+            };
+            let build = |num_values| {
+                utils::build_plain_page(
+                    Vec::new(),
+                    num_values,
+                    1,
+                    0,
+                    0,
+                    0,
+                    None,
+                    type_.clone(),
+                    options,
+                    Encoding::Plain,
+                )
+            };
+            assert_eq!(build(limit).unwrap().num_values(), limit);
+            assert!(build(limit + 1).is_err());
+        }
+    }
+
+    #[test]
+    fn test_slice_ranges_large_rows() {
+        // Several rows over the limit, alone and in a run, and empty values.
+        let lengths = [0, 3, 50, 2, 60, 70, 80, 1, 0, 0, 90, 4];
+        let values: Vec<Vec<u8>> = lengths.iter().map(|&n| vec![b'x'; n]).collect();
+        for array in [
+            BinaryArray::<i64>::from_slice(&values).boxed(),
+            BinaryViewArray::from_slice_values(&values).boxed(),
+        ] {
+            let (actual, expected) = ranges(array.as_ref(), 20);
+            assert_eq!(actual, expected);
+            assert_eq!(
+                actual,
+                [
+                    (0, 2),
+                    (2, 1),
+                    (3, 1),
+                    (4, 1),
+                    (5, 1),
+                    (6, 1),
+                    (7, 3),
+                    (10, 1),
+                    (11, 1)
+                ]
+            );
+        }
     }
 }

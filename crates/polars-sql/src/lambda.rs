@@ -134,7 +134,7 @@ pub(crate) fn is_lambda_arg(arg: &FunctionArg) -> bool {
 /// Replace the uses of lambda parameters in the lambda bodies of `node` by element
 /// placeholders.
 pub(crate) fn resolve_lambda_params<T: VisitMut>(node: &mut T) {
-    let _ = node.visit(&mut LambdaResolver { scopes: vec![] });
+    let _ = dyn_visit::visit_mut(node, &mut LambdaResolver { scopes: vec![] });
 }
 
 struct LambdaResolver {
@@ -183,7 +183,7 @@ impl VisitorMut for LambdaResolver {
                     };
                     self.scopes
                         .push(params.into_iter().map(str::to_string).collect());
-                    let _ = arg.visit(self);
+                    let _ = dyn_visit::visit_mut(arg, self);
                     let n_params = self.scopes.pop().unwrap().len();
                     *name = Ident::with_quote('"', format!("{RESOLVED_LAMBDA_MARKER}{n_params}"));
                 }

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
 from polars.exceptions import DuplicateError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_value_counts() -> None:
@@ -29,22 +34,24 @@ def test_value_counts() -> None:
 
 @pytest.mark.parametrize("sort", [False, True])
 @pytest.mark.parametrize("normalize", [False, True])
-def test_value_counts_streaming_group_by(sort: bool, normalize: bool) -> None:
-    i = pl.int_range(0, 300_000)
-    lf = pl.LazyFrame().select(
-        a=pl.when(i % 101 == 0).then(None).otherwise(i * 7919 % 5003)
-    )
+def test_value_counts_streaming_group_by(
+    sort: bool, normalize: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "64")
+    i = pl.int_range(16_384)
+    df = pl.select(a=pl.when(i % 101 == 0).then(None).otherwise(i * 7919 % 5003))
+    lf = df.lazy()
     q = lf.select(pl.col("a").value_counts(sort=sort, normalize=normalize))
 
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "group-by" in dot
     assert "columnar-function" not in dot
 
-    result = q.collect().unnest("a")
+    result = q.collect(engine="streaming").unnest("a")
     count_name = "proportion" if normalize else "count"
     if sort:
         assert result[count_name].is_sorted(descending=True)
-    expected = lf.collect().to_series().value_counts(normalize=normalize)
+    expected = df["a"].value_counts(normalize=normalize)
     assert_frame_equal(result, expected, check_row_order=False)
 
 

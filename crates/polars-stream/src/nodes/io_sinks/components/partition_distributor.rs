@@ -13,7 +13,9 @@ use crate::nodes::io_sinks::components::file_sink::FileSinkPermit;
 use crate::nodes::io_sinks::components::partition_key::PartitionKey;
 use crate::nodes::io_sinks::components::partition_morsel_sender::PartitionMorselSender;
 use crate::nodes::io_sinks::components::partition_sink_starter::PartitionSinkStarter;
-use crate::nodes::io_sinks::components::partition_state::PartitionState;
+use crate::nodes::io_sinks::components::partition_state::{
+    PartitionState, empty_without_dictionaries,
+};
 use crate::nodes::io_sinks::components::partitioner::{self, PartitionedDataFrames};
 use crate::nodes::io_sinks::components::size::RowCountAndSize;
 use crate::nodes::io_sinks::writers::interface::FinishSignal;
@@ -87,7 +89,7 @@ impl PartitionDistributor {
                         .insert_full(
                             key,
                             PartitionState {
-                                buffered_rows: df.clear(),
+                                buffered_rows: empty_without_dictionaries(&df),
                                 keys_df: Arc::new(keys_df),
                                 ..Default::default()
                             },

@@ -281,9 +281,9 @@ unsafe extern "C" fn storage_get(
                 let path = &loc.path;
 
                 loc.store
-                    .exec_with_rebuild_retry_on_err(
-                        |s| async move { s.get(path).await?.bytes().await },
-                    )
+                    .exec_with_rebuild_retry_on_err(path, |s| async move {
+                        s.get(path).await?.bytes().await
+                    })
                     .await
                     .map_err(to_ffi_err)
             };

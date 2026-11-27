@@ -9,6 +9,10 @@ const DEFAULT_MAX_GRANT_FRACTION: f64 = 2.0 / 3.0;
 const MIN_STORED_FRAME_BYTES: u64 = 256 * 1024;
 /// The most partitions chosen without forcing, unless that is fewer than two per pipeline.
 const MAX_PARTITIONS: u64 = 1024;
+/// In-memory build sides up to these sizes get one table instead of one per pipeline. Building it
+/// takes little time, and ordered probes then don't switch between tables within a morsel.
+const DEFAULT_SINGLE_TABLE_MAX_ROWS: u64 = 1 << 16;
+const SINGLE_TABLE_MAX_BYTES: u64 = 4 << 20;
 
 fn budget() -> u64 {
     polars_config::config().ooc_memory_budget_bytes()
@@ -60,13 +64,18 @@ impl BuildStats {
     /// The estimated memory of all tables, in bytes. The rows with a null key are in a table only
     /// if `with_null_rows`.
     pub fn all_tables_bytes(&self, with_null_rows: bool) -> u64 {
-        let rows = if with_null_rows {
+        let rows = self.table_rows(with_null_rows);
+        let bytes = self.bytes as f64 * rows as f64 / self.rows.max(1) as f64;
+        self.table_bytes(rows, bytes as u64)
+    }
+
+    /// The rows in all tables. The rows with a null key are in a table only if `with_null_rows`.
+    pub fn table_rows(&self, with_null_rows: bool) -> u64 {
+        if with_null_rows {
             self.rows
         } else {
             self.rows - self.null_rows
-        };
-        let bytes = self.bytes as f64 * rows as f64 / self.rows.max(1) as f64;
-        self.table_bytes(rows, bytes as u64)
+        }
     }
 }
 
@@ -79,6 +88,8 @@ pub struct JoinTuning {
     num_partitions: Option<usize>,
     /// Forces the number of partitions kept in memory when partitions are stored.
     in_memory_partitions: Option<usize>,
+    /// The most rows of an in-memory build side with one table.
+    single_table_max_rows: u64,
     /// The largest share of the memory grant pool held by one join.
     pub max_grant_fraction: f64,
 }
@@ -89,6 +100,8 @@ impl JoinTuning {
             batch_bytes: env_var("POLARS_JOIN_BATCH_BYTES"),
             num_partitions: env_var::<usize>("POLARS_JOIN_NUM_PARTITIONS").map(|n| n.max(1)),
             in_memory_partitions: env_var("POLARS_JOIN_IN_MEMORY_PARTITIONS"),
+            single_table_max_rows: env_var("POLARS_JOIN_SINGLE_TABLE_MAX_ROWS")
+                .unwrap_or(DEFAULT_SINGLE_TABLE_MAX_ROWS),
             max_grant_fraction: env_var("POLARS_JOIN_MEMORY_GRANT_FRACTION")
                 .unwrap_or(DEFAULT_MAX_GRANT_FRACTION)
                 .clamp(0.0, 1.0),
@@ -105,6 +118,21 @@ impl JoinTuning {
     pub fn max_grant_bytes(&self) -> u64 {
         let pool_bytes = polars_config::config().ooc_memory_grant_budget_bytes();
         (pool_bytes as f64 * self.max_grant_fraction).round() as u64
+    }
+
+    /// The number of tables of a build side kept in memory, with `table_rows` rows in
+    /// `table_bytes` bytes: one if it is small, else one per pipeline.
+    pub fn num_in_memory_tables(
+        &self,
+        table_rows: u64,
+        table_bytes: u64,
+        num_pipelines: usize,
+    ) -> usize {
+        if table_rows <= self.single_table_max_rows && table_bytes <= SINGLE_TABLE_MAX_BYTES {
+            1
+        } else {
+            num_pipelines
+        }
     }
 
     /// The number of partitions to store the build side in, or `None` to build every table in

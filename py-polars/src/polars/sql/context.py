@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import importlib.util
+import re
 from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
@@ -229,11 +231,11 @@ class SQLContext(Generic[FrameType]):
             impacts whether :meth:`execute` returns an eager or lazy result frame).
         allow_file_reads
             Whether SQL may read files and URLs, through table functions such as
-            `read_parquet` or a quoted path in `FROM`. With False, SQL can only read
-            the registered frames and catalogs.
+            `read_parquet`, a quoted path in `FROM`, or `COPY ... FROM`. With False, SQL
+            can only read the registered frames and catalogs.
         allow_file_writes
             Whether SQL may write files and URLs, through `COPY ... TO`. With False,
-            `COPY` is an error.
+            `COPY ... TO` is an error.
 
             Set both to False to run untrusted SQL. This is not a full sandbox:
             statements on a registered catalog are not limited, so with a writable
@@ -884,7 +886,9 @@ class SQLContext(Generic[FrameType]):
           COLUMN`, `DROP COLUMN`, `RENAME COLUMN`, `ALTER COLUMN ... SET DATA TYPE`
           (as the catalog allows: int to long, float to double, a wider decimal),
           `ALTER COLUMN ... DROP NOT NULL` and `SET TBLPROPERTIES`. Column names
-          are case-sensitive. See :ref:`ALTER TABLE <alter_table>`.
+          are case-sensitive. It also changes the table's partitioning and sort
+          order, and creates, replaces and drops its tags and branches. See
+          :ref:`ALTER TABLE <alter_table>`.
         * `INSERT INTO <name> [(<column>, ...)] <query>` appends the rows of a
           `VALUES` list or a query in one commit, and `INSERT OVERWRITE` replaces
           all of the table's rows. Values convert to the column types as described
@@ -1330,11 +1334,15 @@ def _call_catalog_procedure(
     predicate_of: Callable[[str, LazyFrame], Expr],
     storage_options: StorageOptionsDict | None,
 ) -> DataFrame:
-    """Run the maintenance procedure of a `CALL`, returning its result row."""
+    """Run the procedure of a `CALL`, returning its result row."""
+    if stmt["procedure"] == "add_files":
+        return _call_add_files(catalog, stmt)
     if stmt["procedure"] == "rewrite_manifests":
         return _call_rewrite_manifests(catalog, stmt)
     if stmt["procedure"] == "rewrite_data_files":
         return _call_rewrite_data_files(catalog, stmt, predicate_of, storage_options)
+    if stmt["procedure"] == "expire_snapshots":
+        return _call_expire_snapshots(catalog, stmt)
     msg = f"unsupported procedure {stmt['procedure']!r}"
     raise NotImplementedError(msg)
 
@@ -1348,6 +1356,120 @@ def _load_procedure_table(
         f"'{_display_name(identifier)}' could not be maintained"
     )
     return _load_catalog_table(catalog, identifier, missing)
+
+
+# `parquet.`<path>``, the format optionally in backticks
+_ADD_FILES_SOURCE = re.compile(r"^`?(?P<format>[A-Za-z]+)`?\.`(?P<path>[^`]+)`$")
+
+
+def _call_add_files(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> DataFrame:
+    from polars.datatypes import Int64
+    from polars.io.iceberg._add_files import add_files
+
+    args = stmt["args"]
+    # checked before loading the table
+    source = args.get("source_table")
+    if not isinstance(source, str):
+        msg = (
+            "CALL add_files: `source_table` must be a string such as "
+            f"'parquet.`s3://bucket/folder`', found {source!r}"
+        )
+        raise SQLInterfaceError(msg)
+    if (match := _ADD_FILES_SOURCE.match(source)) is None:
+        msg = (
+            "CALL add_files: only a path source is supported, as "
+            f"'parquet.`s3://bucket/folder`', found {source!r}"
+        )
+        raise NotImplementedError(msg)
+    if match["format"].lower() != "parquet":
+        msg = f"CALL add_files: only Parquet files can be added, found {match['format']!r}"
+        raise NotImplementedError(msg)
+    if "partition_filter" in args:
+        msg = "CALL add_files: `partition_filter` is not supported yet"
+        raise NotImplementedError(msg)
+    check = args.get("check_duplicate_files", True)
+    if not isinstance(check, bool):
+        msg = f"CALL add_files: `check_duplicate_files` must be a boolean, found {check!r}"
+        raise SQLInterfaceError(msg)
+    parallelism = args.get("parallelism")
+    if parallelism is not None and (
+        not isinstance(parallelism, int)
+        or isinstance(parallelism, bool)
+        or parallelism < 1
+    ):
+        msg = f"CALL add_files: `parallelism` must be a positive integer, found {parallelism!r}"
+        raise SQLInterfaceError(msg)
+    table = _load_procedure_table(catalog, stmt)
+    # `parallelism` tunes other engines' execution: no effect here
+    added, changed = add_files(table, match["path"], check_duplicate_files=check)
+    return DataFrame(
+        {"added_files_count": [added], "changed_partition_count": [changed]},
+        schema={"added_files_count": Int64, "changed_partition_count": Int64},
+    )
+
+
+def _call_expire_snapshots(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> DataFrame:
+    from polars.datatypes import Int64
+    from polars.io.iceberg._maintenance import expire_snapshots
+
+    args = stmt["args"]
+    # Checked before loading the table.
+    retain_last = args.get("retain_last")
+    if retain_last is not None and (
+        not isinstance(retain_last, int)
+        or isinstance(retain_last, bool)
+        or retain_last < 1
+    ):
+        msg = (
+            "CALL expire_snapshots: `retain_last` must be a positive integer, "
+            f"found {retain_last!r}"
+        )
+        raise SQLInterfaceError(msg)
+    snapshot_ids = args.get("snapshot_ids", [])
+    if not isinstance(snapshot_ids, list) or not all(
+        isinstance(i, int) and not isinstance(i, bool) for i in snapshot_ids
+    ):
+        msg = (
+            "CALL expire_snapshots: `snapshot_ids` must be an array of integers such as "
+            f"array(5781943012, 6093317745), found {snapshot_ids!r}"
+        )
+        raise SQLInterfaceError(msg)
+    for arg, kind in (
+        ("max_concurrent_deletes", int),
+        ("stream_results", bool),
+        ("clean_expired_metadata", bool),
+    ):
+        value = args.get(arg)
+        if value is not None and (
+            not isinstance(value, kind) or (kind is int and isinstance(value, bool))
+        ):
+            msg = f"CALL expire_snapshots: `{arg}` must be {kind.__name__}, found {value!r}"
+            raise SQLInterfaceError(msg)
+    if args.get("clean_expired_metadata"):
+        msg = (
+            "CALL expire_snapshots: `clean_expired_metadata => true` is not supported "
+            "yet"
+        )
+        raise NotImplementedError(msg)
+    table = _load_procedure_table(catalog, stmt)
+    # `older_than` arrives as microseconds (UTC); `max_concurrent_deletes` and
+    # `stream_results` tune other engines' execution: no effect here.
+    older_than_us = args.get("older_than")
+    deleted = expire_snapshots(
+        table,
+        older_than_ms=None if older_than_us is None else older_than_us // 1000,
+        retain_last=retain_last,
+        snapshot_ids=snapshot_ids,
+        name=stmt["name"],
+    )
+    counts = dataclasses.asdict(deleted)
+    return DataFrame(
+        {c: [n] for c, n in counts.items()}, schema=dict.fromkeys(counts, Int64)
+    )
 
 
 def _call_rewrite_manifests(
@@ -2279,6 +2401,19 @@ def _alter_catalog_table(
         raise NoSuchTableError(msg) from error
 
     kind, column = op["op"], op.get("column")
+    if kind in ("set_ref", "drop_ref"):
+        from polars.io.iceberg._refs import change_ref
+
+        change_ref(
+            table,
+            op,
+            name,
+            note=(
+                f"table '{name}' could not be altered: catalog table "
+                f"'{_display_name(identifier)}' of catalog '{ddl['catalog']}'"
+            ),
+        )
+        return response
     if kind in ("set_partitioning", "set_sort_order"):
         from polars.io.iceberg._partition_evolution import (
             commit_spec_change,

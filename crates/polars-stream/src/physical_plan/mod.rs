@@ -30,7 +30,7 @@ use polars_plan::dsl::{
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::options::{JoinTypeOptionsIR, RuntimeFilter};
-use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, ExprProperties, FunctionArgMap, IR};
 
 mod fmt;
 mod io;
@@ -61,7 +61,6 @@ use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::Forb
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::rolling_fixed_window::RollingFixedWindow;
-use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
     /// Key used for physical nodes.
@@ -524,6 +523,10 @@ pub enum PhysNodeKind {
         estimated_rows: Option<[u64; 2]>,
         /// The value range of each key column, empty or `None` where unknown.
         key_ranges: Vec<KeyRange>,
+        /// The output schema before a following drop of columns was fused into this join, if
+        /// one was. With a fused predicate, the columns dropped are still gathered to evaluate it
+        /// but are not output.
+        pre_drop_schema: Option<SchemaRef>,
     },
 
     MergeJoin {
@@ -552,6 +555,9 @@ pub enum PhysNodeKind {
         estimated_rows: Option<[u64; 2]>,
         /// The value range of each key column, empty or `None` where unknown.
         key_ranges: Vec<KeyRange>,
+        /// The output schema before a following drop of columns was fused into this join, if
+        /// one was.
+        pre_drop_schema: Option<SchemaRef>,
     },
 
     CrossJoin {
@@ -984,6 +990,52 @@ fn split_multiplexers(
     });
 }
 
+/// Fuses a drop of columns (without renames) into the equi or semi/anti join `node` it reads, by
+/// narrowing the join's output schema, so the join does not gather the dropped columns. A join
+/// with a fused predicate still gathers the columns the predicate reads to evaluate it, but does
+/// not output them. Returns whether it was fused.
+fn fuse_drop_into_join(node: &mut PhysNode, columns: &PlIndexMap<PlSmallStr, PlSmallStr>) -> bool {
+    if !matches!(
+        node.kind(),
+        PhysNodeKind::EquiJoin { .. }
+            | PhysNodeKind::SemiAntiJoin {
+                output_bool: false,
+                ..
+            }
+    ) {
+        return false;
+    }
+
+    // The join outputs its columns in a fixed order.
+    let schema = node.output_schema(0);
+    // Leave empty projections on their existing execution path.
+    if columns.is_empty() || columns.len() == schema.len() {
+        return false;
+    }
+    let in_order = schema
+        .iter_names()
+        .filter(|name| columns.contains_key(name.as_str()))
+        .eq(columns.keys());
+    if !in_order {
+        return false;
+    }
+
+    let schema = Arc::new(schema.try_project(columns.keys()).unwrap());
+    let pre_projection_schema = std::mem::replace(node.output_schema_mut(0), schema);
+    let (PhysNodeKind::EquiJoin {
+        pre_drop_schema, ..
+    }
+    | PhysNodeKind::SemiAntiJoin {
+        pre_drop_schema, ..
+    }) = node.kind_mut()
+    else {
+        unreachable!()
+    };
+    // Only the first drop's input schema matters: what a fused predicate reads is in it.
+    pre_drop_schema.get_or_insert(pre_projection_schema);
+    true
+}
+
 fn fuse_drops(
     roots: Vec<PhysNodeKey>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
@@ -1026,16 +1078,19 @@ fn fuse_drops(
             continue;
         }
 
-        let (PhysNodeKind::Filter { projection, .. } | PhysNodeKind::Sort { projection, .. }) =
-            input_node.kind_mut()
-        else {
-            continue;
-        };
-        let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
-        *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop));
+        if fuse_drop_into_join(input_node, columns) {
+            // The join drops the columns itself.
+        } else if let PhysNodeKind::Filter { projection, .. }
+        | PhysNodeKind::Sort { projection, .. } = input_node.kind_mut()
+        {
+            let len_before_drop = projection.as_ref().map_or(len_before_drop, |(_, len)| *len);
+            *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop));
 
-        let input_schema = input_node.output_schema_mut(0);
-        *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
+            let input_schema = input_node.output_schema_mut(0);
+            *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
+        } else {
+            continue;
+        }
 
         if simple_proj_node.output_schemas.len() == 1 {
             std::mem::swap(simple_proj_node, input_node);
@@ -1080,7 +1135,7 @@ pub fn build_physical_plan(
 ) -> PolarsResult<(PhysNodeKey, SecondaryMap<PhysNodeKey, Node>)> {
     let original_ir_len = ir_arena.len();
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
-    let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
+    let mut expr_props = ExprProperties::with_capacity(expr_arena.len());
     let mut cache_nodes = PlHashMap::new();
     let mut phys_to_ir: SecondaryMap<PhysNodeKey, Node> =
         SecondaryMap::with_capacity(ir_arena.len());
@@ -1092,7 +1147,7 @@ pub fn build_physical_plan(
         &mut phys_to_ir,
         original_ir_len,
         &mut schema_cache,
-        &mut expr_cache,
+        &mut expr_props,
         &mut cache_nodes,
         ctx,
         None,

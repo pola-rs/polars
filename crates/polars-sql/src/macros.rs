@@ -25,7 +25,7 @@ use crate::context::{
 use crate::dyn_visit;
 use crate::lambda::{field_access, lambda_arg, shift_lambda_elements};
 use crate::params::first_param;
-use crate::sql_expr::{parser_of, to_sql_interface_err};
+use crate::sql_expr::{hit_recursion_limit, parser_of, to_sql_interface_err, tokenize};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::strip_nested;
 
@@ -163,11 +163,16 @@ impl Macros {
         if expander.expanded {
             // The expanded SQL may not be nested deeper than the parser accepts.
             let sql = node.to_string();
-            let reparsed = Parser::new(&GenericDialect)
-                .try_with_sql(&sql)
-                .and_then(|mut parser| T::reparse(&mut parser));
+            let too_deep = tokenize(&sql).is_ok_and(|(tokens, _)| {
+                let reparse = |parser: &mut Parser| {
+                    T::reparse(parser)?;
+                    parser.expect_token(&Token::EOF)
+                };
+                reparse(&mut parser_of(tokens.clone()))
+                    .is_err_and(|err| hit_recursion_limit(&err, tokens, reparse))
+            });
             polars_ensure!(
-                !matches!(reparsed, Err(ParserError::RecursionLimitExceeded)),
+                !too_deep,
                 SQLInterface: "the query is nested too deeply after expanding its macros"
             );
         }

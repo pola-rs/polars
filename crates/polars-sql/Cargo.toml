@@ -22,9 +22,11 @@ polars-utils = { workspace = true }
 bitflags = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 hex = { workspace = true }
+recursive = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 sqlparser = { workspace = true }
+stacker = { workspace = true }
 
 [dev-dependencies]
 # to display dataframes in case of test failures

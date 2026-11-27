@@ -27,6 +27,7 @@ use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
 use polars_plan::utils::expr_output_name;
 use polars_utils::time::NS_DAY;
+use recursive::recursive;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -43,6 +44,7 @@ use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
 use crate::context::join_idents;
+use crate::copy::with_copy_options;
 use crate::dyn_visit::visit_expressions;
 use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
 use crate::group_context::{has_marked_aggregate, mark_aggregate};
@@ -91,8 +93,23 @@ impl TakenClauses {
         sql: &str,
         parsed: Result<Vec<Statement>, ParserError>,
     ) -> PolarsResult<Vec<Statement>> {
-        self.attach_to(sql, parsed.map_err(to_sql_interface_err), |parser| {
-            parser.parse_statements().map_err(to_sql_interface_err)
+        let parser_err =
+            |err: ParserError| to_sql_interface_err(with_copy_options(err.to_string()));
+        let parsed = parsed.map_err(|err| {
+            let too_deep = tokenize(sql).is_ok_and(|(tokens, _)| {
+                hit_recursion_limit(&err, tokens, |parser| {
+                    parser.parse_statements()?;
+                    parser.expect_token(&Token::EOF)
+                })
+            });
+            if too_deep {
+                ParserError::RecursionLimitExceeded
+            } else {
+                err
+            }
+        });
+        self.attach_to(sql, parsed.map_err(parser_err), |parser| {
+            parser.parse_statements().map_err(parser_err)
         })
     }
 
@@ -133,6 +150,29 @@ impl TakenClauses {
     }
 }
 
+/// How deeply the parser may recurse: a nested expression takes about one level, a nested query
+/// two.
+pub(crate) const RECURSION_LIMIT: usize = 128;
+
+/// Whether `err` from parsing `tokens` with `parse` comes from the recursion limit. sqlparser can
+/// report hitting the limit inside a `CASE` or `NOT` as a syntax error at the outermost one, so a
+/// syntax error counts too when a higher limit parses `tokens`. `parse` must fail unless it reads
+/// all of `tokens`.
+pub(crate) fn hit_recursion_limit<T>(
+    err: &ParserError,
+    tokens: Vec<TokenWithSpan>,
+    parse: impl FnOnce(&mut Parser<'static>) -> Result<T, ParserError>,
+) -> bool {
+    match err {
+        ParserError::RecursionLimitExceeded => true,
+        ParserError::TokenizerError(_) => false,
+        ParserError::ParserError(_) => matches!(
+            parse(&mut parser_of(tokens).with_recursion_limit(4 * RECURSION_LIMIT)),
+            Ok(_) | Err(ParserError::RecursionLimitExceeded)
+        ),
+    }
+}
+
 /// A parser of `sql`. `TOP` is only a keyword in `SELECT TOP n`, so that it can also name a
 /// relation or a column. Time travel clauses (see [`TableVersions`]) are taken out first: the
 /// caller attaches them to its statements or refuses them.
@@ -141,7 +181,7 @@ pub(crate) fn sql_parser(sql: &str) -> PolarsResult<(Parser<'static>, TakenClaus
     Ok((parser_of(tokens), taken))
 }
 
-fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TakenClauses)> {
+pub(crate) fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TakenClauses)> {
     let mut tokens = Tokenizer::new(&GenericDialect, sql)
         .with_unescape(ParserOptions::default().unescape)
         .tokenize_with_location()
@@ -165,6 +205,7 @@ pub(crate) fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
     };
     Parser::new(&GenericDialect)
         .with_options(options)
+        .with_recursion_limit(RECURSION_LIMIT)
         .with_tokens_with_locations(tokens)
 }
 
@@ -603,11 +644,11 @@ impl SQLExprVisitor<'_> {
                                 Ok(s.get(0)?.into_static())
                             },
                             _ => Err(
-                                polars_err!(SQLInterface: "array element {:?} is not supported", e),
+                                polars_err!(SQLInterface: "array element `{}` is not supported", e),
                             ),
                         },
                         _ => {
-                            Err(polars_err!(SQLInterface: "array element {:?} is not supported", e))
+                            Err(polars_err!(SQLInterface: "array element `{}` is not supported", e))
                         },
                     },
                 },
@@ -637,11 +678,11 @@ impl SQLExprVisitor<'_> {
                     match extract_literal_with_op(expr, None) {
                         Some((v, op)) => self.visit_any_value(v, op),
                         None => {
-                            Err(polars_err!(SQLInterface: "array element {:?} is not supported", e))
+                            Err(polars_err!(SQLInterface: "array element `{}` is not supported", e))
                         },
                     }
                 },
-                _ => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
+                _ => Err(polars_err!(SQLInterface: "array element `{}` is not supported", e)),
             }?
             .into_static();
             array_elements.push(val);
@@ -698,6 +739,7 @@ impl SQLExprVisitor<'_> {
         Ok(s)
     }
 
+    #[recursive]
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         self.visit_unlocated_expr(expr).map_err(|e| match expr {
             // Their span is the operand's, without the keyword, type or field the error is about.
@@ -789,10 +831,10 @@ impl SQLExprVisitor<'_> {
                     return Ok(expr);
                 }
                 if let [AccessExpr::Dot(_)] = access_chain.as_slice() {
-                    polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: {:?}", access_chain[0])
+                    polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: `{}`", access_chain[0])
                 }
                 // chained dot/bracket notation (eg: "struct_col.field[2].foo[0].bar")
-                polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: {:?}", access_chain[0])
+                polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: `{}`", expr)
             },
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
             SQLExpr::Dictionary(fields) => self.visit_struct_literal(fields),
@@ -954,7 +996,7 @@ impl SQLExprVisitor<'_> {
             SQLExpr::Wildcard(_) => Ok(all().as_expr()),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
             other => {
-                polars_bail!(SQLInterface: "expression {:?} is not currently supported", other)
+                polars_bail!(SQLInterface: "expression `{}` is not currently supported", other)
             },
         }
     }
@@ -1007,7 +1049,7 @@ impl SQLExprVisitor<'_> {
         let unsupported = || {
             polars_err!(
                 SQLInterface:
-                "EXISTS subquery is not currently supported in this position: {:?}", subquery
+                "EXISTS subquery is not currently supported in this position: `{}`", subquery
             )
         };
         if is_correlated_subquery(subquery, self.ctx.catalog_spellings())
@@ -1682,7 +1724,7 @@ impl SQLExprVisitor<'_> {
                 }
             },
             other => {
-                polars_bail!(SQLInterface: "operator {:?} is not currently supported", other)
+                polars_bail!(SQLInterface: "operator `{}` is not currently supported", other)
             },
         })
     }
@@ -1748,7 +1790,7 @@ impl SQLExprVisitor<'_> {
                 // otherwise SQL "NOT" expects logical, not bitwise, behaviour (eg: on integers)
                 _ => expr.strict_cast(DataType::Boolean).not(),
             },
-            other => polars_bail!(SQLInterface: "unary operator {:?} is not supported", other),
+            other => polars_bail!(SQLInterface: "unary operator `{}` is not supported", other.0),
         })
     }
 
@@ -2361,7 +2403,7 @@ impl SQLExprVisitor<'_> {
             },
             SQLValue::Placeholder(p) => param_lit(self.ctx.param(p)?.value().clone().into_static()),
             other => {
-                polars_bail!(SQLInterface: "value {:?} is not a supported literal type", other)
+                polars_bail!(SQLInterface: "value `{}` is not a supported literal type", other)
             },
         })
     }
@@ -2378,7 +2420,7 @@ impl SQLExprVisitor<'_> {
                     value,
                     SQLValue::Number(..) | SQLValue::Null | SQLValue::Placeholder(_)
                 ),
-            SQLInterface: "unary op {:?} not supported for SQL value {:?}", op.unwrap(), value
+            SQLInterface: "unary operator `{}` is not supported for the value `{}`", op.unwrap(), value
         );
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
@@ -2401,7 +2443,7 @@ impl SQLExprVisitor<'_> {
                     // no op should be taken as plus.
                     Some(SQLUnaryOperator::Plus) | None => false,
                     Some(op) => {
-                        polars_bail!(SQLInterface: "unary op {:?} not supported for numeric SQL value", op)
+                        polars_bail!(SQLInterface: "unary op `{}` not supported for numeric SQL value", op)
                     },
                 };
                 parse_numeric_literal(s, negate)?
@@ -2428,11 +2470,11 @@ impl SQLExprVisitor<'_> {
                     None | Some(SQLUnaryOperator::Plus) => value.value().clone().into_static(),
                     Some(SQLUnaryOperator::Minus) => negate_param(value.value(), p)?,
                     Some(op) => polars_bail!(
-                        SQLInterface: "unary op {:?} not supported for query parameter {}", op, p
+                        SQLInterface: "unary op `{}` not supported for query parameter {}", op, p
                     ),
                 }
             },
-            other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
+            other => polars_bail!(SQLInterface: "value `{}` is not currently supported", other),
         })
     }
 
@@ -2568,7 +2610,9 @@ impl SQLExprVisitor<'_> {
                 Some(PlSmallStr::from_str(lv.extract_str().unwrap()))
             },
             None => None,
-            _ => return self.err(&expr),
+            _ => {
+                polars_bail!(SQLInterface: "TRIM characters that are not a string literal are not supported")
+            },
         };
         Ok(match (trim_where, trim_what) {
             (None | Some(TrimWhereField::Both), None) => {
@@ -2598,11 +2642,14 @@ impl SQLExprVisitor<'_> {
             // SUBSTRING(expr FROM start FOR length)
             (Some(from_expr), Some(for_expr)) => {
                 let start = self.visit_expr(from_expr)?;
-                let length = clip_substring_length(approximate_literal(self.visit_expr(for_expr)?));
+                let raw_length = approximate_literal(self.visit_expr(for_expr)?);
+                let length = clip_substring_length(raw_length.clone());
 
                 // note: SQL is 1-indexed, so we need to adjust the offsets accordingly
-                Ok(match (start.clone(), length.clone()) {
-                    (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
+                let result = match (start.clone(), length.clone()) {
+                    (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => {
+                        null_reading(Some(DataType::String), &[e, start, length])
+                    },
                     (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
                         polars_bail!(SQLSyntax: "SUBSTR does not support negative length ({})", n)
                     },
@@ -2627,14 +2674,15 @@ impl SQLExprVisitor<'_> {
                             ))
                             .otherwise(e.str().slice(adjusted_start, length))
                     },
-                })
+                };
+                Ok(null_on_null_length(result, &raw_length))
             },
             // SUBSTRING(expr FROM start)
             (Some(from_expr), None) => {
                 let start = self.visit_expr(from_expr)?;
 
                 Ok(match start {
-                    Expr::Literal(lv) if lv.is_null() => lit(lv),
+                    Expr::Literal(lv) if lv.is_null() => null_reading(Some(DataType::String), &[e]),
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n <= 0 => e,
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                         e.str().slice(lit(n - 1), lit(LiteralValue::untyped_null()))
@@ -2752,10 +2800,6 @@ impl SQLExprVisitor<'_> {
             unreachable!()
         }
     }
-
-    fn err(&self, expr: &Expr) -> PolarsResult<Expr> {
-        polars_bail!(SQLInterface: "expression {:?} is not currently supported", expr);
-    }
 }
 
 /// parse a SQL expression to a polars expression
@@ -2776,8 +2820,11 @@ impl SQLExprVisitor<'_> {
 /// # }
 /// ```
 pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
+    sql_expr_str(s.as_ref())
+}
+
+fn sql_expr_str(s: &str) -> PolarsResult<Expr> {
     let mut ctx = SQLContext::new();
-    let s = s.as_ref();
 
     // `sql_expr` should only translate expressions, not statements or clauses
     let (mut ast, taken) = sql_parser(s)?;
@@ -2938,7 +2985,7 @@ pub(crate) fn parse_sql_array(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsRes
             AnyValue::List(s) => Ok(s.clone()),
             _ => polars_bail!(SQLSyntax: "Expected array expression, found query parameter {}", p),
         },
-        _ => polars_bail!(SQLSyntax: "Expected array expression, found {:?}", expr),
+        _ => polars_bail!(SQLSyntax: "Expected array expression, found `{}`", expr),
     }
 }
 
@@ -3043,12 +3090,32 @@ pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
     let found = e
         .clone()
         .str()
-        .find(substring.clone(), true)
+        .find_literal(substring.clone())
         .cast(DataType::Int64)
         + typed_lit(1i64);
     when(e.is_null().or(substring.is_null()))
         .then(lit(LiteralValue::untyped_null()))
         .otherwise(found.fill_null(typed_lit(0i64)))
+}
+
+/// A NULL of `dtype`, for a call with a NULL argument. An aggregate in `inputs` is still read,
+/// so that the call stays an aggregate; the first one names the result.
+pub(crate) fn null_reading(dtype: Option<DataType>, inputs: &[Expr]) -> Expr {
+    let null = match &dtype {
+        Some(dtype) => Scalar::null(dtype.clone()).lit(),
+        None => lit(LiteralValue::untyped_null()),
+    };
+    let read = |e: Expr| match &dtype {
+        Some(dtype) => e.cast(dtype.clone()),
+        None => e,
+    };
+    inputs
+        .iter()
+        .rev()
+        .filter(|e| has_marked_aggregate(e))
+        .fold(null, |acc, e| {
+            when(lit(false)).then(read(e.clone())).otherwise(acc)
+        })
 }
 
 /// The 0-indexed offset of a 1-indexed SUBSTRING start.
@@ -3060,7 +3127,25 @@ pub(crate) fn substring_offset(start: Expr) -> Expr {
 pub(crate) fn clip_substring_length(length: Expr) -> Expr {
     match length {
         Expr::Literal(_) => length,
-        _ => length.clip_min(lit(0)),
+        _ => numeric_length(length).clip_min(lit(0)),
+    }
+}
+
+/// A length column as a number. Adding 0 keeps the dtype of a number, and gives a length of the
+/// Null dtype an integer dtype.
+pub(crate) fn numeric_length(length: Expr) -> Expr {
+    length + Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0)))
+}
+
+/// `result`, or NULL where the SUBSTRING `length` is NULL, which `str.slice` reads as the rest
+/// of the string.
+pub(crate) fn null_on_null_length(result: Expr, length: &Expr) -> Expr {
+    match (&result, length) {
+        (Expr::Literal(lv), _) if lv.is_null() => result,
+        (_, Expr::Literal(_)) => result,
+        _ => when(length.clone().is_not_null())
+            .then(result)
+            .otherwise(lit(LiteralValue::untyped_null())),
     }
 }
 
