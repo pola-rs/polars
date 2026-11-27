@@ -20,7 +20,11 @@ fn test_describe() {
         col("year").max().alias("year_max"),
         col("country").min().alias("country"),
     ]);
-    let expected = lf.describe_optimized_plan().unwrap();
+    let flags = lf.get_current_optimizations() | OptFlags::STREAMING;
+    let expected = lf
+        .with_optimizations(flags)
+        .describe_optimized_plan()
+        .unwrap();
 
     let expected = expected.split('\n').map(Some).collect::<Vec<_>>();
     let actual = df
@@ -32,6 +36,25 @@ fn test_describe() {
         .collect::<Vec<_>>();
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn test_explain_shows_the_streaming_plan() {
+    let mut context = SQLContext::new();
+    context.register("df", df! { "g" => [1, 1], "x" => [1, 2] }.unwrap().lazy());
+    let plan = context
+        .execute("EXPLAIN SELECT SUM(x) OVER (PARTITION BY g) AS s FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let lines = plan.column("Logical Plan").unwrap().str().unwrap();
+    assert!(
+        lines
+            .iter()
+            .flatten()
+            .any(|line| line.trim_start().starts_with("WINDOW")),
+        "{plan}"
+    );
 }
 
 #[test]
