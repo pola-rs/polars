@@ -47,7 +47,7 @@ def _delete_whole_files(
         _SINK_UUID_PROPERTY,
         _AlreadyCommitted,
         _copy_table_state,
-        _raise_if_spec_changed,
+        _raise_if_base_changed,
         _sink_transaction,
         _SinkCatalog,
     )
@@ -85,11 +85,15 @@ def _delete_whole_files(
                     delete._clean_all_uncommitted()
                     return False
                 delete.commit()
-        except (_AlreadyCommitted, CommitStateUnknownException, ValidationException):
+        except (_AlreadyCommitted, CommitStateUnknownException):
+            raise
+        except ValidationException:
+            # refreshed by a retry: a rerun with the caller's table deletes from it
+            _copy_table_state(wrapped, table)
             raise
         except Exception as error:
             if isinstance(error, CommitFailedException):
-                _raise_if_spec_changed(table, spec_id, error)
+                _raise_if_base_changed(table, spec_id, error)
             # a failure after a commit request, not of it: did the commit land?
             _copy_table_state(catalog.landed_after(table, error), table)
             return True
@@ -392,11 +396,13 @@ def _write_rows(
     storage_options: StorageOptionsDict | None,
     *,
     replace: _ReplaceFiles | None = None,
+    require_empty_table: bool = False,
 ) -> None:
     """Write the rows of `lf` to `table` in one commit, leaving no files on failure.
 
     With `replace`, the commit replaces those data files with the written ones; with no
-    `lf`, it only removes them.
+    `lf`, it only removes them. With `require_empty_table`, it refuses a table another
+    writer committed to.
     """
     from pyiceberg.exceptions import CommitStateUnknownException
 
@@ -407,6 +413,7 @@ def _write_rows(
         state = IcebergSinkState.new(
             table, mode=mode, storage_options=storage_options, replace_files=replace
         )
+        state.require_empty_table = require_empty_table
         if lf is None:
             state.commit([])
         else:
@@ -420,7 +427,12 @@ def _write_rows(
             )
         raise
     except Exception as error:
-        if state is not None and (remaining := state.remove_written_files()):
+        # without rows, nothing was written
+        if (
+            state is not None
+            and lf is not None
+            and (remaining := state.remove_written_files())
+        ):
             error.add_note(f"data files may remain under '{remaining}'")
         raise
 

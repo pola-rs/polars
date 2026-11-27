@@ -449,7 +449,7 @@ impl std::fmt::Display for VersionSpec {
 /// The instant of a timestamp literal: ISO text, read as `CAST('<text>' AS TIMESTAMPTZ)`
 /// reads it. A UTC offset in the text is kept (a `TIMESTAMP` literal would drop it), no
 /// offset is UTC. A `DATE` is its midnight.
-fn timestamp_micros(expr: &SQLExpr) -> PolarsResult<i64> {
+pub(crate) fn timestamp_micros(expr: &SQLExpr) -> PolarsResult<i64> {
     let invalid = || polars_err!(SQLInterface: "TIMESTAMP AS OF takes an ISO timestamp or date, not `{}`", expr);
     let (text, date_only) = match expr {
         SQLExpr::Value(v) => match &v.value {

@@ -298,6 +298,7 @@ def alpha_guard(**decay_param: float) -> bool:
     return ((1 - alpha) if round(alpha) else alpha) > 1e-6
 
 
+@pytest.mark.slow
 @given(
     s=series(
         min_size=4,

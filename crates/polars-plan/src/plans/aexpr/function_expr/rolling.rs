@@ -32,7 +32,7 @@ impl Display for IRRollingFunction {
             Min => "min",
             Max => "max",
             Mean => "mean",
-            Sum => "rsum",
+            Sum => "sum",
             Quantile => "quantile",
             Var => "var",
             Std => "std",

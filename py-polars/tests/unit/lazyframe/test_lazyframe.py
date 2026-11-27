@@ -608,21 +608,26 @@ def test_truncate(n: float, ndigits: int, expected: float, dtype: pl.DataType) -
 
 
 @pytest.mark.parametrize(
-    ("n", "ndigits", "expected1", "expected2"),
+    ("n", "ndigits", "expected1", "expected2", "expected3"),
     [
-        (0.5, 0, 0.0, 1.0),
-        (1.5, 0, 2.0, 2.0),
-        (2.5, 0, 2.0, 3.0),
-        (-0.5, 0, -0.0, -1.0),
-        (-1.5, 0, -2.0, -2.0),
-        (2.25, 1, 2.2, 2.3),
-        (2.75, 1, 2.8, 2.8),
-        (-2.25, 1, -2.2, -2.3),
+        (0.5, 0, 0.0, 1.0, 0.0),
+        (1.5, 0, 2.0, 2.0, 1.0),
+        (2.5, 0, 2.0, 3.0, 2.0),
+        (-0.5, 0, -0.0, -1.0, -0.0),
+        (-1.5, 0, -2.0, -2.0, -1.0),
+        (2.25, 1, 2.2, 2.3, 2.2),
+        (2.75, 1, 2.8, 2.8, 2.7),
+        (-2.25, 1, -2.2, -2.3, -2.2),
     ],
 )
 @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
 def test_round_mode(
-    n: float, ndigits: int, expected1: float, expected2: float, dtype: pl.DataType
+    n: float,
+    ndigits: int,
+    expected1: float,
+    expected2: float,
+    expected3: float,
+    dtype: pl.DataType,
 ) -> None:
     ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
     assert_series_equal(
@@ -636,6 +641,12 @@ def test_round_mode(
         .collect()
         .to_series(),
         pl.Series("value", [expected2], dtype=dtype),
+    )
+    assert_series_equal(
+        ldf.select(pl.col("value").round(ndigits, mode="to_zero"))
+        .collect()
+        .to_series(),
+        pl.Series("value", [expected3], dtype=dtype),
     )
 
 
@@ -1197,11 +1208,12 @@ def test_update_schema_after_projection_pd_t4157() -> None:
 
 
 def test_type_coercion_unknown_4190() -> None:
-    df = (
-        pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).with_columns(
-            pl.col("a") & pl.col("a").fill_null(True)
-        )
-    ).collect()
+    with pytest.deprecated_call():
+        df = (
+            pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).with_columns(
+                pl.col("a") & pl.col("a").fill_null(True)
+            )
+        ).collect()
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 1), (2, 2), (3, 3)]
 

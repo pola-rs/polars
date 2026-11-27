@@ -1477,7 +1477,9 @@ def test_group_by_constants_empty_and_having(grouped: pl.DataFrame) -> None:
     )
 
 
-@pytest.mark.parametrize("key", ["'all'", "NULL", "'a', UPPER('b')", "1 + 1"])
+@pytest.mark.parametrize(
+    "key", ["'all'", "NULL", "'a', UPPER('b')", "1 + 1", "1 + 1, UPPER('b')"]
+)
 def test_group_by_constant_keys(grouped: pl.DataFrame, key: str) -> None:
     # one group, and no group over no rows
     query = f"SELECT 'all' AS k, SUM(b) AS s, COUNT(*) AS n FROM t GROUP BY {key}"
@@ -1507,6 +1509,8 @@ def test_group_by_constant_keys(grouped: pl.DataFrame, key: str) -> None:
         "SELECT a, GROUPING(1 + 1) AS g FROM t GROUP BY a, 1 + 1 ORDER BY a",
         "SELECT a, GROUPING_ID(a, 'x') AS g FROM t GROUP BY a, 'x' ORDER BY a",
         "SELECT a FROM t GROUP BY a, 1 + 1 HAVING GROUPING(1 + 1) = 0 ORDER BY a",
+        "SELECT GROUPING(1 + 1, UPPER('b')) AS g FROM t GROUP BY 1 + 1, UPPER('b')",
+        "SELECT COUNT(*) AS n FROM t GROUP BY ROLLUP (1 + 1, UPPER('b')) ORDER BY n",
     ],
 )
 def test_group_by_constant_key_in_grouping(grouped: pl.DataFrame, query: str) -> None:

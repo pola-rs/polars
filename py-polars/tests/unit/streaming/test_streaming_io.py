@@ -246,6 +246,7 @@ def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
     assert q.join(q2, on="a").collect(engine="streaming").shape == (0, 1)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "method",
     ["parquet", "csv", "ipc", "ndjson"],

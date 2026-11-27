@@ -32,6 +32,12 @@ impl PySeries {
 
 /// Converts `idx` to bounded indices and casts `values` to the physical dtype of `s`.
 fn prepare_scatter(s: &Series, idx: &Series, values: &Series) -> PolarsResult<(IdxCa, Series)> {
+    polars_ensure!(
+        values.len() == idx.len() || values.len() == 1,
+        ShapeMismatch: "values length {} does not match index length {}",
+        values.len(),
+        idx.len()
+    );
     let logical_dtype = s.dtype();
     let is_categorical = logical_dtype.is_categorical() || logical_dtype.is_enum();
     let valid_values = if is_categorical {

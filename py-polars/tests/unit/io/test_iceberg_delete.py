@@ -86,6 +86,7 @@ def read(table: pyiceberg.table.Table) -> pl.DataFrame:
     return pl.scan_iceberg(table).sort("id").collect()
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     "predicate",

@@ -82,6 +82,7 @@ pub(super) fn convert_functions(
                             "arr.to_struct() number of field names provided ({fields_len})
                             does not match width of input ({width})."
                         );
+                        ensure_unique_field_names(&fields)?;
 
                         fields
                     } else {
@@ -241,7 +242,10 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "dtype-array")]
                 L::ToArray(v) => IL::ToArray(v),
                 #[cfg(feature = "list_to_struct")]
-                L::ToStruct(list_to_struct_args) => IL::ToStruct(list_to_struct_args),
+                L::ToStruct(names) => {
+                    ensure_unique_field_names(&names)?;
+                    IL::ToStruct(names)
+                },
                 #[cfg(feature = "dtype-map")]
                 L::ToMap => IL::ToMap,
             })
@@ -1425,6 +1429,19 @@ pub(super) fn convert_functions(
         options,
     };
     Ok((ctx.arena.add(ae_function), output_name))
+}
+
+/// Errors if two of the struct field names in `names` are equal.
+#[cfg(any(
+    feature = "list_to_struct",
+    all(feature = "dtype-array", feature = "array_to_struct")
+))]
+fn ensure_unique_field_names(names: &[PlSmallStr]) -> PolarsResult<()> {
+    let mut seen = PlIndexSet::with_capacity(names.len());
+    for name in names {
+        polars_ensure!(seen.insert(name), duplicate_field = name);
+    }
+    Ok(())
 }
 
 /// Checks the fraction given to `quantile` or `approx_quantile`, and returns its non-null values if

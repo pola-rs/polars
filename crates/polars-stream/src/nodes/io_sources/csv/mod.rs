@@ -109,6 +109,7 @@ impl FileReader for CsvFileReader {
             row_index,
             pre_slice,
             predicate: None,
+            drop_columns_after_predicate: _,
             cast_columns_policy: _,
             extra_columns_policy,
             missing_columns_policy,

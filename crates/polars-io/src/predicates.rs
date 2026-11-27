@@ -475,6 +475,10 @@ pub struct StagedScanIOPredicate {
     pub column_predicates: Arc<PlIndexMap<PlSmallStr, ColumnPredicate>>,
     /// The conjuncts that read no or several columns, conjoined.
     pub rest: Option<Arc<dyn PhysicalIoExpr>>,
+    /// Input columns used by `rest`. Per-file constants can remain in this set
+    /// if they were already present. Newly moved conjuncts get their columns
+    /// from the constant-column wrapper.
+    pub rest_columns: Arc<PlHashSet<PlSmallStr>>,
 }
 
 impl StagedScanIOPredicate {
@@ -493,6 +497,7 @@ impl StagedScanIOPredicate {
         }
         Self {
             column_predicates: Arc::new(column_predicates),
+            rest_columns: self.rest_columns.clone(),
             rest: rest.map(|rest| {
                 Arc::new(PhysicalExprWithConstCols {
                     constants: constants.to_vec(),

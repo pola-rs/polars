@@ -1,14 +1,9 @@
 name: Code coverage
 
 on:
-  push:
-    branches:
-      - main
-      - "1.x"
-    paths:
-      - "**.rs"
-      - "**.py"
-      - .github/workflows/test-coverage.yml
+  schedule:
+    # 03:00 UTC is the quietest stretch of the day for CI
+    - cron: "0 3 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -57,7 +52,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.event_name == 'push' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Prepare coverage
         run: cargo llvm-cov clean --workspace
@@ -143,7 +138,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.event_name == 'push' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Prepare coverage
         run: cargo llvm-cov clean --workspace

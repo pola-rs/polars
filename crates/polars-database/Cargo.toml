@@ -2,7 +2,7 @@
 name = "polars-database"
 # Released independently of Polars; compatibility is decided by the plugin IDs it exports (see
 # `polars-io-ext-ffi`), not by this version.
-version = "0.1.1"
+version = "0.1.2"
 authors = { workspace = true }
 edition = { workspace = true }
 homepage = { workspace = true }

@@ -1405,7 +1405,7 @@ class Series(metaclass=_Meta):
             - ``Series`` (Boolean): a boolean mask.
             - ``Series`` (Integer): an index array.
             - ``ndarray``: a NumPy boolean mask or integer index array.
-            - ``list`` / ``tuple``: an index sequence (cast to UInt32).
+            - ``list`` / ``tuple``: an index sequence.
         value
             Scalar or sequence of values to assign.
 
@@ -1464,13 +1464,9 @@ class Series(metaclass=_Meta):
                 # boolean numpy mask
                 self._s = self.scatter(np.argwhere(key)[:, 0], value)._s
             else:
-                s = self._from_pyseries(
-                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
-                )
-                self.__setitem__(s, value)
+                self.__setitem__(Series(key), value)
         elif isinstance(key, (list, tuple)):
-            s = self._from_pyseries(sequence_to_pyseries("", key, dtype=UInt32))
-            self.__setitem__(s, value)
+            self.scatter(key, value)  # pyrefly: ignore[bad-argument-type]
         else:
             msg = f'cannot use "{key!r}" for indexing'
             raise TypeError(msg)

@@ -995,7 +995,10 @@ fn fmt_datetime(
     tu: TimeUnit,
     tz: Option<&self::datatypes::TimeZone>,
 ) -> fmt::Result {
-    let ndt = tu.timestamp_to_datetime(v);
+    // (timestamps beyond chrono's range have no calendar form, so show the raw value)
+    let Some(ndt) = tu.timestamp_to_datetime_opt(v) else {
+        return write!(f, "{v}{}", tu.to_ascii());
+    };
     match tz {
         None => std::fmt::Display::fmt(&ndt, f),
         Some(tz) => PlTzAware::new(ndt, tz).fmt(f),

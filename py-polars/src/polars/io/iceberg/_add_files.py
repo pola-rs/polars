@@ -111,7 +111,6 @@ def add_files(
         ValidationException,
     )
     from pyiceberg.table import Table, TableProperties
-    from pyiceberg.table.update import AssertCurrentSchemaId
     from pyiceberg.utils.concurrent import ExecutorFactory
 
     from polars.exceptions import DuplicateError
@@ -176,11 +175,6 @@ def add_files(
             schema_id=schema.schema_id,
             check=same_mapping,
         ) as tx:
-            # the files were checked against this schema
-            tx._stage(
-                (),
-                (AssertCurrentSchemaId(current_schema_id=schema.schema_id),),  # type: ignore[call-arg]
-            )
             # files without field ids are read through the name mapping
             if sets_mapping:
                 tx.set_properties({mapping_key: new_mapping})
@@ -220,7 +214,7 @@ def add_files(
         if (
             sets_mapping
             and error is catalog._raised
-            and not isinstance(error, CommitFailedException)
+            and not isinstance(error, (CommitFailedException, ValidationException))
         ):
             error.add_note(
                 f"add_files also set the name mapping of table '{name}' "
@@ -509,7 +503,7 @@ def _data_file(
             f"{_INSERT_HINT}"
         )
         raise SchemaError(msg) from error
-    _check_readable(footer, target.read_schema, path, name)
+    _check_readable(footer, arrow_schema, target.read_schema, path, name)
     # e.g. a legacy list layout (`list.item`) that the table's column paths do not name
     columns = [footer.schema.column(i).path for i in range(footer.num_columns)]
     if unnamed := [c for c in columns if c not in paths]:
@@ -612,7 +606,11 @@ def _check_name_mapping(
 
 
 def _check_readable(
-    footer: pq.FileMetaData, read_schema: PlSchema, path: str, name: str
+    footer: pq.FileMetaData,
+    arrow_schema: pa.Schema,
+    read_schema: PlSchema,
+    path: str,
+    name: str,
 ) -> None:
     """Refuse a file that a scan of the table cannot read, without reading its data."""
     from polars.exceptions import PanicException, PolarsError, SchemaError
@@ -621,7 +619,7 @@ def _check_readable(
     if footer.num_rows == 0:
         return
     try:
-        _readable(_ColumnTypes(footer), tuple(read_schema.items()))
+        _readable(_ColumnTypes(footer, arrow_schema), tuple(read_schema.items()))
     # e.g. a time zone named `Z`, which Polars cannot parse
     except (PolarsError, PanicException) as error:
         msg = (
@@ -634,13 +632,12 @@ def _check_readable(
 class _ColumnTypes:
     """A footer, equal to the footers with the same column types."""
 
-    def __init__(self, footer: pq.FileMetaData) -> None:
+    def __init__(self, footer: pq.FileMetaData, arrow_schema: pa.Schema) -> None:
         self.footer: pq.FileMetaData | None = footer
         # the Parquet types (the first line holds the object's address), the names
         columns = str(footer.schema).split("\n", 1)[1]
-        names = footer.schema.to_arrow_schema()
         metadata = tuple(sorted((footer.metadata or {}).items()))
-        self.key = (columns, names, metadata)
+        self.key = (columns, arrow_schema, metadata)
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, _ColumnTypes) and self.key == other.key

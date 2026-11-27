@@ -2,9 +2,7 @@ use std::str::FromStr;
 
 #[cfg(feature = "csv")]
 use polars_core::prelude::PlSmallStr;
-use polars_core::prelude::{
-    DataFrame, ExplodeOptions, PolarsError, PolarsResult, polars_bail, polars_ensure,
-};
+use polars_core::prelude::{DataFrame, PolarsError, PolarsResult, polars_bail, polars_ensure};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
 use polars_lazy::prelude::{IntoLazy, LazyFrame};
@@ -17,7 +15,7 @@ use sqlparser::ast::{
 
 use crate::SQLContext;
 use crate::context::SubqueryShape;
-use crate::functions::series_expr;
+use crate::functions::{UNNEST_OPTIONS, series_expr};
 use crate::sql_expr::parse_sql_expr;
 use crate::subquery::strip_nested;
 #[cfg(any(
@@ -265,7 +263,7 @@ impl PolarsTableFunctions {
                 _ => polars_bail!(SQLSyntax: "`{}` expects positional arguments; found {}", fname, arg),
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        let mut expr = series_expr(fname, &args, include_end, |e| {
+        let mut expr = series_expr(fname, &args, include_end, None, |e| {
             let expr = parse_sql_expr(e, ctx, None)?;
             polars_ensure!(
                 expr_to_leaf_column_names_iter(&expr).next().is_none(),
@@ -278,12 +276,7 @@ impl PolarsTableFunctions {
             vec![&mut expr],
             SubqueryShape::Scalar,
         )?;
-        let lf = lf.select([expr
-            .explode(ExplodeOptions {
-                empty_as_null: false,
-                keep_nulls: false,
-            })
-            .alias(fname)]);
+        let lf = lf.select([expr.explode(UNNEST_OPTIONS).alias(fname)]);
         Ok((fname.to_string(), lf))
     }
 

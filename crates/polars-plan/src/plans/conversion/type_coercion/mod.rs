@@ -582,8 +582,7 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
-            // shift and fill should only cast left and fill value to super type.
-            // @3.0: Raise a type error instead of upcasting the input.
+            // Not in the generic function path, as `n` must not be cast.
             AExpr::Function {
                 function: IRFunctionExpr::ShiftAndFill,
                 ref input,
@@ -591,15 +590,23 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let left_node = input[0].node();
                 let fill_value_node = input[2].node();
-                let (left, type_left) = unpack!(get_aexpr_and_type(expr_arena, left_node, schema));
-                let (fill_value, type_fill_value) =
+                let (_, type_left) = unpack!(get_aexpr_and_type(expr_arena, left_node, schema));
+                let (_, type_fill_value) =
                     unpack!(get_aexpr_and_type(expr_arena, fill_value_node, schema));
 
                 unpack!(early_escape(&type_left, &type_fill_value));
+                let is_any = |dt: &DataType| matches!(dt, DataType::Unknown(UnknownKind::Any));
+                if is_any(&type_left) || is_any(&type_fill_value) {
+                    return Ok(None);
+                }
 
-                let super_type = unpack!(get_supertype(&type_left, &type_fill_value));
-                let super_type =
-                    modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);
+                let function = IRFunctionExpr::ShiftAndFill;
+                let super_type = fill_supertype(&type_left, &type_fill_value, Some(&function));
+                let Some(super_type) = super_type.filter(|st| !is_any(st)) else {
+                    let inputs = [input[0].clone(), input[2].clone()];
+                    raise_supertype(&function, &inputs, schema, expr_arena)?;
+                    unreachable!()
+                };
 
                 let mut input = input.clone();
                 let new_node_left = if type_left != super_type {
@@ -756,6 +763,17 @@ impl OptimizationRule for TypeCoercionRule {
                             for other in &input[1..] {
                                 let other = other.dtype(schema, expr_arena)?;
                                 can_cast_to_lossless(&super_type, other)?;
+                            }
+                        },
+                        CastingRules::FirstArgLosslessOrSupertypeWithWarning => {
+                            for other in &input[1..] {
+                                let other = other.dtype(schema, expr_arena)?;
+                                let Some(st) = fill_supertype(&super_type, other, Some(&function))
+                                else {
+                                    raise_supertype(&function, &input, schema, expr_arena)?;
+                                    unreachable!()
+                                };
+                                super_type = st;
                             }
                         },
                     }
@@ -1604,6 +1622,36 @@ fn inline_implode(expr: Node, expr_arena: &mut Arena<AExpr>) -> PolarsResult<Opt
     Ok(out)
 }
 
+/// The dtype that a fill operation casts its input and fill value to: the input dtype if the fill
+/// value can be cast to it losslessly, otherwise their supertype. Except for a `Null` input, using
+/// the supertype is deprecated and emits a warning if `function` is given.
+pub(crate) fn fill_supertype(
+    type_input: &DataType,
+    type_fill: &DataType,
+    function: Option<&IRFunctionExpr>,
+) -> Option<DataType> {
+    if can_cast_to_lossless(type_input, type_fill).is_ok() {
+        return Some(type_input.clone());
+    }
+    // @3.0: Raise instead of casting to the supertype, unless the input is `Null`.
+    let st = get_supertype(type_input, type_fill)?
+        .materialize_unknown(true)
+        .ok()?;
+    if let Some(function) = function
+        && st.is_known()
+        && !type_input.is_null()
+    {
+        polars_warn!(
+            Deprecation,
+            "'{function}' casts the input ({type_input}) and fill value ({type_fill}) to their \
+            supertype ({st}) because the fill value cannot be cast losslessly to the input type. \
+            This is deprecated and will raise an error in 3.0. Cast the input or the fill value \
+            explicitly."
+        );
+    }
+    Some(st)
+}
+
 /// Can we cast the `from` dtype to the `to` dtype without losing information?
 fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
     let can_cast = match (to, from) {
@@ -1647,10 +1695,8 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             | DataType::Int16
             | DataType::Int32,
         ) => true,
-        // When casting unknown float to Float32 we can't tell if the value will
-        // fit, so can't do anything. When casting to Float64 we can assume
-        // it'll work since presumably it's no larger than a f64 in practice.
-        (DataType::Float64, DataType::Unknown(UnknownKind::Float)) => true,
+        // A float literal has no fixed width, so it takes the width of any float type.
+        (to, DataType::Unknown(UnknownKind::Float)) if to.is_float() => true,
         // Handles both String and UnknownKind::Str:
         (DataType::String, from) => from.is_string(),
         (to, from) if to.is_primitive_numeric() && from.is_primitive_numeric() => {
@@ -1680,10 +1726,11 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             max_int_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
                 && min_int_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
         },
-        // Can't check for more granular time_unit in less-granular time_unit
-        // data, or we'll cast away valid/necessary precision (eg: nanosecs to
-        // millisecs):
-        (DataType::Datetime(to_unit, _), DataType::Datetime(from_unit, _)) => to_unit <= from_unit,
+        // The target unit must be at least as fine as the source unit. A cast
+        // between naive and time zone aware datetimes changes their meaning.
+        (DataType::Datetime(to_unit, to_tz), DataType::Datetime(from_unit, from_tz)) => {
+            to_unit <= from_unit && to_tz.is_some() == from_tz.is_some()
+        },
         (DataType::Duration(to_unit), DataType::Duration(from_unit)) => to_unit <= from_unit,
         (DataType::List(to), DataType::List(from)) => return can_cast_to_lossless(to, from),
         #[cfg(feature = "dtype-array")]

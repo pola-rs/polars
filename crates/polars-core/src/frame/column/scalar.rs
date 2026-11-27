@@ -230,7 +230,8 @@ impl ScalarColumn {
             return true;
         }
 
-        if !is_same_value(self.dtype(), self.scalar.value(), other.scalar.value()) {
+        // For objects `==` calls into Python, and equal objects need not be the same value.
+        if self.dtype().contains_objects() || self.scalar.value() != other.scalar.value() {
             return false;
         }
 
@@ -365,24 +366,6 @@ impl ScalarColumn {
         self.scalar.update(value);
         self.materialized.take();
         self
-    }
-}
-
-/// Whether `l` and `r`, both of `dtype`, are the same value and not only equal ones.
-///
-/// For floats `0.0 == -0.0`, and for objects `==` calls into Python, so those are only
-/// treated as the same when that is cheap to prove.
-fn is_same_value(dtype: &DataType, l: &AnyValue, r: &AnyValue) -> bool {
-    match (l, r) {
-        (AnyValue::Null, AnyValue::Null) => true,
-        (AnyValue::Float16(l), AnyValue::Float16(r)) => l.to_bits() == r.to_bits(),
-        (AnyValue::Float32(l), AnyValue::Float32(r)) => l.to_bits() == r.to_bits(),
-        (AnyValue::Float64(l), AnyValue::Float64(r)) => l.to_bits() == r.to_bits(),
-        _ => {
-            let mut eq_is_same = true;
-            dtype.visit_with(|dtype| eq_is_same &= !(dtype.is_float() || dtype.is_object()));
-            eq_is_same && l == r
-        },
     }
 }
 

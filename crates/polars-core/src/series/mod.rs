@@ -647,11 +647,14 @@ impl Series {
         ext.into_series()
     }
 
-    /// Cast numerical types to f64, and keep floats as is.
+    /// Cast numeric, Boolean, Decimal and null Series to f64, and keep f32 and f64 as is.
     pub fn to_float(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Float32 | DataType::Float64 => Ok(self.clone()),
-            _ => self.cast_with_options(&DataType::Float64, CastOptions::Overflowing),
+            dt if dt.is_numeric() || dt.is_bool() || dt.is_null() => {
+                self.cast_with_options(&DataType::Float64, CastOptions::Overflowing)
+            },
+            dt => polars_bail!(InvalidOperation: "cannot convert dtype `{dt}` to a float"),
         }
     }
 
@@ -854,6 +857,9 @@ impl Series {
     /// Traverse and collect every nth element in a new array.
     pub fn gather_every(&self, n: usize, offset: usize) -> PolarsResult<Series> {
         polars_ensure!(n > 0, ComputeError: "cannot perform gather every for `n=0`");
+        if n == 1 {
+            return Ok(self.slice((offset.min(self.len()) as i64, self.len())));
+        }
         let idx = ((offset as IdxSize)..self.len() as IdxSize)
             .step_by(n)
             .collect_ca(PlSmallStr::EMPTY);
@@ -922,6 +928,26 @@ impl Series {
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         self.cast_with_options(dtype, CastOptions::Strict)
+    }
+
+    /// Cast just the (possibly nested) time units to those at the same positions in `dtype`,
+    /// leaving any other differences to the caller; values that overflow raise if `strict`,
+    /// else become null.
+    pub fn cast_time_units_like(&self, dtype: &DataType, strict: bool) -> PolarsResult<Series> {
+        if !self.dtype().contains_time_units() {
+            return Ok(self.clone());
+        }
+        let mut target = self.dtype().clone();
+        target.adopt_time_units_from(dtype);
+        if &target == self.dtype() {
+            return Ok(self.clone());
+        }
+        let options = if strict {
+            CastOptions::Strict
+        } else {
+            CastOptions::NonStrict
+        };
+        self.cast_with_options(&target, options)
     }
 
     /// Cast non-strictly, also returning the rows the cast did not represent exactly.

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
 
 
+@pytest.mark.slow
 @given(
     lf=dataframes(
         lazy=True,
@@ -32,6 +33,7 @@ def test_lf_serde_roundtrip_binary(lf: pl.LazyFrame) -> None:
     assert_frame_equal(result, lf, categorical_as_str=True)
 
 
+@pytest.mark.slow
 @given(
     lf=dataframes(
         lazy=True,

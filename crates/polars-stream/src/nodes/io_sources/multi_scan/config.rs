@@ -30,6 +30,9 @@ pub struct MultiScanConfig {
 
     /// Final output schema of MultiScan node. Includes all e.g. row index / missing columns / file paths / hive etc.
     pub final_output_schema: SchemaRef,
+    /// If set, the schema actually sent out of MultiScan: `final_output_schema` without the
+    /// columns that are only read to evaluate the predicate.
+    pub output_schema_after_predicate: Option<SchemaRef>,
     /// Columns to be projected from the file.
     pub file_projection_builder: ProjectionBuilder,
 

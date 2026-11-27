@@ -11,7 +11,7 @@ use polars_arrow::temporal_conversions::{
     timestamp_ns_to_datetime_opt, timestamp_us_to_datetime_opt,
 };
 use polars_arrow::types::NativeType;
-use polars_utils::time::{NS_DAY, is_leap_year};
+use polars_utils::time::{NS_DAY, days_in_month, is_leap_year};
 
 use super::*;
 
@@ -176,6 +176,26 @@ fn civil_from_days(days: i32) -> (i32, u32, u32) {
 }
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+fn civil_from_supported_days(days: i64) -> Option<(i32, u32, u32)> {
+    let (first, last) = supported_days();
+    (first <= days && days <= last).then(|| civil_from_days(days as i32))
+}
+
+/// The days since the Unix epoch of the first day of the month of `days`, if `days` is supported.
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+pub(crate) fn month_start_from_days(days: i64) -> Option<i64> {
+    let (_, _, day) = civil_from_supported_days(days)?;
+    Some(days - (day as i64 - 1))
+}
+
+/// The days since the Unix epoch of the last day of the month of `days`, if `days` is supported.
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+pub(crate) fn month_end_from_days(days: i64) -> Option<i64> {
+    let (year, month, day) = civil_from_supported_days(days)?;
+    Some(days + (days_in_month(year, month as u8) - day as u8) as i64)
+}
+
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 #[inline(always)]
 fn ordinal_from_days(days: i32) -> i16 {
     let (year, month, day) = civil_from_days(days);
@@ -214,13 +234,17 @@ impl<T: NativeType + PartialOrd, F: Fn(T) -> i32> DaysArray<'_, T, F> {
     }
 
     fn map<O: NativeType>(&self, f: impl Fn(i32) -> O) -> ArrayRef {
+        self.map_values(|v| f((self.to_days)(v)))
+    }
+
+    fn map_values<O: NativeType>(&self, f: impl Fn(T) -> O) -> ArrayRef {
         let out = if self.all_supported() {
-            unary(self.arr, |v| f((self.to_days)(v)), O::PRIMITIVE.into())
+            unary(self.arr, &f, O::PRIMITIVE.into())
         } else {
             let (first, last) = self.bounds;
             PrimitiveArray::from_trusted_len_iter(self.arr.iter().map(|v| {
                 let v = *v?;
-                (first <= v && v <= last).then(|| f((self.to_days)(v)))
+                (first <= v && v <= last).then(|| f(v))
             }))
         };
         Box::new(out)
@@ -289,6 +313,69 @@ fn datetime_days(
         to_days: move |v: i64| v.div_euclid(per_day) as i32,
         bounds,
     }
+}
+
+#[cfg(feature = "dtype-datetime")]
+fn datetime_time_part_in<const PER_SECOND: i64, O: NativeType>(
+    arr: &PrimitiveArray<i64>,
+    time_unit: TimeUnit,
+    f: impl Fn(i64, i64) -> O,
+) -> ArrayRef {
+    datetime_days(arr, time_unit).map_values(|v| f(v.rem_euclid(PER_SECOND * 86_400), PER_SECOND))
+}
+
+/// Applies `f` to the time of day, in units of `time_unit`, and the units per second.
+#[cfg(feature = "dtype-datetime")]
+fn datetime_time_part<O: NativeType>(
+    arr: &PrimitiveArray<i64>,
+    time_unit: TimeUnit,
+    f: impl Fn(i64, i64) -> O,
+) -> ArrayRef {
+    match time_unit {
+        TimeUnit::Nanoseconds => datetime_time_part_in::<1_000_000_000, O>(arr, time_unit, f),
+        TimeUnit::Microseconds => datetime_time_part_in::<1_000_000, O>(arr, time_unit, f),
+        TimeUnit::Milliseconds => datetime_time_part_in::<1_000, O>(arr, time_unit, f),
+    }
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn datetime_to_hour(arr: &PrimitiveArray<i64>, time_unit: TimeUnit) -> ArrayRef {
+    datetime_time_part(arr, time_unit, |t, per_second| {
+        (t / (3_600 * per_second)) as i8
+    })
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn datetime_to_minute(arr: &PrimitiveArray<i64>, time_unit: TimeUnit) -> ArrayRef {
+    datetime_time_part(arr, time_unit, |t, per_second| {
+        (t / (60 * per_second) % 60) as i8
+    })
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn datetime_to_second(arr: &PrimitiveArray<i64>, time_unit: TimeUnit) -> ArrayRef {
+    datetime_time_part(arr, time_unit, |t, per_second| (t / per_second % 60) as i8)
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn datetime_to_millisecond(arr: &PrimitiveArray<i64>, time_unit: TimeUnit) -> ArrayRef {
+    datetime_time_part(arr, time_unit, |t, per_second| {
+        (t % per_second * 1_000 / per_second) as i32
+    })
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn datetime_to_microsecond(arr: &PrimitiveArray<i64>, time_unit: TimeUnit) -> ArrayRef {
+    datetime_time_part(arr, time_unit, |t, per_second| {
+        (t % per_second * 1_000_000 / per_second) as i32
+    })
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn datetime_to_nanosecond(arr: &PrimitiveArray<i64>, time_unit: TimeUnit) -> ArrayRef {
+    datetime_time_part(arr, time_unit, |t, per_second| {
+        (t % per_second * (1_000_000_000 / per_second)) as i32
+    })
 }
 
 macro_rules! date_parts {

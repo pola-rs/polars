@@ -8,7 +8,7 @@ pub use functions::{create_scan_predicate, initialize_scan_predicate};
 use polars_arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{PlIndexMap, PlIndexSet};
+use polars_core::prelude::{PlHashSet, PlIndexMap, PlIndexSet};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{PhysicalExpr, phys_expr_to_io_expr};
@@ -24,6 +24,8 @@ use polars_utils::pl_str::PlSmallStr;
 pub struct StagedScanPredicate {
     pub column_predicates: PlIndexMap<PlSmallStr, PhysicalColumnPredicate>,
     pub rest: Option<Arc<dyn PhysicalExpr>>,
+    /// The columns `rest` reads.
+    pub rest_columns: Arc<PlHashSet<PlSmallStr>>,
 }
 
 #[derive(Clone)]
@@ -59,6 +61,7 @@ impl StagedScanPredicate {
                     .collect(),
             ),
             rest: self.rest.clone().map(phys_expr_to_io_expr),
+            rest_columns: self.rest_columns.clone(),
         }
     }
 }

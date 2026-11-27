@@ -25,10 +25,9 @@ use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 use slotmap::DenseSlotMap;
 
-use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
+use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_expr::{
     build_hstack_stream, build_select_stream, build_sort_stream, compute_output_schema,
-    is_elementwise_rec_cached, is_input_independent,
 };
 use crate::physical_plan::lower_ir::{
     build_filter_stream, build_row_idx_stream, build_slice_stream,
@@ -126,7 +125,7 @@ fn replace_agg_uniq(
     expr: Node,
     unique_of: Option<Node>,
     canonical_exprs: &mut CanonicalExprMap,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     expr_arena: &mut Arena<AExpr>,
     agg_exprs: &mut Vec<ExprIR>,
     uniq_input_names: &mut PlIndexMap<CanonicalExprId, PlSmallStr>,
@@ -151,7 +150,7 @@ fn replace_agg_uniq(
                         let (Some(x_id), x_col) = replace_elementwise_components(
                             x,
                             canonical_exprs,
-                            expr_cache,
+                            expr_props,
                             expr_arena,
                             uniq_input_names,
                             uniq_elementwise_exprs,
@@ -171,7 +170,7 @@ fn replace_agg_uniq(
                     let (input_id, node) = replace_elementwise_components(
                         *input,
                         canonical_exprs,
-                        expr_cache,
+                        expr_props,
                         expr_arena,
                         uniq_input_names,
                         uniq_elementwise_exprs,
@@ -211,14 +210,14 @@ fn replace_agg_uniq(
 fn replace_elementwise_components(
     expr: Node,
     canonical_exprs: &mut CanonicalExprMap,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     expr_arena: &mut Arena<AExpr>,
     uniq_input_names: &mut PlIndexMap<CanonicalExprId, PlSmallStr>,
     uniq_elementwise_exprs: &mut PlIndexMap<CanonicalExprId, ExprIR>,
     substream_input_ids: &mut PlIndexSet<CanonicalExprId>,
 ) -> (Option<CanonicalExprId>, Node) {
-    if is_elementwise_rec_cached(expr, expr_arena, expr_cache)
-        || (is_input_independent(expr, expr_arena, expr_cache) && is_scalar_ae(expr, expr_arena))
+    if expr_props.is_elementwise(expr, expr_arena)
+        || (expr_props.is_input_independent(expr, expr_arena) && is_scalar_ae(expr, expr_arena))
     {
         let id = canonical_exprs.resolve(expr, expr_arena);
         let name = uniq_input_names
@@ -240,7 +239,7 @@ fn replace_elementwise_components(
             let (input_id, node) = replace_elementwise_components(
                 *input,
                 canonical_exprs,
-                expr_cache,
+                expr_props,
                 expr_arena,
                 uniq_input_names,
                 uniq_elementwise_exprs,
@@ -265,7 +264,7 @@ fn try_lower_elementwise_scalar_agg_expr(
     gbl_kind: GroupByLowerKind,
     input_schema: &Schema,
     canonical_exprs: &mut CanonicalExprMap,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     expr_arena: &mut Arena<AExpr>,
     agg_exprs: &mut Vec<ExprIR>,
     uniq_input_names: &mut PlIndexMap<CanonicalExprId, PlSmallStr>,
@@ -282,7 +281,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 gbl_kind,
                 input_schema,
                 canonical_exprs,
-                expr_cache,
+                expr_props,
                 expr_arena,
                 agg_exprs,
                 uniq_input_names,
@@ -303,7 +302,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 $input,
                 $x,
                 canonical_exprs,
-                expr_cache,
+                expr_props,
                 expr_arena,
                 agg_exprs,
                 uniq_input_names,
@@ -314,7 +313,7 @@ fn try_lower_elementwise_scalar_agg_expr(
         };
     }
 
-    if is_input_independent(expr, expr_arena, expr_cache) {
+    if expr_props.is_input_independent(expr, expr_arena) {
         if is_scalar_ae(expr, expr_arena) {
             return Some(expr);
         } else {
@@ -328,7 +327,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
     // Whether `x` can be the input of a unique reduction.
     let mut unique_reducible = |x: Node, expr_arena: &Arena<AExpr>| {
-        is_elementwise_rec_cached(x, expr_arena, expr_cache)
+        expr_props.is_elementwise(x, expr_arena)
             && expr_arena
                 .get(x)
                 .to_dtype(&ToFieldContext::new(expr_arena, input_schema))
@@ -774,10 +773,10 @@ fn try_lower_agg_input_expr(
     expr: Node,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<Option<(PhysStream, Node, /* all_keys_included */ bool)>> {
-    if is_elementwise_rec_cached(expr, expr_arena, expr_cache) {
+    if expr_props.is_elementwise(expr, expr_arena) {
         return Ok(Some((input_stream, expr, true)));
     }
 
@@ -797,7 +796,7 @@ fn try_lower_agg_input_expr(
                 input_node,
                 expr_arena,
                 phys_sm,
-                expr_cache,
+                expr_props,
                 ctx,
             )?
             else {
@@ -820,7 +819,7 @@ fn try_lower_agg_input_expr(
                 GroupByLowerKind::Groups,
                 expr_arena,
                 phys_sm,
-                expr_cache,
+                expr_props,
                 ctx,
             )?
             else {
@@ -835,8 +834,8 @@ fn try_lower_agg_input_expr(
             input: filter_input,
             by: predicate,
         } => {
-            if !is_elementwise_rec_cached(*filter_input, expr_arena, expr_cache)
-                || !is_elementwise_rec_cached(*predicate, expr_arena, expr_cache)
+            if !expr_props.is_elementwise(*filter_input, expr_arena)
+                || !expr_props.is_elementwise(*predicate, expr_arena)
             {
                 return Ok(None);
             }
@@ -858,7 +857,7 @@ fn try_lower_agg_input_expr(
                 &select_exprs,
                 expr_arena,
                 phys_sm,
-                expr_cache,
+                expr_props,
                 ctx,
             )?;
             stream = build_filter_stream(
@@ -866,7 +865,7 @@ fn try_lower_agg_input_expr(
                 ExprIR::from_column_name(predicate_name, expr_arena),
                 expr_arena,
                 phys_sm,
-                expr_cache,
+                expr_props,
                 ctx,
             )?;
 
@@ -879,11 +878,21 @@ fn try_lower_agg_input_expr(
             options: _,
         } => {
             let input = inputs_ref[0].node();
-            if !is_elementwise_rec_cached(input, expr_arena, expr_cache) {
+            let is_drop_nulls = matches!(function, IRFunctionExpr::DropNulls);
+            let Some((input_stream, input, all_keys_included)) = try_lower_agg_input_expr(
+                input_stream,
+                keys,
+                input,
+                expr_arena,
+                phys_sm,
+                expr_props,
+                ctx,
+            )?
+            else {
                 return Ok(None);
-            }
+            };
 
-            let predicate = if matches!(function, IRFunctionExpr::DropNulls) {
+            let predicate = if is_drop_nulls {
                 AExprBuilder::new_from_node(input).is_not_null(expr_arena)
             } else {
                 let input_schema = input_stream.output_schema(phys_sm);
@@ -892,7 +901,7 @@ fn try_lower_agg_input_expr(
                     .to_dtype(&ToFieldContext::new(expr_arena, input_schema))?;
                 // `drop_nans` only drops values of float columns.
                 if !dtype.is_float() {
-                    return Ok(Some((input_stream, input, true)));
+                    return Ok(Some((input_stream, input, all_keys_included)));
                 }
                 // Keep nulls, for which `is_not_nan` is null.
                 let x = AExprBuilder::new_from_node(input);
@@ -900,31 +909,19 @@ fn try_lower_agg_input_expr(
                 x.is_not_nan(expr_arena).or(is_null, expr_arena)
             };
 
-            let output_name = unique_column_name();
-            let predicate_name = unique_column_name();
-            let mut select_exprs = keys.to_vec();
-            select_exprs.push(ExprIR::new(input, OutputName::Alias(output_name.clone())));
-            select_exprs.push(predicate.expr_ir(predicate_name.clone()));
-
-            let mut stream = build_select_stream(
+            let filter = expr_arena.add(AExpr::Filter {
+                input,
+                by: predicate.node(),
+            });
+            try_lower_agg_input_expr(
                 input_stream,
-                &select_exprs,
+                keys,
+                filter,
                 expr_arena,
                 phys_sm,
-                expr_cache,
+                expr_props,
                 ctx,
-            )?;
-            stream = build_filter_stream(
-                stream,
-                ExprIR::from_column_name(predicate_name, expr_arena),
-                expr_arena,
-                phys_sm,
-                expr_cache,
-                ctx,
-            )?;
-
-            let trans_output = expr_arena.add(AExpr::Column(output_name));
-            Ok(Some((stream, trans_output, false)))
+            )
         },
         _ => Ok(None),
     }
@@ -937,7 +934,7 @@ fn merge_min_max_by(
     aggs: &[ExprIR],
     input_schema: &Schema,
     canonical_exprs: &mut CanonicalExprMap,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Vec<ExprIR>> {
     let mut merged: PlIndexMap<_, Vec<usize>> = PlIndexMap::new();
@@ -957,9 +954,7 @@ fn merge_min_max_by(
             continue;
         };
         let (x, by) = (x.node(), by.node());
-        if !is_elementwise_rec_cached(x, expr_arena, expr_cache)
-            || !is_elementwise_rec_cached(by, expr_arena, expr_cache)
-        {
+        if !expr_props.is_elementwise(x, expr_arena) || !expr_props.is_elementwise(by, expr_arena) {
             continue;
         }
         let Ok(dtype) = expr_arena
@@ -1035,7 +1030,7 @@ pub fn try_build_streaming_group_by(
     gbl_kind: GroupByLowerKind,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<Option<PhysStream>> {
     try_build_streaming_group_by_with_key_ranges(
@@ -1048,7 +1043,7 @@ pub fn try_build_streaming_group_by(
         gbl_kind,
         expr_arena,
         phys_sm,
-        expr_cache,
+        expr_props,
         ctx,
         &[],
     )
@@ -1066,7 +1061,7 @@ fn try_build_streaming_group_by_with_key_ranges(
     gbl_kind: GroupByLowerKind,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     ctx: StreamingLowerIRContext<'_>,
     key_ranges: &[KeyRange],
 ) -> PolarsResult<Option<PhysStream>> {
@@ -1089,7 +1084,7 @@ fn try_build_streaming_group_by_with_key_ranges(
     let all_independent = keys
         .iter()
         .chain(aggs.iter())
-        .all(|expr| is_input_independent(expr.node(), expr_arena, expr_cache));
+        .all(|expr| expr_props.is_input_independent(expr.node(), expr_arena));
     if all_independent {
         return Ok(None);
     }
@@ -1114,7 +1109,7 @@ fn try_build_streaming_group_by_with_key_ranges(
         aggs,
         &input_schema,
         &mut canonical_exprs,
-        expr_cache,
+        expr_props,
         expr_arena,
     );
     let aggs = merged_aggs.as_deref().unwrap_or(aggs);
@@ -1177,7 +1172,7 @@ fn try_build_streaming_group_by_with_key_ranges(
             gbl_kind,
             &input_schema,
             &mut canonical_exprs,
-            expr_cache,
+            expr_props,
             expr_arena,
             &mut trans_agg_exprs,
             &mut uniq_input_names,
@@ -1238,7 +1233,7 @@ fn try_build_streaming_group_by_with_key_ranges(
     let mut direct_input_needed = false;
     if pre_select_exprs
         .iter()
-        .all(|e| is_input_independent(e.node(), expr_arena, expr_cache))
+        .all(|e| expr_props.is_input_independent(e.node(), expr_arena))
     {
         direct_input_needed = true;
         let dummy_col_name = input_schema.get_at_index(0).unwrap().0;
@@ -1255,7 +1250,7 @@ fn try_build_streaming_group_by_with_key_ranges(
         &pre_select_exprs,
         expr_arena,
         phys_sm,
-        expr_cache,
+        expr_props,
         ctx,
     )?;
 
@@ -1294,7 +1289,7 @@ fn try_build_streaming_group_by_with_key_ranges(
                 input_node,
                 expr_arena,
                 phys_sm,
-                expr_cache,
+                expr_props,
                 ctx,
             )?
             else {
@@ -1308,7 +1303,7 @@ fn try_build_streaming_group_by_with_key_ranges(
                 &trans_stream_outputs,
                 expr_arena,
                 phys_sm,
-                expr_cache,
+                expr_props,
                 ctx,
             )?;
             other_agg_input_streams.insert(input_id, (stream, Vec::new()));
@@ -1374,7 +1369,7 @@ fn try_build_streaming_group_by_with_key_ranges(
             SortMultipleOptions::new(),
             expr_arena,
             phys_sm,
-            expr_cache,
+            expr_props,
             ctx,
         )?;
         trans_output_exprs.pop(); // Remove row idx from post-select.
@@ -1388,7 +1383,7 @@ fn try_build_streaming_group_by_with_key_ranges(
         // apply them in the post-select while ignoring groups, so we have to abort.
         if trans_output_exprs
             .iter()
-            .any(|e| !is_elementwise_rec_cached(e.node(), expr_arena, expr_cache))
+            .any(|e| !expr_props.is_elementwise(e.node(), expr_arena))
         {
             return Ok(None);
         }
@@ -1428,7 +1423,7 @@ fn try_build_streaming_group_by_with_key_ranges(
         &trans_output_exprs,
         expr_arena,
         phys_sm,
-        expr_cache,
+        expr_props,
         ctx,
     )?;
 
@@ -1451,7 +1446,7 @@ pub fn try_build_sorted_group_by(
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
 ) -> PolarsResult<Option<PhysStream>> {
@@ -1491,7 +1486,7 @@ pub fn try_build_sorted_group_by(
             expr_arena,
         )
         .expr_ir(input_column.clone());
-        input = build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_cache, ctx)?;
+        input = build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_props, ctx)?;
         projected = true;
         row_encoded = Some(key_fields);
     } else if !matches!(expr_arena.get(keys[0].node()), AExpr::Column(c) if c == keys[0].output_name())
@@ -1501,7 +1496,7 @@ pub fn try_build_sorted_group_by(
             &[keys[0].with_alias(input_column.clone())],
             expr_arena,
             phys_sm,
-            expr_cache,
+            expr_props,
             ctx,
         )?;
         projected = true;
@@ -1520,7 +1515,7 @@ pub fn try_build_sorted_group_by(
             SortMultipleOptions::default().with_maintain_order(true),
             expr_arena,
             phys_sm,
-            expr_cache,
+            expr_props,
             ctx,
         )?;
     }
@@ -1571,7 +1566,7 @@ pub fn try_build_sorted_group_by(
                 expr_arena,
             )
             .expr_ir(input_column.clone());
-            input = build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_cache, ctx)?;
+            input = build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_props, ctx)?;
 
             // Unnest the row encoded columns.
             input = PhysStream::first(phys_sm.insert(PhysNode::new(
@@ -1588,7 +1583,7 @@ pub fn try_build_sorted_group_by(
                 .iter_names()
                 .map(|name| AExprBuilder::col(name.clone(), expr_arena).expr_ir(name.clone()))
                 .collect::<Vec<_>>();
-            input = build_select_stream(input, &exprs, expr_arena, phys_sm, expr_cache, ctx)?;
+            input = build_select_stream(input, &exprs, expr_arena, phys_sm, expr_props, ctx)?;
         } else {
             let exprs = std::iter::once(input_column)
                 .map(|name| (name, output_schema.get_at_index(0).unwrap().0.clone()))
@@ -1602,7 +1597,7 @@ pub fn try_build_sorted_group_by(
                     AExprBuilder::col(col_name, expr_arena).expr_ir(out_name)
                 })
                 .collect::<Vec<_>>();
-            input = build_select_stream(input, &exprs, expr_arena, phys_sm, expr_cache, ctx)?;
+            input = build_select_stream(input, &exprs, expr_arena, phys_sm, expr_props, ctx)?;
         }
     }
 
@@ -1620,7 +1615,7 @@ pub fn build_group_by_stream(
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
 ) -> PolarsResult<PhysStream> {
@@ -1634,7 +1629,7 @@ pub fn build_group_by_stream(
         apply,
         expr_arena,
         phys_sm,
-        expr_cache,
+        expr_props,
         ctx,
         are_keys_sorted,
         &[],
@@ -1653,7 +1648,7 @@ pub fn build_group_by_stream_with_key_ranges(
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
     key_ranges: &[KeyRange],
@@ -1723,7 +1718,7 @@ pub fn build_group_by_stream_with_key_ranges(
                 apply.clone(),
                 expr_arena,
                 phys_sm,
-                expr_cache,
+                expr_props,
                 ctx,
                 are_keys_sorted,
             )? {
@@ -1738,7 +1733,7 @@ pub fn build_group_by_stream_with_key_ranges(
             GroupByLowerKind::Groups,
             expr_arena,
             phys_sm,
-            expr_cache,
+            expr_props,
             ctx,
             key_ranges,
         )? {

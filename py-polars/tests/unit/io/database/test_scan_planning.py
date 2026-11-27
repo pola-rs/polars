@@ -112,6 +112,7 @@ def _all_plans() -> dict[str, dict[str, dict[str, str]]]:
     return {d: {c: _plan(d, c) for c in CASES} for d in DIALECT_URIS}
 
 
+@pytest.mark.slow
 def test_sql_snapshots() -> None:
     """Quoting, literals, LIMIT forms, IN chunking and exactness, per dialect."""
     plans = _all_plans()
@@ -128,6 +129,7 @@ def test_sql_snapshots() -> None:
     assert not diffs, "\n".join(diffs)
 
 
+@pytest.mark.slow
 def test_sql_snapshot_details() -> None:
     plans = _all_plans()
     # LIMIT forms
@@ -213,6 +215,7 @@ def _explain(lf: pl.LazyFrame) -> str:
     return out[0]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("terms", [63, 200, 450])
 def test_deeply_nested_filters_are_pushed(terms: int) -> None:
     """A document nested past serde_json's 128 levels was not pushed at all."""
@@ -227,6 +230,7 @@ def test_deeply_nested_filters_are_pushed(terms: int) -> None:
     assert "filters 0/1" in _explain(_scan("postgresql").filter(pred))
 
 
+@pytest.mark.slow
 def test_filters_nested_past_the_document_limit_are_not_pushed() -> None:
     # two document levels per `|`: past the limit of 1,024 levels from 513 terms
     pred = functools.reduce(operator.or_, [pl.col("i64") == i for i in range(600)])
@@ -244,6 +248,7 @@ def test_deeply_alternating_filters(levels: int, pushed: bool) -> None:
     assert ("filters 1/1" in plan) == pushed, plan
 
 
+@pytest.mark.slow
 def test_filters_over_the_statement_budget_are_left_to_polars() -> None:
     # SQLite refuses an expression tree deeper than 1000 (1,200 chained filters)
     lf = _scan("sqlite")

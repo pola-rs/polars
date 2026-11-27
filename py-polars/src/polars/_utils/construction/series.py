@@ -111,10 +111,13 @@ def sequence_to_pyseries(
         and isinstance(value, (np.datetime64, np.timedelta64))
         and dtype != Object
     ):
-        # The values carry their own time unit, so convert them as-is and only
-        # cast afterwards if another dtype was requested.
-        pyseries = PySeries.new_from_any_values(name, values, strict)
-        if dtype is not None and pyseries.dtype() != (dtype := parse_into_dtype(dtype)):
+        # The values carry their own time unit, so convert them as-is (or straight to a
+        # requested time unit), and only cast afterwards if another dtype was requested.
+        dtype = None if dtype is None else parse_into_dtype(dtype)
+        pyseries = PySeries.new_from_any_values(
+            name, values, strict, time_unit=getattr(dtype, "time_unit", None)
+        )
+        if dtype is not None and pyseries.dtype() != dtype:
             pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
         return pyseries
 
@@ -233,6 +236,7 @@ def sequence_to_pyseries(
         return plc.sequence_to_pydf(
             data=data,
             schema=struct_schema,
+            strict=strict,
             orient="row",
         ).to_struct(name, invalid)
 
@@ -247,7 +251,7 @@ def sequence_to_pyseries(
     # temporal branch
     if issubclass(python_dtype, tuple(py_temporal_types)):
         if dtype is None:
-            dtype = parse_into_dtype(python_dtype)  # construct from integer
+            dtype = parse_into_dtype(python_dtype).base_type()
         elif dtype in py_temporal_types:
             dtype = parse_into_dtype(dtype)
 
@@ -260,19 +264,36 @@ def sequence_to_pyseries(
                 msg
             )
 
-        # We use the AnyValue builder to create the datetime array
-        # We store the values internally as UTC and set the timezone
-        py_series = PySeries.new_from_any_values(name, values, strict)
-
         time_unit = getattr(dtype, "time_unit", None)
         time_zone = getattr(dtype, "time_zone", None)
 
+        # We use the AnyValue builder to create the datetime array
+        # We store the values internally as UTC and set the timezone
+        py_series = PySeries.new_from_any_values(
+            name=name,
+            values=values,
+            strict=strict,
+            time_unit=time_unit,
+        )
+        s = wrap_s(py_series)
         if dtype.is_temporal() and values_dtype == String and dtype != Duration:
-            s = wrap_s(py_series).str.strptime(dtype, strict=strict)  # type: ignore[arg-type]
-        elif time_unit is not None and values_dtype != Date:
-            s = wrap_s(py_series).dt.cast_time_unit(time_unit)
-        else:
-            s = wrap_s(py_series)
+            s = s.str.strptime(dtype, strict=strict)  # type: ignore[arg-type]
+        elif s.dtype == Null:
+            # (all values were null, or overflowed `time_unit` with `strict=False`)
+            if (
+                isinstance(dtype, Datetime)
+                and time_zone is None
+                and isinstance(value, datetime)
+                and value.tzinfo is not None
+            ):
+                # Infer the common zone using the widest timestamp range.
+                source = PySeries.new_from_any_values(
+                    name, values, strict=False, time_unit="ms"
+                )
+                dtype = Datetime(
+                    dtype.time_unit, getattr(source.dtype(), "time_zone", None)
+                )
+            s = s.cast(dtype)
 
         if (values_dtype == Date) & (dtype == Datetime):
             s = s.cast(Datetime(time_unit or "us"))

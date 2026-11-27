@@ -1813,6 +1813,7 @@ def test_join_preserve_order_full() -> None:
     ]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "dtypes",
     [

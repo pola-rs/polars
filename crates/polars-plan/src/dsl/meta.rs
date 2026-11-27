@@ -172,12 +172,13 @@ impl MetaNameSpace {
         Ok(exprs.iter().all(|e| e.is_known_length(&expr_arena)))
     }
 
-    /// Indicate if this expression as a whole is row-separable (see [`is_row_separable_rec`]).
+    /// Indicate if this expression as a whole is row-separable (see [`ExprProperties::is_row_separable`]).
     pub fn is_row_separable(self, schema: Option<&Schema>) -> PolarsResult<bool> {
         let has_schema = schema.is_some();
         let (exprs, expr_arena) = self.into_expr_irs(schema)?;
+        let mut expr_props = ExprProperties::default();
         Ok(exprs.iter().all(|e| {
-            is_row_separable_rec(e.node(), &expr_arena)
+            expr_props.is_row_separable(e.node(), &expr_arena)
                 && (has_schema || !has_unresolved_set_argument(e.node(), &expr_arena))
         }))
     }

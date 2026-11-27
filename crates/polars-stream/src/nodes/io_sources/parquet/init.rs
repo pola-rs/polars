@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::Either;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
+use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor;
 use polars_core::prelude::DataType;
@@ -11,11 +12,14 @@ use polars_error::{PolarsResult, polars_ensure};
 use polars_io::predicates::{ColumnPredicateExpr, SpecializedColumnPredicate};
 use polars_io::prelude::ParallelStrategy;
 use polars_parquet::read::PredicateFilter;
+use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
 use polars_utils::IdxSize;
 use tokio::sync::Semaphore;
 
 use super::row_group_data_fetch::{ReadStats, RowGroupDataFetcher, row_groups_to_read};
-use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
+use super::row_group_decode::{
+    DynamicConjunct, PredicateColumn, RowGroupDecoder, Source, projected_field_at_output_index,
+};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -498,9 +502,57 @@ impl ParquetReadImpl {
             Default::default()
         };
 
+        let staged = predicate.as_ref().and_then(|p| p.staged.as_ref());
+        let rest_predicate = match staged {
+            Some(staged) if use_prefiltered => staged.rest.clone(),
+            _ => predicate.as_ref().map(|p| p.predicate.clone()),
+        };
+
+        // Only the decoder that evaluates the predicate may drop columns.
+        let dropped_fields: Option<Bitmap> = (filters_rows
+            && !self.drop_columns_after_predicate.is_empty())
+        .then(|| {
+            projected_arrow_fields
+                .iter()
+                .map(|f| self.drop_columns_after_predicate.contains(f.output_name()))
+                .collect()
+        })
+        .filter(|fields: &Bitmap| fields.set_bits() > 0);
+
+        let output_keep_mask = dropped_fields.as_ref().map(|dropped| {
+            row_index
+                .iter()
+                .map(|_| true)
+                .chain((0..projected_arrow_fields.len()).map(|i| {
+                    let field = projected_field_at_output_index(
+                        i,
+                        &predicate_field_indices,
+                        &non_predicate_field_indices,
+                    );
+                    !dropped.get_bit(field)
+                }))
+                .collect()
+        });
+
+        let early_dropped_fields = dropped_fields
+            .as_ref()
+            .filter(|_| use_prefiltered)
+            .and_then(|dropped| {
+                if rest_predicate.is_none() {
+                    return Some(dropped.clone());
+                }
+                let rest_columns = &staged?.rest_columns;
+                Some(
+                    projected_arrow_fields
+                        .iter()
+                        .zip(dropped.iter())
+                        .map(|(f, dropped)| dropped && !rest_columns.contains(f.output_name()))
+                        .collect::<Bitmap>(),
+                )
+            });
+
         // The predicate columns, each with its decode filter when the decoder may evaluate
         // the predicate on the values as it decodes them.
-        let staged = predicate.as_ref().and_then(|p| p.staged.as_ref());
         let predicate_columns: Arc<[PredicateColumn]> = match staged {
             Some(staged) if use_prefiltered => staged
                 .column_predicates
@@ -534,15 +586,30 @@ impl ParquetReadImpl {
                         .predicate
                         .as_ref()
                         .filter(|_| filter_while_decoding(projection))
-                        .map(|predicate| PredicateFilter {
-                            predicate: Arc::new(ColumnPredicateExpr::new(
+                        .map(|predicate| {
+                            let expr = ColumnPredicateExpr::new(
                                 name.clone(),
                                 DataType::from_arrow_field(arrow_field),
                                 arrow_field.dtype.clone(),
                                 predicate.clone(),
                                 p.specialized.clone(),
-                            )),
-                            include_values: constant.is_none(),
+                            );
+                            // Flat integer decoders can produce the null mask from page validity.
+                            let mask_only = matches!(
+                                arrow_field.dtype(),
+                                ArrowDataType::Int32 | ArrowDataType::Int64
+                            ) && p.dynamic.is_empty()
+                                && early_dropped_fields
+                                    .as_ref()
+                                    .is_some_and(|fields| fields.get_bit(field_idx))
+                                && matches!(
+                                    expr.as_specialized(),
+                                    Some(SpecializedParquetColumnExpr::Equal(ParquetScalar::Null))
+                                );
+                            PredicateFilter {
+                                predicate: Arc::new(expr),
+                                include_values: constant.is_none() && !mask_only,
+                            }
                         });
                     PredicateColumn {
                         source: Source::Field(field_idx),
@@ -554,10 +621,6 @@ impl ParquetReadImpl {
                 })
                 .collect(),
             _ => Default::default(),
-        };
-        let rest_predicate = match staged {
-            Some(staged) if use_prefiltered => staged.rest.clone(),
-            _ => predicate.as_ref().map(|p| p.predicate.clone()),
         };
         let rest_field_indices: Arc<[usize]> = predicate_field_indices
             .iter()
@@ -605,6 +668,9 @@ impl ParquetReadImpl {
             rest_field_indices,
             passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
+            dropped_fields,
+            output_keep_mask,
+            early_dropped_fields,
             target_values_per_thread,
             runtime_range_skipper,
         }

@@ -13,6 +13,7 @@ from polars.exceptions import (
     OutOfBoundsError,
     PanicException,
     PolarsError,
+    ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -303,3 +304,21 @@ def test_scatter_offset_slice_validity_30105(dtype: PolarsDataType, value: Any) 
     # Position 1 already holds `value`, so nothing should change.
     s.scatter(1, value)
     assert s.to_list() == [None, value, None, value]
+
+
+@pytest.mark.parametrize(
+    ("indices", "values"),
+    [([0, 1, 2], [7, 8]), ([0, 2], [7, 8, 9]), ([0, 2], []), ([0], [7, 8, 9])],
+)
+def test_scatter_shape_mismatch_30713(indices: list[int], values: list[int]) -> None:
+    s = pl.Series("s", [1, 2, 3, 4])
+
+    with pytest.raises(
+        ShapeError, match=r"values length .* does not match index length .*"
+    ):
+        s.scatter(indices, values)
+
+    with pytest.raises(
+        ShapeError, match=r"values length .* does not match index length .*"
+    ):
+        s[indices] = values
