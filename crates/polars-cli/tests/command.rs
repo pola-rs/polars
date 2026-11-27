@@ -6,7 +6,14 @@ use std::process::Stdio;
 
 mod common;
 
-const FORMATS: [&str; 5] = ["table", "csv", "ndjson", "parquet", "arrow-stream"];
+const FORMATS: [&str; 6] = [
+    "preview",
+    "table",
+    "csv",
+    "ndjson",
+    "parquet",
+    "arrow-stream",
+];
 
 /// The result of [`by_category`] as CSV.
 const BY_CATEGORY: &str = "\
@@ -30,6 +37,21 @@ fn temp_dir(name: &str) -> String {
     let dir = std::env::temp_dir().join(format!("polars_cli_{name}_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir.to_str().unwrap().replace('\\', "/")
+}
+
+#[test]
+fn a_table_shows_every_row_and_value_whatever_the_environment() {
+    let long = "x".repeat(40);
+    let sql = format!("SELECT n, '{long}' AS s FROM generate_series(1, 12) AS t (n)");
+    let output = common::polars()
+        .args(["--format", "table", "-c", &sql])
+        .env("POLARS_FMT_MAX_ROWS", "2")
+        .env("POLARS_FMT_STR_LEN", "5")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let out = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(out.matches(&long).count(), 12, "{out}");
 }
 
 /// Runs the command with nothing on standard input. Returns the exit code, stdout and stderr.
@@ -367,7 +389,7 @@ fn an_unclosed_string_fails_after_the_statements_before_it() {
 fn usage_errors() {
     // The start of the message; an empty one stands for clap's own wording.
     let cases: [(&[&str], &str); 6] = [
-        (&[], "no SQL was given\n"),
+        (&[], "no SQL was given: "),
         (
             &["--format", "parquet", "-c", "SELECT 1 AS a; SELECT 2 AS b"],
             "format 'parquet' writes one file, so the last statement must be the only one that \

@@ -3,12 +3,12 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use clap::error::ErrorKind;
+use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{CommandFactory, FromArgMatches};
 use polars::polars_utils::version::{
     set_polars_lib_build_commit, set_polars_lib_name, set_polars_lib_version,
 };
-use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run};
+use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run, set_table_display};
 
 // The allocator of the Python runtime, so that both perform alike.
 #[global_allocator]
@@ -80,6 +80,8 @@ fn run_command() -> ExitCode {
         Err(error) => return report(error),
     };
     let format = args.format();
+    // SAFETY: `main` only waits for this thread, and Polars starts its threads later.
+    unsafe { set_table_display(format) };
     let read_only = args.read_only_origin();
     let verbose = args.verbose();
     let on_terminal = io::stdout().is_terminal();
@@ -134,7 +136,13 @@ fn read_script(input: Input) -> Result<Script, clap::Error> {
             )),
         },
         Input::Stdin => {
-            let no_sql = || usage_error(ErrorKind::MissingRequiredArgument, "no SQL was given");
+            let no_sql = || {
+                usage_error(
+                    ErrorKind::MissingRequiredArgument,
+                    "no SQL was given: pass it with -c, -f or on standard input \
+                    (polars has no interactive shell)",
+                )
+            };
             let mut stdin = io::stdin();
             if stdin.is_terminal() {
                 return Err(no_sql());
@@ -172,7 +180,16 @@ fn usage_error(kind: ErrorKind, message: impl std::fmt::Display) -> clap::Error 
     Args::command().error(kind, message)
 }
 
-fn report(error: clap::Error) -> ExitCode {
+fn report(mut error: clap::Error) -> ExitCode {
+    // The old `polars-cli` (up to 0.9.0) took the query as its argument.
+    if error.kind() == ErrorKind::UnknownArgument {
+        if let Some(ContextValue::String(arg)) = error.get(ContextKind::InvalidArg) {
+            if !arg.starts_with('-') {
+                let tip = "give SQL with -c, or a script file with -f".into();
+                error.insert(ContextKind::Suggested, ContextValue::StyledStrs(vec![tip]));
+            }
+        }
+    }
     // The exit code stands also when the message cannot be written.
     let _ = error.print();
     ExitCode::from(error.exit_code() as u8)
