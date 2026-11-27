@@ -357,7 +357,11 @@ pub(super) async fn parquet_file_info(
             let mut cursor = Cursor::new(memslice);
             let metadata = polars_parquet::parquet::read::read_metadata_with_decryption(
                 &mut cursor,
-                polars_io::parquet::encryption::file_decryption_properties(decryption)?.as_ref(),
+                polars_io::parquet::encryption::file_decryption_properties_for_path(
+                    decryption,
+                    first_scan_source.as_path(),
+                )?
+                .as_ref(),
                 None,
             )?;
             let mut reader = ParquetReader::new(cursor);

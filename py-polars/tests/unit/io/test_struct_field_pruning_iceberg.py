@@ -337,7 +337,7 @@ def _iceberg_table(tmp_path: Path) -> Any:
     pytest.importorskip("pyiceberg")
     from pyiceberg.catalog.sql import SqlCatalog
 
-    from tests.unit.io.test_iceberg import format_file_uri_iceberg
+    from tests.unit.io.iceberg_utils import format_file_uri_iceberg
 
     catalog = SqlCatalog(
         "default",
@@ -428,7 +428,7 @@ def test_struct_field_pruning_iceberg_default_validity_from_pruned_partition_fie
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.types import LongType, NestedField, StructType
 
-    from tests.unit.io.test_iceberg import new_iceberg_table
+    from tests.unit.io.iceberg_utils import new_iceberg_table
 
     table, catalog = new_iceberg_table(
         tmp_path,
@@ -488,7 +488,7 @@ def test_struct_field_pruning_iceberg_missing_struct_default_is_pruned(
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.types import LongType, NestedField, StructType
 
-    from tests.unit.io.test_iceberg import new_iceberg_table
+    from tests.unit.io.iceberg_utils import new_iceberg_table
 
     table, catalog = new_iceberg_table(
         tmp_path,

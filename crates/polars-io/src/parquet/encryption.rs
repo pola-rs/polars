@@ -7,13 +7,14 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
 use polars_parquet::parquet::encryption::encrypt::{
     FileEncryptionProperties, validate_encrypted_column_names,
 };
 use polars_parquet::parquet::metadata::SchemaDescriptor;
 use polars_utils::aliases::PlHashMap;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::unique_id::UniqueId;
 
 /// Creates the properties used to encrypt each Parquet file written.
@@ -32,6 +33,41 @@ pub trait EncryptionPropertiesFactory: Send + Sync {
 pub trait DecryptionPropertiesFactory: Send + Sync {
     /// Create decryption properties for a file.
     fn file_decryption_properties(&self) -> PolarsResult<Arc<FileDecryptionProperties>>;
+
+    /// Select properties by source path, returning none for a plaintext file.
+    fn file_decryption_properties_for_path(
+        &self,
+        _path: Option<&PlRefPath>,
+    ) -> PolarsResult<Option<Arc<FileDecryptionProperties>>> {
+        self.file_decryption_properties().map(Some)
+    }
+
+    /// Whether this factory also selects keys for associated deletion files.
+    fn applies_to_deletion_files(&self) -> bool {
+        false
+    }
+}
+
+struct PerFileDecryption(PlHashMap<PlRefPath, Arc<FileDecryptionProperties>>);
+
+impl DecryptionPropertiesFactory for PerFileDecryption {
+    fn file_decryption_properties(&self) -> PolarsResult<Arc<FileDecryptionProperties>> {
+        polars_bail!(InvalidOperation: "path-specific decryption requires a file path")
+    }
+
+    fn file_decryption_properties_for_path(
+        &self,
+        path: Option<&PlRefPath>,
+    ) -> PolarsResult<Option<Arc<FileDecryptionProperties>>> {
+        let path = path.ok_or_else(
+            || polars_err!(InvalidOperation: "path-specific decryption requires a file path"),
+        )?;
+        Ok(self.0.get(path).cloned())
+    }
+
+    fn applies_to_deletion_files(&self) -> bool {
+        true
+    }
 }
 
 /// File encryption properties can be specified directly and used as a factory.
@@ -182,9 +218,34 @@ impl ParquetDecryption {
         Self(Identified::new(DecryptionSource::Custom(Box::new(factory))))
     }
 
+    /// Select keys by path for data and deletion files. Unlisted paths are plaintext.
+    pub fn from_file_properties(
+        files: PlHashMap<PlRefPath, Arc<FileDecryptionProperties>>,
+    ) -> Self {
+        Self::new(PerFileDecryption(files))
+    }
+
     /// Get the properties to use for decrypting a single file.
     pub fn file_properties(&self) -> PolarsResult<Arc<FileDecryptionProperties>> {
         self.0.source.factory().file_decryption_properties()
+    }
+
+    pub fn file_properties_for_path(
+        &self,
+        path: Option<&PlRefPath>,
+    ) -> PolarsResult<Option<Arc<FileDecryptionProperties>>> {
+        self.0
+            .source
+            .factory()
+            .file_decryption_properties_for_path(path)
+    }
+
+    pub fn for_deletion_files(&self) -> Option<Self> {
+        self.0
+            .source
+            .factory()
+            .applies_to_deletion_files()
+            .then(|| self.clone())
     }
 }
 
@@ -208,6 +269,16 @@ pub fn file_decryption_properties(
     decryption
         .map(ParquetDecryption::file_properties)
         .transpose()
+}
+
+pub fn file_decryption_properties_for_path(
+    decryption: Option<&ParquetDecryption>,
+    path: Option<&PlRefPath>,
+) -> PolarsResult<Option<Arc<FileDecryptionProperties>>> {
+    decryption
+        .map(|decryption| decryption.file_properties_for_path(path))
+        .transpose()
+        .map(Option::flatten)
 }
 
 /// The serialized forms of [`ParquetEncryption`] and [`ParquetDecryption`].
@@ -496,6 +567,77 @@ mod tests {
     }
 
     #[test]
+    fn test_factory_with_source_path() {
+        let path = PlRefPath::new("data.parquet");
+        let decryption = ParquetDecryption::new(Factory);
+        for path in [None, Some(&path)] {
+            let properties = file_decryption_properties_for_path(Some(&decryption), path)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                properties.footer_key(None).unwrap().as_slice(),
+                b"0123456789012345"
+            );
+        }
+        assert!(decryption.for_deletion_files().is_none());
+        let uniform = ParquetDecryption::from(decryption.file_properties().unwrap());
+        assert!(uniform.for_deletion_files().is_none());
+        assert!(
+            file_decryption_properties_for_path(None, Some(&path))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_path_specific_properties() {
+        let data_path = PlRefPath::new("data.parquet");
+        let delete_path = PlRefPath::new("delete.parquet");
+        let plaintext_path = PlRefPath::new("plaintext.parquet");
+        let data = FileDecryptionProperties::builder(vec![1; 16])
+            .with_aad_prefix(b"data-aad".to_vec())
+            .build()
+            .unwrap();
+        let deletes = FileDecryptionProperties::builder(vec![2; 16])
+            .with_aad_prefix(b"delete-aad".to_vec())
+            .build()
+            .unwrap();
+        let decryption = ParquetDecryption::from_file_properties(
+            [(data_path.clone(), data), (delete_path.clone(), deletes)]
+                .into_iter()
+                .collect(),
+        );
+        let deletion_decryption = decryption.for_deletion_files().unwrap();
+
+        std::thread::scope(|scope| {
+            for factory in [&decryption, &deletion_decryption] {
+                for (path, key, aad) in [
+                    (&delete_path, 2, b"delete-aad".as_slice()),
+                    (&data_path, 1, b"data-aad".as_slice()),
+                    (&delete_path, 2, b"delete-aad".as_slice()),
+                ] {
+                    scope.spawn(move || {
+                        let properties =
+                            file_decryption_properties_for_path(Some(factory), Some(path))
+                                .unwrap()
+                                .unwrap();
+                        assert_eq!(properties.footer_key(None).unwrap().as_slice(), &[key; 16]);
+                        assert_eq!(properties.aad_prefix().unwrap().as_slice(), aad);
+                    });
+                }
+            }
+        });
+        assert!(
+            deletion_decryption
+                .file_properties_for_path(Some(&plaintext_path))
+                .unwrap()
+                .is_none()
+        );
+        assert!(decryption.file_properties_for_path(None).is_err());
+        assert!(decryption.file_properties().is_err());
+    }
+
+    #[test]
     fn test_thin_pointers() {
         assert_eq!(
             std::mem::size_of::<Option<ParquetDecryption>>(),
@@ -572,5 +714,24 @@ mod tests {
             ),
             "{err}"
         );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serialize_path_specific_keys_fails() {
+        let properties = FileDecryptionProperties::builder(b"0123456789012345".to_vec())
+            .build()
+            .unwrap();
+        let decryption = ParquetDecryption::from_file_properties(
+            [(PlRefPath::new("data.parquet"), properties)]
+                .into_iter()
+                .collect(),
+        );
+        let mut sharing = EncryptionSharing::default();
+        let shared = sharing.share_decryption(decryption.clone());
+        assert_eq!(shared, decryption);
+        let err = serde_json::to_string(&shared).unwrap_err();
+        assert!(err.to_string().contains("created by a custom factory"));
+        assert!(!err.to_string().contains("0123456789012345"));
     }
 }

@@ -19,7 +19,7 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config::verbose;
 use polars_core::error::{PolarsResult, feature_gated};
-use polars_io::parquet::encryption::{ParquetDecryption, file_decryption_properties};
+use polars_io::parquet::encryption::{ParquetDecryption, file_decryption_properties_for_path};
 use polars_io::parquet::metadata::FileMetadataRef;
 
 use crate::dsl::MetadataPerSource;
@@ -230,7 +230,7 @@ pub(crate) async fn read_parquet_metadata(
         let mut cursor = Cursor::new(memslice);
         let md = polars_parquet::parquet::read::read_metadata_with_decryption(
             &mut cursor,
-            file_decryption_properties(decryption)?.as_ref(),
+            file_decryption_properties_for_path(decryption, source.as_path())?.as_ref(),
             None,
         )?;
         Ok(std::sync::Arc::new(md))
@@ -258,7 +258,7 @@ pub(crate) async fn read_parquet_num_rows(
         let mut cursor = Cursor::new(memslice);
         polars_parquet::parquet::read::read_num_rows(
             &mut cursor,
-            file_decryption_properties(decryption)?.as_ref(),
+            file_decryption_properties_for_path(decryption, source.as_path())?.as_ref(),
         )
         .map_err(Into::into)
     }
