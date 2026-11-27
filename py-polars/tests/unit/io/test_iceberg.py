@@ -3494,6 +3494,7 @@ def _sink_uncommitted(
     lf: pl.LazyFrame | None = None,
     *,
     mode: Literal["append", "overwrite"] = "append",
+    schema_mode: Literal["merge", "overwrite"] | None = None,
 ) -> tuple[IcebergSinkState, list[Any]]:
     if lf is None:
         lf = pl.LazyFrame({"a": [42]})
@@ -3505,7 +3506,7 @@ def _sink_uncommitted(
 
     with monkeypatch.context() as m:
         m.setattr(IcebergSinkState, "commit", commit)
-        lf.sink_iceberg(tbl, mode=mode)
+        lf.sink_iceberg(tbl, mode=mode, schema_mode=schema_mode)
 
     [(state, sinked_files)] = captured
     return state, sinked_files
@@ -3814,17 +3815,21 @@ def test_sink_iceberg_commit_twin_in_recreated_table(
         tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
     )
     state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
-    original_uuid = tbl.metadata.table_uuid
     original_metadata_location = tbl.metadata_location
     catalog.drop_table(tbl.name())
     catalog.create_table(tbl.name(), tbl.schema())
-    _twin(state).commit(sinked_files)
 
-    with pytest.raises(ValueError, match="Table UUID does not match"):
-        state.commit(sinked_files)
+    # the files were written for the dropped table: the reloaded commit and the one
+    # with the caller's table refuse
+    for commit in (_twin(state).commit, state.commit):
+        with pytest.raises(
+            pyiceberg.exceptions.ValidationException,
+            match="dropped and created again",
+        ):
+            commit(sinked_files)
 
-    assert tbl.metadata.table_uuid == original_uuid
     assert tbl.metadata_location == original_metadata_location
+    assert _rows(catalog.load_table(tbl.name())) == []
 
 
 @pytest.mark.write_disk
@@ -3942,6 +3947,210 @@ def test_sink_iceberg_commit_retries_after_concurrent_foreign_write(
 
     assert calls.call_count == 2
     assert _rows(tbl) == [7, 42]
+
+
+@pytest.mark.parametrize(
+    ("mode", "change", "retries"),
+    [
+        ("append", "schema-overwrite", "4"),
+        ("append", "add-column", "4"),
+        ("overwrite", "schema-overwrite", "4"),
+        ("overwrite", "add-column", "4"),
+        ("append", "add-column", "0"),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_refuses_concurrent_schema_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: Literal["append", "overwrite"],
+    change: str,
+    retries: str,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        properties={
+            "commit.retry.min-wait-ms": "0",
+            "commit.retry.num-retries": retries,
+        },
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl, mode=mode)
+    other = tbl.catalog.load_table(tbl.name())
+    if change == "schema-overwrite":
+        # column 'a' gets a new field id
+        pl.LazyFrame({"a": [7]}).sink_iceberg(
+            other, mode="overwrite", schema_mode="overwrite"
+        )
+    else:
+        with other.update_schema() as update:
+            update.add_column("b", LongType())
+
+    with pytest.raises(
+        pyiceberg.exceptions.ValidationException, match="changed during the write"
+    ):
+        state.commit(sinked_files)
+
+    # the refusal refreshed the table: a rerun with it lands
+    rerun = pl.LazyFrame({"a": [42]})
+    if change == "add-column":
+        rerun = rerun.with_columns(b=pl.lit(None, pl.Int64))
+    rerun.sink_iceberg(tbl, mode="append")
+    assert _rows(tbl) == ([7, 42] if change == "schema-overwrite" else [42])
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_reloaded_commit_does_not_create_dropped_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    state.create_if_not_exists = True
+    catalog.drop_table(tbl.name())
+
+    with pytest.raises(pyiceberg.exceptions.NoSuchTableError):
+        _twin(state).commit(sinked_files)
+
+    assert not catalog.table_exists(tbl.name())
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_reloaded_commit_refuses_schema_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    with tbl.update_schema() as update:
+        update.add_column("b", LongType())
+
+    # the commit loads the table as it is now
+    with pytest.raises(
+        pyiceberg.exceptions.ValidationException, match="schema changed"
+    ):
+        _twin(state).commit(sinked_files)
+
+    assert _rows(tbl) == []
+
+
+@pytest.mark.parametrize("mode", ["append", "overwrite"])
+@pytest.mark.write_disk
+def test_sink_iceberg_merge_commit_refuses_reused_schema_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: Literal["append", "overwrite"],
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        properties={"commit.retry.min-wait-ms": "0"},
+    )
+    # 'c' is written with field id 2
+    state, sinked_files = _sink_uncommitted(
+        monkeypatch,
+        tbl,
+        pl.LazyFrame({"a": [1], "c": [2]}),
+        mode=mode,
+        schema_mode="merge",
+    )
+    other = tbl.catalog.load_table(tbl.name())
+    with other.update_schema() as update:
+        update.add_column("x", LongType())
+    with other.update_schema(allow_incompatible_changes=True) as update:
+        update.delete_column("x")
+    # the schema id is back, field id 2 is taken
+    assert other.metadata.current_schema_id == tbl.metadata.current_schema_id
+
+    with pytest.raises(
+        pyiceberg.exceptions.ValidationException, match="schema changed"
+    ):
+        state.commit(sinked_files)
+
+    assert _rows(tbl) == []
+
+
+@pytest.mark.write_disk
+def test_delete_iceberg_refusal_refreshes_table(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        properties={"commit.retry.min-wait-ms": "0"},
+    )
+    pl.DataFrame({"a": [1, 2]}).write_iceberg(tbl, mode="append")
+    other = tbl.catalog.load_table(tbl.name())
+    with other.update_spec() as update:
+        update.add_identity("a")
+
+    # all rows of the file match: dropped from metadata
+    with pytest.raises(
+        pyiceberg.exceptions.ValidationException, match="partition spec changed"
+    ):
+        pl.delete_iceberg(tbl, pl.col("a") >= 1)
+
+    # a rerun with the refreshed table deletes
+    pl.delete_iceberg(tbl, pl.col("a") >= 1)
+    assert _rows(tbl) == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "change", "retries"),
+    [
+        ("append", "schema-overwrite", "4"),
+        # PyIceberg refuses an overwrite onto a moved ref itself
+        ("overwrite", "column-replaced", "4"),
+        ("append", "partition-spec", "4"),
+        ("overwrite", "partition-spec", "4"),
+        ("append", "schema-overwrite", "0"),
+    ],
+)
+@pytest.mark.write_disk
+def test_write_iceberg_refuses_concurrent_layout_change(
+    tmp_path: Path, mode: Literal["append", "overwrite"], change: str, retries: str
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        properties={
+            "commit.retry.min-wait-ms": "0",
+            "commit.retry.num-retries": retries,
+        },
+    )
+    pl.DataFrame({"a": [1]}).write_iceberg(tbl, mode="append")
+    other = tbl.catalog.load_table(tbl.name())
+    if change == "schema-overwrite":
+        pl.LazyFrame({"a": [7]}).sink_iceberg(
+            other, mode="overwrite", schema_mode="overwrite"
+        )
+    elif change == "column-replaced":
+        # a new field id for 'a', without a snapshot
+        with other.transaction() as tx:
+            with tx.update_schema(allow_incompatible_changes=True) as update:
+                update.delete_column("a")
+            with tx.update_schema() as update:
+                update.add_column("a", LongType())
+    else:
+        with other.update_spec() as update:
+            update.add_identity("a")
+
+    with pytest.raises(
+        pyiceberg.exceptions.ValidationException, match="changed during the write"
+    ):
+        pl.DataFrame({"a": [42]}).write_iceberg(tbl, mode=mode)
+
+    # the refusal refreshed the table: a rerun with it lands
+    pl.DataFrame({"a": [42]}).write_iceberg(tbl, mode="append")
+    tbl.refresh()
+    expected = {
+        "schema-overwrite": [7, 42],
+        "column-replaced": [42, None],
+        "partition-spec": [1, 42],
+    }[change]
+    assert pl.scan_iceberg(tbl).collect()["a"].sort(nulls_last=True).to_list() == (
+        expected
+    )
 
 
 def _expire_first_snapshot(tbl: pyiceberg.table.Table) -> None:

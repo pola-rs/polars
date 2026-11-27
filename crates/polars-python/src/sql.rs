@@ -215,6 +215,7 @@ impl PySQLContext {
             CatalogStatement::CreateTable {
                 name,
                 table,
+                or_replace,
                 if_not_exists,
                 schema,
                 query,
@@ -227,6 +228,7 @@ impl PySQLContext {
                 dict.set_item("name", name)?;
                 dict.set_item("catalog", table.catalog)?;
                 dict.set_item("identifier", table.identifier)?;
+                dict.set_item("or_replace", or_replace)?;
                 dict.set_item("if_not_exists", if_not_exists)?;
                 dict.set_item("schema", Wrap(schema))?;
                 dict.set_item("query", query)?;

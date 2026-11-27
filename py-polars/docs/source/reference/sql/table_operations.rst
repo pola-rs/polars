@@ -558,7 +558,32 @@ creates the table in the catalog.
   :meth:`LazyFrame.sink_iceberg`: write properties such as
   ``write.parquet.compression-codec`` are stored, but not applied to them.
 - ``IF NOT EXISTS`` leaves an existing table as it is; its query is checked, but not run.
-- ``LIKE`` and ``OR REPLACE`` are not supported for catalog tables.
+- ``OR REPLACE`` replaces an existing table in one commit, or creates an absent one. The
+  query may read the table itself.
+
+  - Replaced: the columns, partitioning (``PARTITION BY``, else none), sort order (none)
+    and rows. ``NOT NULL``, identifier fields and column comments come from the
+    statement.
+  - Kept: the history, branches, tags, and the properties ``WITH`` does not set. A column
+    keeps its field id if its type stays the same or widens (``INT`` to ``BIGINT``,
+    ``FLOAT`` to ``DOUBLE``, a wider ``DECIMAL`` of the same scale).
+  - If another writer changes the table meanwhile, the statement fails: run it again.
+  - These need ``DROP TABLE`` and ``CREATE TABLE`` instead:
+
+    - a v3 table, or another ``LOCATION`` or ``'format-version'``
+    - new partitioning on a v1 table
+    - a column named like another column's partition field, as when an identity
+      partition column changes type
+    - on a table with a name mapping, a type change that needs a new field id
+
+- ``LIKE`` is not supported for catalog tables.
+
+.. code-block:: sql
+
+    CREATE OR REPLACE TABLE lake.sales.daily_totals
+    PARTITION BY (day)
+    AS SELECT ordered_at::DATE AS day, SUM(amount) AS total
+    FROM lake.sales.orders GROUP BY 1
 
 .. _create_view:
 

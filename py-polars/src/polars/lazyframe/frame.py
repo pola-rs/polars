@@ -3238,6 +3238,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         each new data file. Existing files are not rewritten. Sorting materializes
         the incoming data in memory. This does not guarantee a globally sorted table
         scan.
+
+        If the table's schema or partition spec changed after the table was loaded,
+        for example by another writer during the write, the commit raises a
+        `ValidationException`. A `Table` target then has the current state, so the
+        write can run again, with data for the current schema.
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
