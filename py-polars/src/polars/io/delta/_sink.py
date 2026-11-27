@@ -962,8 +962,7 @@ class DeltaSinkState:
         keeps until `delta.setTransactionRetentionDuration` expires it.
 
         Returns the version that the commit created. It is null when the commit was
-        skipped (`mode="ignore"`), when the version is no longer in the history, or
-        for a sink of `write_delta` or `sink_delta`, which don't report it.
+        skipped (`mode="ignore"`), or when the version is no longer in the history.
         """
         import polars as pl
         import polars._utils.logging
@@ -1087,9 +1086,6 @@ class DeltaSinkState:
                 partition_by=self.partition_columns or None,
                 commit_properties=commit_properties,
             )
-            if routed:
-                # Not looked up: `write_delta` and `sink_delta` don't report it.
-                return None
             return self._committed_version(table, read_version)
         except Exception as e:
             # The commit may have landed, e.g. when a post-commit hook failed, or a
@@ -1122,11 +1118,11 @@ class DeltaSinkState:
         """The version this sink committed, from the commit info in the history.
 
         Reads the commit info of the latest `limit` versions, or of all versions.
+        Returns None if none of them is the sink's commit.
         """
-        with contextlib.suppress(Exception):
-            for entry in table.history(limit):
-                if entry.get(_SINK_UUID_PROPERTY) == self.sink_uuid_str:
-                    return entry.get("version")
+        for entry in table.history(limit):
+            if entry.get(_SINK_UUID_PROPERTY) == self.sink_uuid_str:
+                return entry.get("version")
         return None
 
     def _committed_version(

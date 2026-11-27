@@ -4201,6 +4201,32 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
     assert new_md_path == tbl.metadata_location
 
 
+@pytest.mark.write_disk
+def test_sink_iceberg_committed_snapshot_id(tmp_path: Path) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+
+    sink_state = IcebergSinkState.new(tbl)
+    sink_state.attach_sink(pl.LazyFrame({"a": 1})).collect()
+    first_id = sink_state.committed_snapshot_id()
+    assert first_id is not None
+
+    pl.LazyFrame({"a": 2}).sink_iceberg(tbl, mode="append")
+
+    tbl = catalog.load_table(tbl.name())
+    assert first_id != tbl.metadata.current_snapshot_id
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, snapshot_id=first_id).collect(), pl.DataFrame({"a": 1})
+    )
+
+    # A retried commit (e.g. on another process) lands nothing, and reports the
+    # sink's own snapshot rather than the table's current one.
+    retried = pickle.loads(pickle.dumps(sink_state))
+    retried.commit([])
+    assert retried.committed_snapshot_id() == first_id
+
+
 def _sql_catalog(tmp_path: Path, **properties: Any) -> SqlCatalog:
     catalog = SqlCatalog(
         "default",
