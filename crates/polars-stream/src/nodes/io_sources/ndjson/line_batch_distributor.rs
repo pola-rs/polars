@@ -18,6 +18,7 @@ pub(super) struct LineBatchDistributor {
     pub(super) reader: ReaderSource,
     pub(super) reverse: bool,
     pub(super) row_skipper: RowSkipper,
+    pub(super) row_limit: Option<usize>,
     pub(super) line_batch_distribute_tx: distributor_channel::Sender<LineBatch>,
     pub(super) compression: Option<SupportedCompression>,
     pub(super) uncompressed_file_size_hint: Option<usize>,
@@ -49,6 +50,7 @@ impl LineBatchDistributor {
             reader,
             self.reverse,
             self.row_skipper,
+            self.row_limit,
             self.uncompressed_file_size_hint,
             use_prefetch_l2,
             self.verbose,
@@ -71,6 +73,7 @@ impl LineBatchDistributor {
             reader: reader_source,
             reverse,
             row_skipper,
+            row_limit,
             line_batch_distribute_tx: mut line_batch_tx,
             compression,
             uncompressed_file_size_hint,
@@ -91,6 +94,7 @@ impl LineBatchDistributor {
                     reader,
                     reverse,
                     row_skipper,
+                    row_limit,
                     uncompressed_file_size_hint,
                     use_prefetch_l2,
                     verbose,
@@ -117,6 +121,7 @@ struct LineBatchProducer {
     reader: ByteSourceReader<ReaderSource>,
     reverse: bool,
     row_skipper: RowSkipper,
+    rows_remaining: Option<usize>,
     use_prefetch_l2: bool,
     fixed_read_size: Option<NonZeroUsize>,
     full_input_opt: Option<(Buffer<u8>, usize)>,
@@ -131,6 +136,7 @@ impl LineBatchProducer {
         mut reader: ByteSourceReader<ReaderSource>,
         reverse: bool,
         row_skipper: RowSkipper,
+        rows_remaining: Option<usize>,
         uncompressed_file_size_hint: Option<usize>,
         use_prefetch_l2: bool,
         verbose: bool,
@@ -177,6 +183,7 @@ impl LineBatchProducer {
             reader,
             reverse,
             row_skipper,
+            rows_remaining,
             use_prefetch_l2,
             fixed_read_size,
             full_input_opt,
@@ -188,7 +195,10 @@ impl LineBatchProducer {
     }
 
     fn next_batch(&mut self) -> PolarsResult<Option<LineBatch>> {
-        if self.finished {
+        if self.finished
+            || (self.rows_remaining == Some(0)
+                && self.row_skipper.n_rows_skipped >= self.row_skipper.cfg_n_rows_to_skip)
+        {
             return Ok(None);
         }
 
@@ -220,13 +230,30 @@ impl LineBatchProducer {
             }
 
             let is_eof = bytes_read == 0;
-            let (batch, unconsumed_offset) = process_chunk(
+            let (mut batch, unconsumed_offset) = process_chunk(
                 mem_slice.clone(),
                 is_eof,
                 self.reverse,
                 &mut self.chunk_idx,
                 &mut self.row_skipper,
             );
+
+            if let Some(remaining) = self.rows_remaining.as_mut() {
+                if *remaining == 0 {
+                    batch = None;
+                } else if let Some(batch) = batch.as_mut() {
+                    if let Some(end) = take_rows(&batch.bytes, remaining, self.row_skipper.is_line)
+                    {
+                        batch.bytes = batch.bytes.clone().sliced(..end);
+                    }
+                }
+                if *remaining == 0
+                    && self.row_skipper.n_rows_skipped >= self.row_skipper.cfg_n_rows_to_skip
+                {
+                    self.finished = true;
+                    return Ok(batch);
+                }
+            }
 
             if is_eof {
                 self.finished = true;
@@ -345,25 +372,14 @@ impl RowSkipper {
     }
 
     fn _skip_rows_forward(&mut self, chunk: Buffer<u8>) -> Buffer<u8> {
-        let len = chunk.len();
-        let mut offset = 0;
+        let mut remaining = self.cfg_n_rows_to_skip - self.n_rows_skipped;
+        let end = take_rows(&chunk, &mut remaining, self.is_line);
+        self.n_rows_skipped = self.cfg_n_rows_to_skip - remaining;
 
-        while let Some(pos) = memchr::memchr(LF, &chunk[offset..]) {
-            let prev_offset = offset;
-            offset = cmp::min(offset + pos + 1, len);
-
-            if !(self.is_line)(&chunk[prev_offset..offset]) {
-                continue;
-            }
-
-            self.n_rows_skipped += 1;
-
-            if self.n_rows_skipped >= self.cfg_n_rows_to_skip {
-                return chunk.sliced(offset..len);
-            }
+        match end {
+            Some(end) => chunk.sliced(end..),
+            None => Buffer::new(),
         }
-
-        Buffer::new()
     }
 
     fn _skip_rows_backward(&mut self, chunk: Buffer<u8>) -> Buffer<u8> {
@@ -390,5 +406,93 @@ impl RowSkipper {
         self.n_rows_skipped += !chunk.is_empty() as usize;
 
         Buffer::new()
+    }
+}
+
+// Advances through complete lines, with an optional final unterminated line at EOF.
+fn take_rows(chunk: &[u8], remaining: &mut usize, is_line: fn(&[u8]) -> bool) -> Option<usize> {
+    let mut start = 0;
+    for end in memchr::memchr_iter(LF, chunk) {
+        let line = &chunk[start..end];
+        start = end + 1;
+        if is_line(line) {
+            *remaining -= 1;
+            if *remaining == 0 {
+                return Some(start);
+            }
+        }
+    }
+    if start < chunk.len() && is_line(&chunk[start..]) {
+        *remaining -= 1;
+        if *remaining == 0 {
+            return Some(chunk.len());
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use polars_io::prelude::is_json_line;
+
+    use super::*;
+
+    fn producer(bytes: &[u8], skip: usize, limit: Option<usize>) -> LineBatchProducer {
+        let reader = ReaderSource::Memory(Cursor::new(Buffer::from_vec(bytes.to_vec())));
+        LineBatchProducer::new(
+            ByteSourceReader::try_new(reader, None).unwrap(),
+            false,
+            RowSkipper {
+                cfg_n_rows_to_skip: skip,
+                n_rows_skipped: 0,
+                reverse: false,
+                is_line: is_json_line,
+            },
+            limit,
+            Some(bytes.len()),
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn bounded_positive_slice_never_emits_the_trailing_line() {
+        let mut producer = producer(b"\r\n1\r\n \t\r\n2\r\n3\nmalformed\n", 1, Some(2));
+        let batch = producer.next_batch().unwrap().unwrap();
+        assert_eq!(&*batch.bytes, b" \t\r\n2\r\n3\n");
+        assert!(producer.next_batch().unwrap().is_none());
+        assert_eq!(producer.n_rows_skipped(), 1);
+    }
+
+    #[test]
+    fn bounded_positive_slice_accepts_unterminated_last_row() {
+        let mut producer = producer(b"1\r\n \r\n2", 1, Some(1));
+        let mut selected = Vec::new();
+        while let Some(batch) = producer.next_batch().unwrap() {
+            selected.extend_from_slice(&batch.bytes);
+        }
+        assert_eq!(selected, b" \r\n2");
+        assert_eq!(producer.n_rows_skipped(), 1);
+    }
+
+    #[test]
+    fn zero_limit_stops_without_emitting_rows() {
+        let mut producer = producer(b"1\n2\n", 0, Some(0));
+        assert!(producer.next_batch().unwrap().is_none());
+        assert_eq!(producer.chunk_idx, 0);
+    }
+
+    #[test]
+    fn no_limit_preserves_remaining_rows_for_counting() {
+        let mut producer = producer(b"1\n2\n3", 1, None);
+        let mut remaining = Vec::new();
+        while let Some(batch) = producer.next_batch().unwrap() {
+            remaining.extend_from_slice(&batch.bytes);
+        }
+        assert_eq!(remaining, b"2\n3");
+        assert_eq!(producer.n_rows_skipped(), 1);
     }
 }
