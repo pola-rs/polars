@@ -12,8 +12,8 @@ use polars_parquet::arrow::geo::{GEO_KEY, validate_geo_schema};
 use polars_parquet::write::{
     CompressedPage, Encoding, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
 };
-use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
+use polars_utils::{IdxSize, UnitVec};
 
 use crate::nodes::io_sinks::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
 use crate::nodes::io_sinks::components::size::{SplitMode, TargetSinkMorselSize};
@@ -88,9 +88,11 @@ impl InitializedState {
     }
 }
 
-struct EncodedRowGroup {
-    num_rows: usize,
-    data: Vec<Vec<CompressedPage>>,
+/// The row groups encoded from one morsel, more than one where its arrow MAP arrays would
+/// overflow their `i32` offsets.
+struct EncodedRowGroups {
+    /// The number of rows and the pages of each leaf column, per row group.
+    row_groups: UnitVec<(usize, Vec<Vec<CompressedPage>>)>,
     morsel_permit: SinkMorselPermit,
 }
 
@@ -145,7 +147,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         };
 
         let (encoded_row_group_tx, encoded_row_group_rx) = tokio::sync::mpsc::channel::<
-            executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>,
+            executor::AbortOnDropHandle<PolarsResult<EncodedRowGroups>>,
         >(num_pipelines.get());
 
         let key_value_metadata = self.options.key_value_metadata.clone();

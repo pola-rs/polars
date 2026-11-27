@@ -21,7 +21,9 @@ use polars_arrow::array::new_null_array;
 use polars_compute::cast::cast_unchecked;
 use polars_compute::rebuild_list::rebuild_list_shallow;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
-pub(crate) use split::{arrow_export_cut, contains_arrow_map, map_spans_fit};
+pub(crate) use split::{
+    MAX_MAP_ENTRIES, arrow_export_cut, contains_arrow_map, map_spans_fit, max_map_span,
+};
 
 use crate::prelude::{
     Array, ArrayRef, ArrowDataType, ArrowField, BinaryViewArray, CompatLevel, DataType, ListArray,

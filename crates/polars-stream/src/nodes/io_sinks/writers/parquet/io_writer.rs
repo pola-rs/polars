@@ -12,12 +12,12 @@ use polars_parquet::write::{
 };
 
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
-use crate::nodes::io_sinks::writers::parquet::EncodedRowGroup;
+use crate::nodes::io_sinks::writers::parquet::EncodedRowGroups;
 
 pub struct IOWriter {
     pub file: FileOpenTaskHandle,
     pub encoded_row_group_rx:
-        tokio::sync::mpsc::Receiver<executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>>,
+        tokio::sync::mpsc::Receiver<executor::AbortOnDropHandle<PolarsResult<EncodedRowGroups>>>,
     pub arrow_schema: ArrowSchemaRef,
     pub schema_descriptor: Arc<SchemaDescriptor>,
     pub write_options: WriteOptions,
@@ -63,14 +63,14 @@ impl IOWriter {
         );
 
         while let Some(handle) = encoded_row_group_rx.recv().await {
-            let EncodedRowGroup {
-                num_rows,
-                data,
+            let EncodedRowGroups {
+                row_groups,
                 morsel_permit,
             } = handle.await?;
-            assert_eq!(data.len(), num_leaf_columns);
-            parquet_writer.write_row_group(num_rows as u64, &data)?;
-            drop(data);
+            for (num_rows, data) in row_groups {
+                assert_eq!(data.len(), num_leaf_columns);
+                parquet_writer.write_row_group(num_rows as u64, &data)?;
+            }
             drop(morsel_permit);
         }
 
