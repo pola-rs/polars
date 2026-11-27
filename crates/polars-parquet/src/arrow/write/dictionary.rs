@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use polars_arrow::array::{
-    Array, BinaryArray, BinaryViewArray, DictionaryArray, DictionaryKey, PrimitiveArray,
-    Utf8ViewArray,
+    Array, BinaryArray, BinaryViewArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray,
+    MutableDictionaryArray, PrimitiveArray, TryPush, Utf8ViewArray,
 };
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::compute::aggregate::estimated_bytes_size;
@@ -25,7 +25,8 @@ use super::primitive::{
     build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
 };
 use super::{
-    EncodeNullability, Nested, WriteOptions, binview, nested, row_slice_ranges, slice_parquet_array,
+    EncodeNullability, LeafSizes, Nested, WriteOptions, binview, max_page_size, nested,
+    row_slice_ranges, slice_parquet_array,
 };
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::utils;
@@ -200,6 +201,44 @@ where
     )
 }
 
+#[derive(Clone, Copy)]
+struct DictionaryLimits {
+    max_values: usize,
+    max_entries: usize,
+    max_bytes: usize,
+}
+
+// Bounds dictionary structures per nested leaf, not the process's total memory.
+const NESTED_DICTIONARY_LIMITS: DictionaryLimits = DictionaryLimits {
+    max_values: 1 << 22,
+    max_entries: 1 << 19,
+    max_bytes: 32 << 20,
+};
+
+fn bounded_view_dictionary(
+    array: &BinaryViewArray,
+    limits: DictionaryLimits,
+) -> Option<DictionaryArray<u32>> {
+    if array.len() > limits.max_values {
+        return None;
+    }
+    let mut dictionary = MutableDictionaryArray::<u32, MutableBinaryViewArray<[u8]>>::new(false);
+    dictionary.reserve(array.len());
+    for value in array.iter() {
+        if let Some(value) = value {
+            let values = dictionary.values();
+            // Conservatively reserve room for a new value before the builder copies it.
+            if values.len() >= limits.max_entries
+                || value.len() > limits.max_bytes.saturating_sub(values.total_bytes_len())
+            {
+                return None;
+            }
+        }
+        dictionary.try_push(value).ok()?;
+    }
+    Some(dictionary.into())
+}
+
 pub(crate) fn encode_as_dictionary_optional(
     array: &dyn Array,
     nested: &[Nested],
@@ -252,7 +291,22 @@ pub(crate) fn encode_as_dictionary_optional(
         DictionaryDecision::TryAgain => {},
     }
 
-    let dtype = Box::new(array.dtype().clone());
+    let nested_view = if nested.len() > 1 {
+        match array.dtype() {
+            ArrowDataType::Utf8View => {
+                Some(array.as_any().downcast_ref::<Utf8ViewArray>()?.to_binview())
+            },
+            ArrowDataType::BinaryView => {
+                Some(array.as_any().downcast_ref::<BinaryViewArray>()?.clone())
+            },
+            _ => None,
+        }
+    } else {
+        None
+    };
+    if nested_view.is_some() && array.len() > NESTED_DICTIONARY_LIMITS.max_values {
+        return None;
+    }
 
     let estimated_cardinality = polars_compute::cardinality::estimate_cardinality(array);
 
@@ -260,7 +314,13 @@ pub(crate) fn encode_as_dictionary_optional(
         return None;
     }
 
+    if let Some(array) = nested_view {
+        let dictionary = bounded_view_dictionary(&array, NESTED_DICTIONARY_LIMITS)?;
+        return Some(packed_pages(&dictionary));
+    }
+
     // This does the group by.
+    let dtype = Box::new(array.dtype().clone());
     let array = polars_compute::cast::cast(
         array,
         &ArrowDataType::Dictionary(IntegerType::UInt32, dtype, false),
@@ -391,28 +451,43 @@ fn serialize_keys<K: DictionaryKey>(
     options: WriteOptions,
 ) -> DynIter<'static, PolarsResult<Page>> {
     let number_of_rows = nested[0].len();
-    let byte_size = estimated_bytes_size(array.keys());
+    let level_bytes = nested::level_bytes_per_value(nested);
+    let ranges = (level_bytes > 0).then(|| {
+        LeafSizes::FixedWidth(size_of::<u32>()).slice_ranges(
+            nested,
+            number_of_rows,
+            max_page_size(options),
+            level_bytes,
+        )
+    });
+    let byte_size = if ranges.is_none() {
+        estimated_bytes_size(array.keys())
+    } else {
+        0
+    };
 
     let array = array.clone();
     let nested = nested.to_vec();
 
-    let pages =
-        row_slice_ranges(number_of_rows, byte_size, options).map(move |(offset, length)| {
-            let mut sliced_array = array.clone();
-            let mut sliced_nested = nested.clone();
-            slice_parquet_array(&mut sliced_array, &mut sliced_nested, offset, length);
+    let to_page = move |(offset, length)| {
+        let mut sliced_array = array.clone();
+        let mut sliced_nested = nested.clone();
+        slice_parquet_array(&mut sliced_array, &mut sliced_nested, offset, length);
 
-            serialize_keys_range(
-                &sliced_array,
-                &type_,
-                &sliced_nested,
-                statistics.clone(),
-                value_lengths.as_deref(),
-                options,
-            )
-        });
+        serialize_keys_range(
+            &sliced_array,
+            &type_,
+            &sliced_nested,
+            statistics.clone(),
+            value_lengths.as_deref(),
+            options,
+        )
+    };
 
-    DynIter::new(pages)
+    match ranges {
+        Some(ranges) => DynIter::new(ranges.into_iter().map(to_page)),
+        None => DynIter::new(row_slice_ranges(number_of_rows, byte_size, options).map(to_page)),
+    }
 }
 
 fn serialize_keys_range<K: DictionaryKey>(
@@ -672,5 +747,110 @@ fn dictionary_pages<K: DictionaryKey>(
             ))
         },
         _ => polars_bail!(nyi = "Dictionary arrays only support dictionary encoding"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LIMITS: DictionaryLimits = DictionaryLimits {
+        max_values: 8,
+        max_entries: 4,
+        max_bytes: 16,
+    };
+
+    #[test]
+    fn bounded_dictionary_preserves_sliced_values_and_nulls() {
+        let array = BinaryViewArray::from_slice([
+            Some(&b"outside the dictionary byte budget"[..]),
+            Some(&b""[..]),
+            None,
+            Some(&b"\xff\0"[..]),
+            Some("é".as_bytes()),
+            Some(&b"\xff\0"[..]),
+        ])
+        .sliced(1, 5);
+        let dictionary = bounded_view_dictionary(&array, LIMITS).unwrap();
+        assert_eq!(dictionary.values().len(), 3);
+        assert_eq!(dictionary.keys().null_count(), 1);
+        let values = dictionary
+            .values()
+            .as_any()
+            .downcast_ref::<BinaryViewArray>()
+            .unwrap();
+        let actual = dictionary
+            .keys()
+            .iter()
+            .map(|key| key.map(|key| values.value(*key as usize)))
+            .collect::<Vec<_>>();
+        assert_eq!(actual, array.iter().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn bounded_dictionary_limits_value_slots_including_nulls() {
+        let limits = DictionaryLimits {
+            max_values: 3,
+            ..LIMITS
+        };
+        let array = BinaryViewArray::from_slice([None::<&[u8]>; 4]);
+        assert!(bounded_view_dictionary(&array, limits).is_none());
+        assert!(bounded_view_dictionary(&array.sliced(0, 3), limits).is_some());
+    }
+
+    #[test]
+    fn bounded_dictionary_limits_entries_and_bytes() {
+        let array = BinaryViewArray::from_slice_values([b"ab", b"cd", b"ef"]);
+        let limits = DictionaryLimits {
+            max_entries: 2,
+            ..LIMITS
+        };
+        assert!(bounded_view_dictionary(&array, limits).is_none());
+        assert!(bounded_view_dictionary(&array.clone().sliced(0, 2), limits).is_some());
+        let limits = DictionaryLimits {
+            max_bytes: 4,
+            ..LIMITS
+        };
+        assert!(bounded_view_dictionary(&array, limits).is_none());
+        assert!(bounded_view_dictionary(&array.sliced(0, 2), limits).is_some());
+        let oversized = BinaryViewArray::from_slice_values([b"12345"]);
+        assert!(bounded_view_dictionary(&oversized, limits).is_none());
+    }
+
+    #[test]
+    fn bounded_dictionary_conservatively_falls_back_at_capacity() {
+        let repeats = BinaryViewArray::from_slice_values([b"ab", b"ab"]);
+        assert!(bounded_view_dictionary(&repeats, LIMITS).is_some());
+        assert!(
+            bounded_view_dictionary(
+                &repeats,
+                DictionaryLimits {
+                    max_entries: 1,
+                    ..LIMITS
+                }
+            )
+            .is_none()
+        );
+        assert!(
+            bounded_view_dictionary(
+                &repeats,
+                DictionaryLimits {
+                    max_bytes: 2,
+                    ..LIMITS
+                }
+            )
+            .is_none()
+        );
+        assert!(
+            bounded_view_dictionary(
+                &BinaryViewArray::new_empty(ArrowDataType::BinaryView),
+                DictionaryLimits {
+                    max_values: 0,
+                    max_entries: 0,
+                    max_bytes: 0
+                }
+            )
+            .is_some()
+        );
     }
 }
