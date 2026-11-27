@@ -1343,6 +1343,8 @@ def _call_catalog_procedure(
         return _call_rewrite_data_files(catalog, stmt, predicate_of, storage_options)
     if stmt["procedure"] == "expire_snapshots":
         return _call_expire_snapshots(catalog, stmt)
+    if stmt["procedure"] == "remove_orphan_files":
+        return _call_remove_orphan_files(catalog, stmt)
     msg = f"unsupported procedure {stmt['procedure']!r}"
     raise NotImplementedError(msg)
 
@@ -1469,6 +1471,75 @@ def _call_expire_snapshots(
     counts = dataclasses.asdict(deleted)
     return DataFrame(
         {c: [n] for c, n in counts.items()}, schema=dict.fromkeys(counts, Int64)
+    )
+
+
+def _call_remove_orphan_files(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> DataFrame:
+    from polars.datatypes import String
+    from polars.io.iceberg._maintenance import remove_orphan_files
+
+    args = stmt["args"]
+    # Checked before loading the table.
+    for arg, kind in (
+        ("location", str),
+        ("dry_run", bool),
+        ("max_concurrent_deletes", int),
+        ("equal_schemes", dict),
+        ("equal_authorities", dict),
+        ("prefix_mismatch_mode", str),
+        ("prefix_listing", bool),
+        ("stream_results", bool),
+    ):
+        value = args.get(arg)
+        if value is not None and (
+            not isinstance(value, kind) or (kind is int and isinstance(value, bool))
+        ):
+            msg = (
+                f"CALL remove_orphan_files: `{arg}` must be {kind.__name__}, "
+                f"found {value!r}"
+            )
+            raise SQLInterfaceError(msg)
+    if (deletes := args.get("max_concurrent_deletes")) is not None and deletes < 1:
+        msg = (
+            "CALL remove_orphan_files: `max_concurrent_deletes` must be positive, "
+            f"found {deletes}"
+        )
+        raise SQLInterfaceError(msg)
+    if "file_list_view" in args:
+        msg = "CALL remove_orphan_files: `file_list_view` is not supported"
+        raise NotImplementedError(msg)
+    mode = args.get("prefix_mismatch_mode", "ERROR").upper()
+    if mode == "DELETE":
+        msg = (
+            "CALL remove_orphan_files: `prefix_mismatch_mode => 'DELETE'` is not "
+            "supported (it may delete referenced files); use 'IGNORE' to keep them"
+        )
+        raise NotImplementedError(msg)
+    if mode not in ("ERROR", "IGNORE"):
+        msg = (
+            "CALL remove_orphan_files: `prefix_mismatch_mode` must be 'ERROR' or "
+            f"'IGNORE', found {args['prefix_mismatch_mode']!r}"
+        )
+        raise SQLInterfaceError(msg)
+    table = _load_procedure_table(catalog, stmt)
+    # `older_than` arrives as microseconds (UTC). `max_concurrent_deletes`,
+    # `prefix_listing` and `stream_results` tune other engines' execution: no effect
+    # here.
+    older_than_us = args.get("older_than")
+    orphans = remove_orphan_files(
+        table,
+        older_than_ms=None if older_than_us is None else older_than_us // 1000,
+        location=args.get("location"),
+        dry_run=args.get("dry_run", False),
+        equal_schemes=args.get("equal_schemes", {"s3a,s3n": "s3"}),
+        equal_authorities=args.get("equal_authorities", {}),
+        prefix_mismatch_mode=mode,
+        name=stmt["name"],
+    )
+    return DataFrame(
+        {"orphan_file_location": orphans}, schema={"orphan_file_location": String}
     )
 
 

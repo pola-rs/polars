@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import dataclasses
 import io
+import os
 import pickle
 import re
 import shutil
 import struct
 import sys
+import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
@@ -8144,10 +8147,506 @@ def test_call_expire_snapshots_ref_moved_meanwhile(
     ]
 
 
+def aged(*paths: Path, days: int = 5) -> None:
+    when = time.time() - days * 24 * 60 * 60
+    for path in paths:
+        os.utime(path, (when, when))
+
+
+def lineitem_dir(tmp_path: Path, *parts: str) -> Path:
+    path = tmp_path.joinpath("tpch", "lineitem", "data", *parts)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def local_paths(res: pl.DataFrame) -> list[Path]:
+    return [Path(u.removeprefix("file://")) for u in res["orphan_file_location"]]
+
+
+@pytest.mark.parametrize("file_io", ["pyarrow", "fsspec"])
+@pytest.mark.write_disk
+def test_call_remove_orphan_files(
+    lake: CountingCatalog, tmp_path: Path, file_io: str
+) -> None:
+    if file_io == "fsspec":
+        lake.properties["py-io-impl"] = "pyiceberg.io.fsspec.FsspecFileIO"
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    table_dir = tmp_path / "tpch" / "lineitem"
+    kept = set(table_dir.rglob("*"))
+    # A failed run's file, and the leftover of a killed write.
+    stray = lineitem_dir(tmp_path, "failed-run", "x.parquet")
+    killed = lineitem_dir(tmp_path, "killed-run", "y.parquet#1")
+    pl.DataFrame({"k": [9]}).write_parquet(stray)
+    killed.write_bytes(b"x")
+    aged(stray, killed, *kept)
+    # A new file next to the table's data files.
+    data_file = lake.load_table(("tpch", "lineitem")).scan().plan_files()[0].file
+    fresh = Path(data_file.file_path.removeprefix("file://")).with_name("new.parquet")
+    fresh.write_bytes(b"x")
+
+    res = ctx.execute("CALL lake.system.remove_orphan_files('lineitem')", eager=True)
+
+    assert local_paths(res) == [stray, killed]
+    assert not stray.exists()
+    assert not killed.exists()
+    assert fresh.exists()
+    assert kept <= set(table_dir.rglob("*"))
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "a"), (2, "b"), (3, "c")]
+    again = ctx.execute("CALL lake.system.remove_orphan_files('lineitem')", eager=True)
+    assert again.schema == {"orphan_file_location": pl.String}
+    assert again.height == 0
+
+
+@pytest.mark.parametrize(
+    "file",
+    [
+        "hidden",
+        "dot",
+        "running-write",
+        "new",
+        "unknown-age",
+        "link",
+        "partition-statistics",
+        "younger-than-default",
+        "other-case",
+        "other-normalization",
+    ],
+)
+@pytest.mark.write_disk
+def test_call_remove_orphan_files_keeps(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, file: str
+) -> None:
+    from pyiceberg.table.statistics import PartitionStatisticsFile
+    from pyiceberg.table.update import SetPartitionStatisticsUpdate
+
+    import polars.io.iceberg._maintenance as maintenance
+
+    table = lake.load_table(("tpch", "lineitem"))
+    # Next to a referenced data file, only its age keeps a file.
+    data_dir = Path(
+        next(iter(table.scan().plan_files())).file.file_path.removeprefix("file://")
+    ).parent
+    path = {
+        "hidden": lineitem_dir(tmp_path, "_temporary", "x.parquet"),
+        "dot": lineitem_dir(tmp_path, ".staging", "x.parquet"),
+        "running-write": lineitem_dir(tmp_path, "running", "x.parquet"),
+        "new": data_dir / "x.parquet",
+        "unknown-age": data_dir / "x.parquet",
+        "link": tmp_path / "elsewhere" / "x.parquet",
+        "partition-statistics": lineitem_dir(tmp_path, "stats", "p.parquet"),
+        "younger-than-default": lineitem_dir(tmp_path, "failed-run", "x.parquet"),
+        "other-case": lineitem_dir(tmp_path, "stats", "p.parquet"),
+        "other-normalization": lineitem_dir(tmp_path, "stats", "\u00e9.parquet"),
+    }[file]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x")
+    if file == "younger-than-default":
+        # The default `older_than` is 3 days ago.
+        aged(path, days=2)
+    elif file != "new":
+        aged(path)
+    if file == "running-write":
+        # A write still running: a new file in the same directory.
+        path.with_name("y.parquet").write_bytes(b"x")
+    elif file == "unknown-age":
+        list_files = maintenance._list_files
+
+        def no_mtime(*args: Any) -> Any:
+            return [dataclasses.replace(f, mtime_ms=None) for f in list_files(*args)]
+
+        monkeypatch.setattr(maintenance, "_list_files", no_mtime)
+    elif file == "link":
+        if sys.platform == "win32":
+            pytest.skip("symbolic links need privileges on Windows")
+        lineitem_dir(tmp_path, "link").symlink_to(path.parent, target_is_directory=True)
+    elif file in ("partition-statistics", "other-case", "other-normalization"):
+        snapshot = table.current_snapshot()
+        assert snapshot is not None
+        # Another case, or Unicode normalization, names the file on some disks.
+        stats_file = {
+            "partition-statistics": "stats/p.parquet",
+            "other-case": "STATS/P.parquet",
+            "other-normalization": "stats/e\u0301.parquet",
+        }[file]
+        stats = PartitionStatisticsFile.model_validate(
+            {
+                "snapshot-id": snapshot.snapshot_id,
+                "statistics-path": f"{table.location()}/data/{stats_file}",
+                "file-size-in-bytes": 1,
+            }
+        )
+        with table.transaction() as tx:
+            tx._stage((SetPartitionStatisticsUpdate(partition_statistics=stats),))  # type: ignore[call-arg]
+
+    res = lake_ctx(lake).execute(
+        "CALL lake.system.remove_orphan_files('lineitem')", eager=True
+    )
+
+    assert res.height == 0
+    assert path.exists()
+
+
+@pytest.mark.write_disk
+def test_call_remove_orphan_files_hidden_name_of_a_partition_field(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE parts (_p VARCHAR, k INT) PARTITION BY (_p)")
+    ctx.execute("INSERT INTO parts VALUES ('a', 1)")
+    # `_p=` is a partition directory, not a hidden one.
+    stray = tmp_path / "tpch" / "parts" / "data" / "failed-run" / "_p=a" / "x.parquet"
+    stray.parent.mkdir(parents=True)
+    stray.write_bytes(b"x")
+    aged(stray)
+
+    res = ctx.execute("CALL lake.system.remove_orphan_files('parts')", eager=True)
+
+    assert local_paths(res) == [stray]
+
+
+@pytest.mark.write_disk
+def test_call_remove_orphan_files_dry_run(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    old = lineitem_dir(tmp_path, "failed-run", "x.parquet")
+    recent = lineitem_dir(tmp_path, "other-run", "y.parquet")
+    for path in (old, recent):
+        path.write_bytes(b"x")
+    aged(old, days=5)
+    aged(recent, days=2)
+    ctx = lake_ctx(lake)
+    call = "CALL lake.system.remove_orphan_files('lineitem', {}, dry_run => true)"
+    three_days_ago = datetime.fromtimestamp(time.time() - 3 * 24 * 60 * 60, tz=UTC)
+
+    res = ctx.execute(
+        call.format(f"older_than => TIMESTAMP '{three_days_ago:%Y-%m-%d %H:%M:%S}'"),
+        eager=True,
+    )
+    assert local_paths(res) == [old]
+    # The 24-hour floor does not hold for a dry run.
+    res = ctx.execute(
+        call.format("older_than => TIMESTAMP '2100-01-01 00:00:00'"), eager=True
+    )
+    assert recent in local_paths(res)
+    assert old.exists()
+    assert recent.exists()
+
+
+@pytest.mark.parametrize("mode", ["default", "IGNORE", "mapped"])
+@pytest.mark.write_disk
+def test_call_remove_orphan_files_prefix_mismatch(
+    lake: CountingCatalog, tmp_path: Path, mode: str
+) -> None:
+    from urllib.parse import urlparse
+
+    from pyiceberg.table.statistics import StatisticsFile
+    from pyiceberg.table.update import SetStatisticsUpdate
+
+    stray = lineitem_dir(tmp_path, "failed-run", "x.parquet")
+    stray.write_bytes(b"x")
+    aged(stray)
+    table = lake.load_table(("tpch", "lineitem"))
+    snapshot = table.current_snapshot()
+    assert snapshot is not None
+    # The table references the same path in a bucket (a Windows drive is the authority).
+    same = urlparse(f"{table.location()}/data/failed-run/x.parquet")
+    stats = StatisticsFile.model_validate(
+        {
+            "snapshot-id": snapshot.snapshot_id,
+            "statistics-path": f"s3://bucket{same.path}",
+            "file-size-in-bytes": 1,
+            "file-footer-size-in-bytes": 1,
+            "blob-metadata": [],
+        }
+    )
+    with table.transaction() as tx:
+        tx._stage((SetStatisticsUpdate(statistics=stats),))  # type: ignore[call-arg]
+    call = "CALL lake.system.remove_orphan_files('lineitem'{})".format(
+        {
+            "default": "",
+            "IGNORE": ", prefix_mismatch_mode => 'IGNORE'",
+            # The bucket names the same storage: the file is referenced.
+            "mapped": ", equal_schemes => map('s3a,s3', 'file'), "
+            f"equal_authorities => map('other,bucket', '{same.netloc}')",
+        }[mode]
+    )
+
+    if mode == "default":
+        with pytest.raises(InvalidOperationError, match="another scheme or authority"):
+            lake_ctx(lake).execute(call)
+    else:
+        assert lake_ctx(lake).execute(call, eager=True).height == 0
+    assert stray.exists()
+
+
+@pytest.mark.parametrize("file_io", ["pyarrow", "fsspec"])
+@pytest.mark.write_disk
+def test_call_remove_orphan_files_listing_misses_referenced(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, file_io: str
+) -> None:
+    import polars.io.iceberg._maintenance as maintenance
+
+    if file_io == "fsspec":
+        monkeypatch.setitem(
+            lake.properties, "py-io-impl", "pyiceberg.io.fsspec.FsspecFileIO"
+        )
+    stray = lineitem_dir(tmp_path, "failed-run", "x.parquet")
+    stray.write_bytes(b"x")
+    aged(stray, *(tmp_path / "tpch" / "lineitem").rglob("*"))
+    list_files = maintenance._list_files
+
+    def without_data(*args: Any) -> Any:
+        # A listing without the table's data files.
+        return [
+            f
+            for f in list_files(*args)
+            if "/metadata/" in f.uri or "failed-run" in f.uri
+        ]
+
+    monkeypatch.setattr(maintenance, "_list_files", without_data)
+    with pytest.raises(InvalidOperationError, match="misses"):
+        lake_ctx(lake).execute("CALL lake.system.remove_orphan_files('lineitem')")
+    assert stray.exists()
+
+
+@pytest.mark.parametrize("read_as", ["default-scheme", "relative"])
+@pytest.mark.write_disk
+def test_call_remove_orphan_files_location_read_otherwise(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, read_as: str
+) -> None:
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    import polars.io.iceberg._maintenance as maintenance
+
+    # A table location without a scheme.
+    if read_as == "default-scheme":
+        ctx = lake_ctx(lake)
+        location = (tmp_path / "bare").as_posix()
+        ctx.execute(
+            f"CREATE TABLE lake.tpch.bare (k INT) WITH ('location' = '{location}')"
+        )
+        # The file IO reads it as another storage (`DEFAULT_SCHEME`).
+        monkeypatch.setattr(maintenance, "_fs_scheme", lambda *args: "hdfs")
+        match = "without a scheme as a 'hdfs' one"
+    else:
+        # A catalog with a relative warehouse.
+        monkeypatch.chdir(tmp_path)
+        catalog = SqlCatalog(
+            "relative", uri=f"sqlite:///{tmp_path}/relative.db", warehouse="wh"
+        )
+        catalog.create_namespace("tpch")
+        ctx = pl.SQLContext().register_catalog("lake", catalog)
+        ctx.execute("CREATE TABLE lake.tpch.bare (k INT)")
+        match = "the file IO reads it as"
+    ctx.execute("INSERT INTO lake.tpch.bare VALUES (1)")
+
+    with pytest.raises(InvalidOperationError, match=match):
+        ctx.execute("CALL lake.system.remove_orphan_files('tpch.bare')")
+
+
+@pytest.mark.write_disk
+def test_call_remove_orphan_files_dangling_reference(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    ctx = lake_ctx(lake)
+    first = lake.load_table(("tpch", "lineitem"))
+    replaced = next(iter(first.scan().plan_files())).file.file_path
+    # Copy-on-write: only the first snapshot references the replaced file, which is
+    # gone from storage.
+    ctx.execute("DELETE FROM lineitem WHERE k = 1")
+    Path(replaced.removeprefix("file://")).unlink()
+    stray = lineitem_dir(tmp_path, "failed-run", "x.parquet")
+    stray.write_bytes(b"x")
+    aged(stray)
+
+    res = ctx.execute("CALL lake.system.remove_orphan_files('lineitem')", eager=True)
+
+    assert local_paths(res) == [stray]
+
+
+@pytest.mark.write_disk
+def test_call_remove_orphan_files_delete_fails(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import polars.io.iceberg._maintenance as maintenance
+
+    stray = lineitem_dir(tmp_path, "failed-run", "x.parquet")
+    stray.write_bytes(b"x")
+    aged(stray)
+    monkeypatch.setattr(maintenance, "_delete_listed", lambda *args: False)
+
+    with pytest.warns(UserWarning, match="1 of them could not be deleted"):
+        res = lake_ctx(lake).execute(
+            "CALL lake.system.remove_orphan_files('lineitem')", eager=True
+        )
+
+    assert local_paths(res) == [stray]
+    assert stray.exists()
+
+
+@pytest.mark.write_disk
+def test_call_remove_orphan_files_referenced_meanwhile(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import polars.io.iceberg._maintenance as maintenance
+
+    stray = lineitem_dir(tmp_path, "failed-run", "x.parquet")
+    pl.DataFrame({"k": [9], "v": ["z"]}).write_parquet(stray)
+    aged(stray)
+    referenced_files = maintenance._referenced_files
+    calls: list[None] = []
+
+    def add_first(*args: Any) -> Any:
+        found = referenced_files(*args)
+        if not calls:
+            # After the valid set is read, another writer adds the old file.
+            lake.load_table(("tpch", "lineitem")).add_files([str(stray)])
+        calls.append(None)
+        return found
+
+    monkeypatch.setattr(maintenance, "_referenced_files", add_first)
+    res = lake_ctx(lake).execute(
+        "CALL lake.system.remove_orphan_files('lineitem')", eager=True
+    )
+
+    assert len(calls) == 2
+    assert res.height == 0
+    assert stray.exists()
+
+
+@pytest.mark.parametrize(
+    ("refusal", "error", "match"),
+    [
+        ("floor", InvalidOperationError, "less than 24 hours ago"),
+        ("other-table", InvalidOperationError, "another table has its name now"),
+        ("changing", InvalidOperationError, "changed during each of"),
+        ("unreadable-manifest-list", InvalidOperationError, "could not be read"),
+        ("gc", InvalidOperationError, r"gc\.enabled is false"),
+        ("refs-only", InvalidOperationError, "snapshot-loading-mode"),
+        ("location", InvalidOperationError, "must be the table location"),
+        ("location-dots", InvalidOperationError, "with `.` or `..`"),
+        ("location-fragment", InvalidOperationError, "names another directory"),
+        ("listing", InvalidOperationError, "listing .* failed"),
+        ("listing-nested", InvalidOperationError, "listing .* failed"),
+        ("location-link", InvalidOperationError, "through a symbolic link"),
+        ("location-case", InvalidOperationError, "names are case-sensitive"),
+        ("unreadable-manifest", InvalidOperationError, "could not be read"),
+        ("gc-meanwhile", InvalidOperationError, r"gc\.enabled is false"),
+        ("file-list-view", NotImplementedError, "file_list_view"),
+        ("delete-mode", NotImplementedError, "use 'IGNORE'"),
+    ],
+)
+@pytest.mark.write_disk
+def test_call_remove_orphan_files_refused(
+    lake: CountingCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    refusal: str,
+    error: type[Exception],
+    match: str,
+) -> None:
+    from unittest.mock import Mock
+
+    ctx = lake_ctx(lake)
+    table_location = lake.load_table(("tpch", "lineitem")).location()
+    two_hours_ago = datetime.fromtimestamp(time.time() - 2 * 60 * 60, tz=UTC)
+    extra = {
+        "floor": f", older_than => TIMESTAMP '{two_hours_ago:%Y-%m-%d %H:%M:%S}'",
+        "location": f", location => '{table_location}2'",
+        "location-dots": f", location => '{table_location}/data/../../orders'",
+        "location-fragment": f", location => '{table_location}/data#x'",
+        "location-link": f", location => '{table_location}/data/link'",
+        "location-case": f", location => '{table_location}/DATA'",
+        "file-list-view": ", file_list_view => 'listing'",
+        "delete-mode": ", prefix_mismatch_mode => 'DELETE'",
+    }.get(refusal, "")
+    if refusal == "gc":
+        ctx.execute("ALTER TABLE lineitem SET TBLPROPERTIES ('gc.enabled' = 'false')")
+    elif refusal == "refs-only":
+        monkeypatch.setitem(lake.properties, "snapshot-loading-mode", "refs")
+    elif refusal == "listing":
+        import polars.io.iceberg._maintenance as maintenance
+
+        monkeypatch.setattr(
+            maintenance, "_list_files", Mock(side_effect=OSError("denied"))
+        )
+    elif refusal == "location-link":
+        if sys.platform == "win32":
+            pytest.skip("symbolic links need privileges on Windows")
+        (tmp_path / "elsewhere").mkdir()
+        lineitem_dir(tmp_path, "link").symlink_to(
+            tmp_path / "elsewhere", target_is_directory=True
+        )
+    elif refusal in ("other-table", "changing"):
+        import polars.io.iceberg._maintenance as maintenance
+
+        step = (
+            maintenance._list_files
+            if refusal == "other-table"
+            else maintenance._orphans
+        )
+
+        def then_change(*args: Any) -> Any:
+            found = step(*args)
+            if refusal == "other-table":
+                # Another table takes the name.
+                lake.drop_table(("tpch", "lineitem"))
+                ctx.execute("CREATE TABLE lineitem (k BIGINT, v VARCHAR)")
+            else:
+                # Another writer commits during every attempt.
+                ctx.execute("INSERT INTO lineitem VALUES (9, 'z')")
+            return found
+
+        name = "_list_files" if refusal == "other-table" else "_orphans"
+        monkeypatch.setattr(maintenance, name, then_change)
+    elif refusal == "unreadable-manifest-list":
+        snapshot = lake.load_table(("tpch", "lineitem")).current_snapshot()
+        assert snapshot is not None
+        Path(snapshot.manifest_list.removeprefix("file://")).write_bytes(b"x")
+    elif refusal == "unreadable-manifest":
+        table = lake.load_table(("tpch", "lineitem"))
+        snapshot = table.current_snapshot()
+        assert snapshot is not None
+        manifest = snapshot.manifests(table.io)[0]
+        Path(manifest.manifest_path.removeprefix("file://")).write_bytes(b"x")
+    elif refusal == "gc-meanwhile":
+        import polars.io.iceberg._maintenance as maintenance
+
+        list_files = maintenance._list_files
+
+        def then_disable_gc(*args: Any) -> Any:
+            found = list_files(*args)
+            ctx.execute(
+                "ALTER TABLE lineitem SET TBLPROPERTIES ('gc.enabled' = 'false')"
+            )
+            return found
+
+        monkeypatch.setattr(maintenance, "_list_files", then_disable_gc)
+    elif refusal == "listing-nested":
+        from fsspec.implementations.local import LocalFileSystem
+
+        # fsspec, a directory below the location cannot be read.
+        lineitem_dir(tmp_path, "unreadable", "x.parquet").write_bytes(b"x")
+        monkeypatch.setitem(
+            lake.properties, "py-io-impl", "pyiceberg.io.fsspec.FsspecFileIO"
+        )
+        ls = LocalFileSystem.ls
+
+        def deny(self: Any, path: str, *args: Any, **kwargs: Any) -> Any:
+            if path.rstrip("/").endswith("unreadable"):
+                raise PermissionError(path)
+            return ls(self, path, *args, **kwargs)
+
+        monkeypatch.setattr(LocalFileSystem, "ls", deny)
+    with pytest.raises(error, match=match):
+        ctx.execute(f"CALL lake.system.remove_orphan_files('lineitem'{extra})")
+
+
 @pytest.mark.parametrize(
     ("statement", "error"),
     [
-        ("lake.system.remove_orphan_files(table => 'lineitem')", "unknown procedure"),
+        ("lake.system.rewrite_position_delete_files('lineitem')", "unknown procedure"),
         ("lake.rewrite_manifests(table => 'lineitem')", r"\[<catalog>\.\]system\."),
         ("other.system.rewrite_manifests('lineitem')", "'other' is not attached"),
         ("lake.system.rewrite_manifests", "needs an argument list"),
@@ -8173,6 +8672,18 @@ def test_call_expire_snapshots_ref_moved_meanwhile(
         (
             "system.expire_snapshots('lineitem', snapshot_ids => array(1, '2'))",
             "must be literals",
+        ),
+        (
+            "system.remove_orphan_files('lineitem', dry_run => 'yes')",
+            "`dry_run` must be bool",
+        ),
+        (
+            "system.remove_orphan_files('lineitem', max_concurrent_deletes => 0)",
+            "`max_concurrent_deletes` must be positive",
+        ),
+        (
+            "system.remove_orphan_files('lineitem', prefix_mismatch_mode => 'SOME')",
+            "must be 'ERROR' or 'IGNORE'",
         ),
     ],
 )

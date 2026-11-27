@@ -233,6 +233,22 @@ pub(crate) const CALL_PROCEDURES: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "remove_orphan_files",
+        &[
+            "table",
+            "older_than",
+            "location",
+            "dry_run",
+            "max_concurrent_deletes",
+            "file_list_view",
+            "equal_schemes",
+            "equal_authorities",
+            "prefix_mismatch_mode",
+            "prefix_listing",
+            "stream_results",
+        ],
+    ),
+    (
         "rewrite_data_files",
         &["table", "strategy", "sort_order", "options", "where"],
     ),
