@@ -36,6 +36,10 @@ pub struct IcebergSinkState {
     pub maintain_order: bool,
     pub sort_order_id: Option<i32>,
     pub partition_spec_id: Option<i32>,
+    pub table_uuid: Option<PlSmallStr>,
+    pub schema_id: Option<i32>,
+    pub last_column_id: Option<i32>,
+    pub require_empty_table: bool,
 
     pub sink_uuid_str: String,
 

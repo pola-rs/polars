@@ -2789,7 +2789,11 @@ def _fill_created_table(
     storage_options: StorageOptionsDict | None,
     name: str,
 ) -> None:
-    """Append the rows of `lf` to the new, empty `table`, dropping it on failure."""
+    """
+    Append the rows of `lf` to the new, empty `table`, dropping it on failure.
+
+    A commit of another writer meanwhile fails the append, and keeps the table.
+    """
     from pyiceberg.exceptions import CommitStateUnknownException
 
     from polars.io.iceberg._delete import _write_rows
@@ -2797,7 +2801,7 @@ def _fill_created_table(
     table_name = _display_name(identifier)
     created_location = table.metadata_location
     try:
-        _write_rows(table, lf, "append", storage_options)
+        _write_rows(table, lf, "append", storage_options, require_empty_table=True)
     except CommitStateUnknownException as error:
         error.add_note(
             f"table '{name}' was created, its rows may be missing: catalog table "
