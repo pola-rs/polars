@@ -33,7 +33,7 @@ impl Display for RollingFunction {
             Min => "min",
             Max => "max",
             Mean => "mean",
-            Sum => "rsum",
+            Sum => "sum",
             Quantile => "quantile",
             Var => "var",
             Std => "std",
