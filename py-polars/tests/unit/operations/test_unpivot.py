@@ -409,3 +409,33 @@ def test_unpivot_selector_parsing_parity() -> None:
             pl.Series("value", [2, 4], dtype=pl.Int64),
         ],
     )
+
+
+def test_unpivot_value_or_variable_name_as_on_name() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["x", "y"],
+            "b": [1, 2],
+            "c": [3, 4],
+        }
+    )
+
+    result = df.unpivot(on=["b", "c"], index="a", value_name="c")
+    expected = pl.DataFrame(
+        {
+            "a": ["x", "y", "x", "y"],
+            "variable": ["b", "b", "c", "c"],
+            "c": [1, 2, 3, 4],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    result = df.unpivot(on=["b", "c"], index="a", variable_name="c")
+    expected = pl.DataFrame(
+        {
+            "a": ["x", "y", "x", "y"],
+            "c": ["b", "b", "c", "c"],
+            "value": [1, 2, 3, 4],
+        }
+    )
+    assert_frame_equal(result, expected)
