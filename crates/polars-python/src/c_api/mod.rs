@@ -211,6 +211,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::coalesce))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::field)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::path)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::col_exact))
         .unwrap();

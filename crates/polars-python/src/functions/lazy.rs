@@ -99,6 +99,11 @@ pub fn field(names: Vec<String>) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn path(path: String) -> PyExpr {
+    dsl::Expr::Path(path.into()).into()
+}
+
+#[pyfunction]
 pub fn coalesce(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
     dsl::coalesce(&exprs).into()

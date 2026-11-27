@@ -151,6 +151,10 @@ pub enum Expr {
     Len,
     #[cfg(feature = "dtype-struct")]
     Field(Arc<[PlSmallStr]>),
+    /// A dot-separated path of struct fields, e.g. `a.b.c`, resolved against the schema during
+    /// conversion to IR.
+    #[cfg(feature = "dtype-struct")]
+    Path(PlSmallStr),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
@@ -430,6 +434,8 @@ impl Hash for Expr {
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
             Expr::Field(names) => names.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            Expr::Path(path) => path.hash(state),
         }
     }
 }
