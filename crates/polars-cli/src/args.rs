@@ -12,6 +12,13 @@ path can be a glob or a cloud URL.
   polars -c \"SELECT * FROM 'sales.parquet' LIMIT 5\"
   polars -c \"DESCRIBE 'events.ndjson'\"
 
+An s3:// path finds AWS credentials as the AWS CLI does: keys in
+AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, web identity, the profile in
+AWS_PROFILE (else default) from ~/.aws/config and ~/.aws/credentials, then the
+container or instance role. A profile can hold keys, SSO (after aws sso login),
+a role or credential_process, and sets the region unless AWS_REGION does.
+  AWS_PROFILE=prod polars -c \"SELECT count(*) FROM 's3://bucket/data.parquet'\"
+
 To set options, read the file with read_csv, read_parquet, read_ndjson or
 read_ipc. An unknown option is an error that lists the valid ones.
   polars -c \"SELECT * FROM read_csv('sales.csv', separator => ';')\"
