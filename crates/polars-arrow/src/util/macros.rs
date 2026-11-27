@@ -32,6 +32,7 @@ macro_rules! with_match_primitive_type_full {(
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use polars_utils::float16::pf16;
     use $crate::datatypes::PrimitiveType::*;
+    use $crate::types::i256;
 
     match $key_type {
         Int8 => __with_ty__! { i8 },
@@ -39,6 +40,7 @@ macro_rules! with_match_primitive_type_full {(
         Int32 => __with_ty__! { i32 },
         Int64 => __with_ty__! { i64 },
         Int128 => __with_ty__! { i128 },
+        Int256 => __with_ty__! { i256 },
         UInt8 => __with_ty__! { u8 },
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },

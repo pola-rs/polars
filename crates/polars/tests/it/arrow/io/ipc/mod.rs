@@ -3,11 +3,13 @@ use std::sync::Arc;
 
 use polars::prelude::PlSmallStr;
 use polars_arrow::array::*;
-use polars_arrow::datatypes::{ArrowSchema, ArrowSchemaRef, Field};
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, ArrowSchemaRef, Field};
 use polars_arrow::io::ipc::IpcField;
 use polars_arrow::io::ipc::read::{FileReader, read_file_metadata};
 use polars_arrow::io::ipc::write::*;
+use polars_arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
 use polars_arrow::record_batch::RecordBatchT;
+use polars_arrow::types::i256;
 use polars_error::*;
 
 pub(crate) fn write(
@@ -97,4 +99,28 @@ fn write_binview() -> PolarsResult<()> {
         None,
         Some(Compression::ZSTD(Default::default())),
     )
+}
+
+#[test]
+fn write_decimal256() -> PolarsResult<()> {
+    let array = PrimitiveArray::<i256>::from([
+        Some(i256::from_words(0, 10_i128.pow(38) - 1)),
+        None,
+        Some(i256::from_words(-1, -42)),
+    ])
+    .to(ArrowDataType::Decimal256(38, 0))
+    .boxed();
+    let schema = prep_schema(array.as_ref());
+    let columns = RecordBatchT::try_new(array.len(), schema.clone(), vec![array])?;
+    for compression in [None, Some(Compression::ZSTD(Default::default()))] {
+        round_trip(columns.clone(), schema.clone(), None, compression)?;
+    }
+    let data = Arc::new(write(std::slice::from_ref(&columns), &schema, None, None)?);
+    let metadata = read_file_metadata(&mut Cursor::new(data.as_slice()))?;
+    let batch = unsafe {
+        let dictionaries = mmap_dictionaries_unchecked(&metadata, data.clone())?;
+        mmap_unchecked(&metadata, &dictionaries, data, 0)?
+    };
+    assert_eq!(batch, columns);
+    Ok(())
 }

@@ -449,6 +449,61 @@ def test_read_ipc_only_loads_selected_columns(
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("compression", [None, "lz4"])
+@pytest.mark.parametrize(
+    "decimal",
+    [
+        pa.decimal32(5, 0),
+        pa.decimal64(12, 0),
+        pa.decimal128(38, 0),
+        pa.decimal256(38, 0),
+    ],
+)
+def test_ipc_pyarrow_nested_decimal(
+    tmp_path: Path, compression: str | None, decimal: pa.DataType
+) -> None:
+    coefficient = 10**decimal.precision - 1
+    large = Decimal(coefficient)
+    negative = Decimal(-coefficient)
+    table = pa.table(
+        {
+            "scalar": pa.array([negative, large, None], decimal),
+            "list": pa.array([[large, None], None, [negative]], pa.list_(decimal)),
+            "struct": pa.array(
+                [{"x": negative}, {"x": None}, None],
+                pa.struct([("x", decimal)]),
+            ),
+            "map": pa.array(
+                [[("k", negative)], None, []], pa.map_(pa.string(), decimal)
+            ),
+        }
+    )
+    path = tmp_path / "decimal.ipc"
+    options = pa.ipc.IpcWriteOptions(compression=compression)
+    with pa.ipc.new_file(str(path), table.schema, options=options) as writer:
+        writer.write_table(table)
+
+    dtype = pl.Decimal(decimal.precision, decimal.scale)
+    expected_schema = {
+        "scalar": dtype,
+        "list": pl.List(dtype),
+        "struct": pl.Struct({"x": dtype}),
+        "map": pl.Map(pl.String, dtype),
+    }
+    expected_values = table.to_pydict()
+    expected_values["map"] = [
+        None if row is None else dict(row) for row in expected_values["map"]
+    ]
+    for frame in (
+        pl.read_ipc(path),
+        pl.scan_ipc(path).collect(),
+        pl.read_ipc(io.BytesIO(path.read_bytes())),
+    ):
+        assert frame.schema == expected_schema
+        assert frame.to_dict(as_series=False) == expected_values
+
+
+@pytest.mark.write_disk
 def test_ipc_decimal_15920(
     tmp_path: Path,
 ) -> None:
