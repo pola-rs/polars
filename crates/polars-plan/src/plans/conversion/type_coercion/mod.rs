@@ -808,12 +808,10 @@ impl OptimizationRule for TypeCoercionRule {
                         CastingRules::Supertype(_) => false,
                     };
                     for (i, (e, dtype)) in input.iter_mut().zip(dtypes).enumerate() {
-                        let to_dtype = if keep_strings && i > 0 && dtype.is_string() {
-                            &DataType::String
-                        } else {
-                            &super_type
-                        };
-                        cast_expr_ir(e, &dtype, to_dtype, expr_arena, literal_options)?;
+                        if keep_strings && i > 0 && dtype.is_string() {
+                            continue;
+                        }
+                        cast_expr_ir(e, &dtype, &super_type, expr_arena, literal_options)?;
                     }
                 }
 

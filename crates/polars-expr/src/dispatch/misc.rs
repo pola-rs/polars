@@ -483,7 +483,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         InvalidOperation: "needle of `index_of` can only contain a single value, found {} values",
         needle_s.len()
     );
-    let needle_s = &match (series.dtype(), needle_s.dtype()) {
+    let needle = match (series.dtype(), needle_s.dtype()) {
         // Type coercion leaves a string needle of a Categorical or Enum as is, to be looked up
         // here: casting adds it to a Categorical's categories, and fails or gives null for one
         // an Enum lacks.
@@ -499,14 +499,16 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
                     None => return Ok(Column::full_null(series.name().clone(), 1, &IDX_DTYPE)),
                 },
             };
-            Scalar::new(series.dtype().clone(), av).into_column(needle_s.name().clone())
+            Scalar::new(series.dtype().clone(), av)
         },
-        _ => needle_s.clone(),
+        _ => match needle_s {
+            Column::Scalar(sc) => sc.scalar().clone(),
+            _ => Scalar::new(
+                needle_s.dtype().clone(),
+                needle_s.get(0).unwrap().into_static(),
+            ),
+        },
     };
-    let needle = Scalar::new(
-        needle_s.dtype().clone(),
-        needle_s.get(0).unwrap().into_static(),
-    );
 
     let is_sorted_flag = series.is_sorted_flag();
     let result = match is_sorted_flag {
@@ -515,9 +517,16 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         IsSorted::Ascending | IsSorted::Descending if !needle.is_null() => {
             use polars_ops::series::SearchSortedSide;
 
+            let mapped_needle;
+            let search_values = if needle_s.dtype() == needle.dtype() {
+                needle_s.as_materialized_series()
+            } else {
+                mapped_needle = needle.clone().into_series(needle_s.name().clone());
+                &mapped_needle
+            };
             polars_ops::series::search_sorted(
                 series,
-                needle_s.as_materialized_series(),
+                search_values,
                 SearchSortedSide::Left,
                 IsSorted::Descending == is_sorted_flag,
             )?
@@ -618,52 +627,43 @@ pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
 }
 
 pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
-    // Type coercion leaves a string fill value of a Categorical as is, as casting adds
-    // it to the categories: it is only cast here, where it fills a null.
-    let fill_value = || {
-        if !(s[0].dtype().is_categorical() && s[1].dtype().is_string()) {
-            return Ok(s[1].clone());
-        }
-        let mut fill_value = s[1].clone();
-        if fill_value.len() == s[0].len() {
-            let nulls = Column::full_null(PlSmallStr::EMPTY, 1, &DataType::String);
-            fill_value = fill_value.zip_with_same_type(&s[0].is_null(), &nulls)?;
-        }
-        fill_value.cast(s[0].dtype())
+    let series = &s[0];
+    let fill = &s[1];
+    let out_len = match (series.len(), fill.len()) {
+        (a, b) if a == b || b == 1 => a,
+        (1, b) => b,
+        (self_len, other_len) => {
+            polars_bail!(length_mismatch = "fill_null", self_len, other_len)
+        },
     };
-    match (s[0].len(), s[1].len()) {
-        (a, b) if a == b || b == 1 => {
-            let series = s[0].clone();
+    let null_count = series.null_count();
+    if null_count == 0 {
+        return Ok(series.broadcast_to(out_len)?.into_owned());
+    }
 
-            // Nothing to fill, so return early
-            // this is done after casting as the output type must be correct
-            if series.null_count() == 0 {
-                return Ok(series);
-            }
+    let mask = (null_count < series.len()).then(|| series.is_not_null());
+    let mut fill = fill.clone();
+    if series.dtype().is_categorical() && fill.dtype().is_string() {
+        // Unused strings must be null before the cast can register categories.
+        if let Some(mask) = mask.as_ref().filter(|_| fill.len() == series.len()) {
+            let nulls = Column::full_null(PlSmallStr::EMPTY, 1, &DataType::String);
+            fill = nulls.zip_with_same_type(mask, &fill)?;
+        }
+        fill = fill.cast(series.dtype())?;
+    }
 
-            let fill_value = fill_value()?;
-
-            // Handle Null dtype columns: fill with the fill value (changes dtype)
-            if series.dtype() == &DataType::Null {
-                return Ok(fill_value.new_from_index(0, series.len()));
-            }
-
-            // default branch
-            fn default(series: Column, fill_value: Column) -> PolarsResult<Column> {
-                let mask = series.is_not_null();
-                series.zip_with_same_type(&mask, &fill_value)
-            }
-
-            default(series, fill_value)
-        },
-        (1, other_len) => {
-            if s[0].has_nulls() {
-                fill_value()
-            } else {
-                Ok(s[0].new_from_index(0, other_len))
-            }
-        },
-        (self_len, other_len) => polars_bail!(length_mismatch = "fill_null", self_len, other_len),
+    if series.len() != out_len {
+        return Ok(fill);
+    }
+    if series.dtype() == &DataType::Null {
+        return Ok(fill.new_from_index(0, series.len()));
+    }
+    if let Some(mask) = mask {
+        series.zip_with_same_type(&mask, &fill)
+    } else {
+        Ok(fill
+            .broadcast_owned_to(out_len)?
+            .with_name(series.name().clone()))
     }
 }
 
