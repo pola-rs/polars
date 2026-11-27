@@ -131,6 +131,8 @@ pub(crate) fn datetime_range_i64(
         };
     }
 
+    // Note, this is an estimate; in a time zone, calendar intervals can
+    // be shorter than `duration` (for example, the day of a DST change).
     let size = ((end - start) / duration + 1) as usize;
     let mut ts = Vec::with_capacity(size);
     let mut i = match closed {
@@ -155,6 +157,5 @@ pub(crate) fn datetime_range_i64(
             }
         },
     }
-    debug_assert!(size >= ts.len());
     Ok(ts)
 }
