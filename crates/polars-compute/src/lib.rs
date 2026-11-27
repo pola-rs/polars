@@ -20,6 +20,7 @@ pub mod ewm;
 pub mod filter;
 #[cfg(feature = "cast")]
 pub mod find_validity_mismatch;
+pub mod finite;
 pub mod float_sum;
 #[cfg(feature = "gather")]
 pub mod gather;
