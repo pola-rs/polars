@@ -11,7 +11,9 @@ pub type SchemaRef = Arc<Schema>;
 pub type Schema = polars_schema::Schema<DataType, ()>;
 
 pub trait SchemaExt {
-    fn from_arrow_schema(value: &ArrowSchema) -> Self;
+    fn from_arrow_schema(value: &ArrowSchema) -> PolarsResult<Self>
+    where
+        Self: Sized;
 
     fn get_field(&self, name: &str) -> Option<Field>;
 
@@ -27,10 +29,10 @@ pub trait SchemaExt {
 }
 
 impl SchemaExt for Schema {
-    fn from_arrow_schema(value: &ArrowSchema) -> Self {
+    fn from_arrow_schema(value: &ArrowSchema) -> PolarsResult<Self> {
         value
             .iter_values()
-            .map(|x| (x.name.clone(), DataType::from_arrow_field(x)))
+            .map(|x| Ok((x.name.clone(), DataType::from_arrow_field(x)?)))
             .collect()
     }
 

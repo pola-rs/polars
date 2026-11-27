@@ -194,7 +194,7 @@ async fn static_skip_mask(
                 statistics.null_count = Column::full_null(
                     PlSmallStr::EMPTY,
                     statistics.null_count.len(),
-                    &null_count_dtype(&projection.output_dtype()),
+                    &null_count_dtype(projection.output_dtype()),
                 );
             } else {
                 statistics.null_count =
@@ -367,7 +367,7 @@ fn order_keeping_bounds(
     scale: i64,
     metadata: &FileMetadata,
 ) -> Option<Vec<Option<(i128, i128)>>> {
-    let file_dtype = DataType::from_arrow_field(projection.arrow_field());
+    let file_dtype = DataType::from_arrow_field(projection.arrow_field()).ok()?;
     let mut mins = Vec::with_capacity(metadata.row_groups.len());
     let mut maxs = Vec::with_capacity(metadata.row_groups.len());
     for row_group in metadata.row_groups.iter() {
@@ -445,7 +445,7 @@ impl RuntimeRangeSkipper {
             let scale = DataType::arrow_value_scale(arrow_field.dtype());
             let (dtype, bounds) = match &hint.order_keeping_expr {
                 None => (
-                    DataType::from_arrow_field(arrow_field),
+                    DataType::from_arrow_field(arrow_field).ok()?,
                     ResolvedBounds::Statistics { bounds, scale },
                 ),
                 Some(expr) => {
@@ -455,7 +455,7 @@ impl RuntimeRangeSkipper {
                     let dtype = expr
                         .evaluate_io(&DataFrame::empty_with_schema(&Schema::from_iter([(
                             hint.column.clone(),
-                            column_dtype.into_owned(),
+                            column_dtype.clone(),
                         )])))
                         .ok()?
                         .dtype()
@@ -762,7 +762,7 @@ fn load_parquet_column_statistics(
 
     let null_statistics = || {
         Ok(StatisticsColumns::new_null(
-            &DataType::from_arrow_field(arrow_field),
+            &DataType::from_arrow_field(arrow_field)?,
             row_groups.len(),
         ))
     };

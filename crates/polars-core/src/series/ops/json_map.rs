@@ -48,12 +48,7 @@ impl DataType {
             #[cfg(feature = "dtype-array")]
             D::Array(inner, width) => D::Array(Box::new(inner.json_decode_dtype()), *width),
             #[cfg(feature = "dtype-struct")]
-            D::Struct(fields) => D::Struct(
-                fields
-                    .iter()
-                    .map(|f| Field::new(f.name.clone(), f.dtype.json_decode_dtype()))
-                    .collect(),
-            ),
+            D::Struct(fields) => D::Struct(fields.map_fields(|f| f.dtype.json_decode_dtype())),
             #[cfg(feature = "dtype-extension")]
             D::Extension(_, storage) if storage.contains_map() => storage.json_decode_dtype(),
             #[cfg(feature = "dtype-extension")]

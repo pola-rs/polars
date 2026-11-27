@@ -16,6 +16,7 @@ from polars._utils.expired import (
     raise_for_removed_attributes,
     removed_parameters,
 )
+from polars.exceptions import DuplicateError
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
@@ -1375,6 +1376,12 @@ class Struct(NestedType):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
         else:
             self.fields = list(fields)
+            names = set()
+            for fld in self.fields:
+                if fld.name in names:
+                    msg = f"multiple fields with name '{fld.name}' found"
+                    raise DuplicateError(msg)
+                names.add(fld.name)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # The comparison allows comparing objects to classes, and specific

@@ -13,7 +13,7 @@ pub(crate) fn json_values_to_supertype(
     values
         .iter()
         .take(infer_schema_len.into())
-        .map(|value| polars_json::json::infer(value).map(|dt| DataType::from_arrow_dtype(&dt)))
+        .map(|value| DataType::from_arrow_dtype(&polars_json::json::infer(value)?))
         .reduce(|l, r| {
             let l = l?;
             let r = r?;
@@ -22,11 +22,10 @@ pub(crate) fn json_values_to_supertype(
         .unwrap_or_else(|| polars_bail!(ComputeError: "could not infer data-type"))
 }
 
-pub(crate) fn dtypes_to_supertype<I: Iterator<Item = DataType>>(
+pub(crate) fn dtypes_to_supertype<I: Iterator<Item = PolarsResult<DataType>>>(
     datatypes: I,
 ) -> PolarsResult<DataType> {
     datatypes
-        .map(Ok)
         .reduce(|l, r| {
             let l = l?;
             let r = r?;

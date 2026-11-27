@@ -107,19 +107,9 @@ fn categorical_dtype_to_string_dtype(dtype: &DataType) -> DataType {
             let inner_cast = categorical_dtype_to_string_dtype(inner);
             DataType::Array(Box::new(inner_cast), *size)
         },
-        DataType::Struct(fields) => {
-            let transformed_fields = fields
-                .iter()
-                .map(|field| {
-                    Field::new(
-                        field.name().clone(),
-                        categorical_dtype_to_string_dtype(field.dtype()),
-                    )
-                })
-                .collect::<Vec<Field>>();
-
-            DataType::Struct(transformed_fields)
-        },
+        DataType::Struct(fields) => DataType::Struct(
+            fields.map_fields(|field| categorical_dtype_to_string_dtype(field.dtype())),
+        ),
         _ => dtype.clone(),
     }
 }

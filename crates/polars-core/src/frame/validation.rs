@@ -69,32 +69,42 @@ pub(crate) fn ensure_names_unique<T>(names: &[T]) -> PolarsResult<()>
 where
     T: AsRef<str>,
 {
+    match find_duplicate_name(names, |name| name.as_ref()) {
+        Some(name) => polars_bail!(duplicate = name),
+        None => Ok(()),
+    }
+}
+
+pub(crate) fn find_duplicate_name<T, F>(items: &[T], name_of: F) -> Option<&str>
+where
+    F: for<'a> Fn(&'a T) -> &'a str,
+{
     // Always unique.
-    if names.len() <= 1 {
-        return Ok(());
+    if items.len() <= 1 {
+        return None;
     }
 
-    if names.len() <= 4 {
+    if items.len() <= 4 {
         // Too small to be worth spawning a hashmap for, this is at most 6 comparisons.
-        for i in 0..names.len() - 1 {
-            let name = names[i].as_ref();
+        for i in 0..items.len() - 1 {
+            let name = name_of(&items[i]);
 
-            for other in names.iter().skip(i + 1) {
-                if name == other.as_ref() {
-                    polars_bail!(duplicate = name);
+            for other in items.iter().skip(i + 1) {
+                if name == name_of(other) {
+                    return Some(name);
                 }
             }
         }
     } else {
-        let mut names_set: PlHashSet<&str> = PlHashSet::with_capacity(names.len());
+        let mut names_set: PlHashSet<&str> = PlHashSet::with_capacity(items.len());
 
-        for name in names {
-            let name = name.as_ref();
+        for item in items {
+            let name = name_of(item);
 
             if !names_set.insert(name) {
-                polars_bail!(duplicate = name);
+                return Some(name);
             }
         }
     }
-    Ok(())
+    None
 }

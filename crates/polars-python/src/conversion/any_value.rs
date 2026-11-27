@@ -9,7 +9,7 @@ use num_traits::ToPrimitive;
 use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
-use polars::datatypes::{DataType, Field, TimeUnit};
+use polars::datatypes::{DataType, Field, StructFields, TimeUnit};
 use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
 use polars_core::datatypes::time_unit::time_unit_conversion_error;
@@ -764,6 +764,7 @@ pub(crate) fn py_object_to_any_value(
             keys.push(Field::new(key.as_ref().into(), val.dtype()));
             vals.push(val);
         }
+        let keys = StructFields::try_new(keys).map_err(PyPolarsErr::from)?;
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))
     }
 
@@ -779,6 +780,7 @@ pub(crate) fn py_object_to_any_value(
             keys.push(Field::new(key.as_ref().into(), dtype));
             vals.push(val)
         }
+        let keys = StructFields::try_new(keys).map_err(PyPolarsErr::from)?;
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))
     }
 
@@ -797,6 +799,7 @@ pub(crate) fn py_object_to_any_value(
             keys.push(Field::new(key.as_ref().into(), dtype));
             vals.push(val)
         }
+        let keys = StructFields::try_new(keys).map_err(PyPolarsErr::from)?;
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))
     }
 

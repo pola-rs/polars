@@ -380,12 +380,9 @@ pub trait SkipBatchPredicate: Send + Sync {
 fn null_count_dtype(dtype: &DataType) -> DataType {
     match dtype {
         #[cfg(feature = "dtype-struct")]
-        DataType::Struct(fields) => DataType::Struct(
-            fields
-                .iter()
-                .map(|f| Field::new(f.name().clone(), null_count_dtype(f.dtype())))
-                .collect(),
-        ),
+        DataType::Struct(fields) => {
+            DataType::Struct(fields.map_fields(|f| null_count_dtype(f.dtype())))
+        },
         _ => IDX_DTYPE,
     }
 }

@@ -21,7 +21,7 @@ pub fn field_to_rust_arrow(obj: Bound<'_, PyAny>) -> PyResult<ArrowField> {
 }
 
 pub fn field_to_rust(obj: Bound<'_, PyAny>) -> PyResult<Field> {
-    field_to_rust_arrow(obj).map(|f| (&f).into())
+    Ok(Field::try_from(&field_to_rust_arrow(obj)?).map_err(PyPolarsErr::from)?)
 }
 
 // PyList<Field> which you get by calling `list(schema)`
@@ -90,10 +90,10 @@ pub fn to_rust_df(
         let columns = schema
             .iter_values()
             .map(|field| {
-                // (`Field::from` unwraps a time zone it can't read: an error here, as
+                // (`Field::try_from` unwraps a time zone it can't read: an error here, as
                 // for the columns of a batch with rows)
                 DataType::check_arrow_time_zones(&field.dtype)?;
-                let field = Field::from(field);
+                let field = Field::try_from(field)?;
                 Ok(Series::new_empty(field.name, &field.dtype).into_column())
             })
             .collect::<PolarsResult<Vec<_>>>()

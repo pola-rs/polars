@@ -33,7 +33,7 @@ pub fn init_polars_schema_from_arrow_c_schema(
     };
 
     for field in fields {
-        let dtype = DataType::from_arrow_field(&field);
+        let dtype = DataType::from_arrow_field(&field).map_err(to_py_err)?;
 
         let name = field.name.into_pyobject(py)?;
         let dtype = Wrap(dtype).into_pyobject(py)?;
@@ -63,7 +63,7 @@ pub fn polars_schema_field_from_arrow_c_schema(
         .call0()?;
 
     let field = import_schema_pycapsule(&schema_capsule.extract()?)?;
-    let dtype = DataType::from_arrow_field(&field);
+    let dtype = DataType::from_arrow_field(&field).map_err(to_py_err)?;
 
     let name = field.name.into_pyobject(py)?.into_any();
     let dtype = Wrap(dtype).into_pyobject(py)?.into_any();

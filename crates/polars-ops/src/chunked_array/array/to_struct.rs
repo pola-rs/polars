@@ -4,7 +4,9 @@ use polars_arrow::array::{Array, StructArray};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_core::chunked_array::StructChunked;
 use polars_core::chunked_array::builder::NewChunkedArray as _;
-use polars_core::datatypes::{ArrayChunked, CompatLevel, DataType, Field, Int64Chunked};
+use polars_core::datatypes::{
+    ArrayChunked, CompatLevel, DataType, Field, Int64Chunked, StructFields,
+};
 use polars_core::runtime::RAYON;
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
@@ -37,12 +39,11 @@ pub trait ToStruct: AsArray {
             StructChunked::new_with_dims(
                 Arc::new(Field::new(
                     ca.name().clone(),
-                    DataType::Struct(
+                    DataType::Struct(StructFields::try_from_iter(
                         fields
                             .iter()
-                            .map(|name| Field::new(name.clone(), field_dtype.clone()))
-                            .collect(),
-                    ),
+                            .map(|name| Field::new(name.clone(), field_dtype.clone())),
+                    )?),
                 )),
                 vec![Box::new(StructArray::new(
                     ArrowDataType::Struct(

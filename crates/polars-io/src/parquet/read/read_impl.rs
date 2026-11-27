@@ -220,7 +220,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                 return Ok(Column::full_null(
                     name.clone(),
                     rg_slice.1,
-                    &DataType::from_arrow_field(field),
+                    &DataType::from_arrow_field(field)?,
                 ));
             };
 
@@ -362,7 +362,7 @@ fn rg_to_dfs_par_over_rg(
                             return Ok(Column::full_null(
                                 name.clone(),
                                 md.num_rows(),
-                                &DataType::from_arrow_field(field),
+                                &DataType::from_arrow_field(field)?,
                             ));
                         };
 
@@ -414,12 +414,12 @@ pub fn read_parquet<R: MmapBytesReader>(
 ) -> PolarsResult<DataFrame> {
     // Fast path.
     if pre_slice.1 == 0 {
-        return Ok(materialize_empty_df(
+        return materialize_empty_df(
             projection,
             reader_schema,
             hive_partition_columns,
             row_index.as_ref(),
-        ));
+        );
     }
 
     let file_metadata = metadata
@@ -463,12 +463,12 @@ pub fn read_parquet<R: MmapBytesReader>(
         )?;
 
         if dfs.is_empty() {
-            Ok(materialize_empty_df(
+            materialize_empty_df(
                 projection,
                 reader_schema,
                 hive_partition_columns,
                 row_index.as_ref(),
-            ))
+            )
         } else {
             accumulate_dataframes_vertical(dfs)
         }
