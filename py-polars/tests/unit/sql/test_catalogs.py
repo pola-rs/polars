@@ -32,6 +32,8 @@ from tests.unit.io.conftest import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from tests.conftest import PlMonkeyPatch
 
 # No test leaves a catalog resolver installed for the next one.
@@ -4175,6 +4177,64 @@ def test_insert_catalog_table_concurrent(tmp_path: Path) -> None:
     assert len(table_rows(lake, "tpch", "lineitem")) == 5
     written = set(Path(tmp_path).rglob("*.parquet")) - files
     assert len(written) == 1  # the other writer's file only
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    # A sink commit, and a commit that replaces a file.
+    "statement",
+    ["INSERT INTO lineitem VALUES (9, 'x')", "DELETE FROM lineitem WHERE k = {}"],
+)
+def test_catalog_commit_keeps_ref_retention_31165(
+    tmp_path: Path, statement: str
+) -> None:
+    import pyarrow as pa
+
+    class Catalog(CountingCatalog):  # type: ignore[misc]
+        race: Callable[[], None] | None = None
+
+        def commit_table(self, table: Any, requirements: Any, updates: Any) -> Any:
+            if (race := self.race) is not None:
+                self.race = None
+                race()
+            return super().commit_table(table, requirements, updates)
+
+    lake = Catalog(
+        "lake", uri=f"sqlite:///{tmp_path / 'c.db'}", warehouse=f"file://{tmp_path}"
+    )
+    lake.create_namespace(("tpch",))
+    table = lake.create_table(("tpch", "lineitem"), schema=LINEITEM.to_arrow().schema)
+    pl.DataFrame({"k": [1, 2, 3], "v": ["a", "b", "c"]}).write_iceberg(table, "append")
+
+    def retain(days: int, snapshots: int) -> None:
+        table = lake.load_table(("tpch", "lineitem"))
+        table.manage_snapshots().create_branch(
+            table.metadata.current_snapshot_id,
+            "main",
+            max_ref_age_ms=2 * days * DAY_MS,
+            max_snapshot_age_ms=days * DAY_MS,
+            min_snapshots_to_keep=snapshots,
+        ).commit()
+
+    retain(1, 5)
+    ctx = lake_ctx(lake)
+    ctx.execute(statement.format(1))
+    assert ref_state(lake, "tpch", "lineitem")["main"][2:] == (2 * DAY_MS, DAY_MS, 5)
+
+    # A retry keeps the retention of the refreshed ref.
+    def race() -> None:
+        other = lake.load_table(("tpch", "lineitem"))
+        other.append(pa.table({"k": [8], "v": ["y"]}, schema=other.schema().as_arrow()))
+        retain(2, 7)
+
+    lake.race = race
+    ctx.execute(statement.format(2))
+    assert lake.race is None
+    assert ref_state(lake, "tpch", "lineitem")["main"][2:] == (
+        4 * DAY_MS,
+        2 * DAY_MS,
+        7,
+    )
 
 
 @pytest.mark.write_disk
