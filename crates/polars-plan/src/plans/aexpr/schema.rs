@@ -691,6 +691,9 @@ fn get_arithmetic_field(
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
+                (Binary, _) | (_, Binary) => {
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
+                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -755,6 +758,10 @@ fn get_arithmetic_field(
                 #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
+                },
+                (Binary, Binary) => Binary,
+                (Binary, _) | (_, Binary) => {
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
                 (left, right) => try_get_supertype(left, right)?,
             }
@@ -866,6 +873,9 @@ fn get_arithmetic_field(
                     left_field.set_dtype(dtype);
                     return Ok(left_field);
                 },
+                (Binary, _) | (_, Binary) => {
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
+                },
                 _ => {},
             }
 
@@ -899,6 +909,9 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
                 InvalidOperation: "division of {} with {} is not allowed", left, right,
             )
         },
+        (Binary, _) | (_, Binary) => polars_bail!(
+            InvalidOperation: "division with 'Binary' datatypes is not allowed"
+        ),
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_primitive_numeric() => {
             if dtype.is_float() {
