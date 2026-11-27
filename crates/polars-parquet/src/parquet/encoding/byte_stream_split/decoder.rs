@@ -16,6 +16,11 @@ pub struct Decoder<'a> {
 
 impl<'a> Decoder<'a> {
     pub fn try_new(values: &'a [u8], element_size: usize) -> Result<Self, ParquetError> {
+        if element_size == 0 {
+            return Err(ParquetError::oos(
+                "Byte stream split decoding requires a positive element size",
+            ));
+        }
         if element_size > MAX_ELEMENT_SIZE {
             // Since Parquet format version 2.11 it's valid to use byte stream split for fixed-length byte array data,
             // which could be larger than 8 bytes, but Polars doesn't yet support reading byte stream split encoded FLBA data.

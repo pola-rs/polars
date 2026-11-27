@@ -227,7 +227,11 @@ impl<'a> Decoder<'a> {
         let values_per_block = values_per_block as usize;
         values = values.get(consumed..).ok_or_else(header_err)?;
 
-        assert_eq!(values_per_block % 128, 0);
+        if values_per_block == 0 || !values_per_block.is_multiple_of(128) {
+            return Err(ParquetError::oos(format!(
+                "Delta encoding block size {values_per_block} is not a positive multiple of 128"
+            )));
+        }
 
         let (num_miniblocks_per_block, consumed) = uleb128::decode(values);
         let num_miniblocks_per_block = num_miniblocks_per_block as usize;
@@ -240,11 +244,16 @@ impl<'a> Decoder<'a> {
         let (first_value, consumed) = zigzag_leb128::decode(values);
         values = values.get(consumed..).ok_or_else(header_err)?;
 
-        assert_eq!(values_per_block % num_miniblocks_per_block, 0);
-        assert_eq!((values_per_block / num_miniblocks_per_block) % 32, 0);
-
+        if num_miniblocks_per_block == 0
+            || !values_per_block.is_multiple_of(num_miniblocks_per_block)
+            || !(values_per_block / num_miniblocks_per_block).is_multiple_of(32)
+        {
+            return Err(ParquetError::oos(format!(
+                "Delta encoding block of {values_per_block} values cannot have \
+                 {num_miniblocks_per_block} miniblocks of a multiple of 32 values"
+            )));
+        }
         let values_per_miniblock = values_per_block / num_miniblocks_per_block;
-        assert_eq!(values_per_miniblock % 8, 0);
 
         // We skip over all the values to determine where the slice stops.
         //

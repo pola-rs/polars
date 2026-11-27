@@ -60,6 +60,12 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
     ) -> ParquetResult<Self> {
         let block_size = size_of::<T>() * num_bits;
 
+        if num_bits > size_of::<T>() * 8 {
+            return Err(ParquetError::oos(format!(
+                "Bitpacking supports at most {} bits, not {num_bits}",
+                size_of::<T>() * 8
+            )));
+        }
         if packed.len() * 8 < length * num_bits {
             return Err(ParquetError::oos(format!(
                 "Unpacking {length} items with a number of bits {num_bits} requires at least {} bytes.",
@@ -81,27 +87,10 @@ impl<'a, T: Unpackable> Decoder<'a, T> {
 
     /// Returns a [`Decoder`] with `T` encoded in `packed` with `num_bits`.
     pub fn try_new(packed: &'a [u8], num_bits: usize, length: usize) -> ParquetResult<Self> {
-        let block_size = size_of::<T>() * num_bits;
-
         if num_bits == 0 {
             return Err(ParquetError::oos("Bitpacking requires num_bits > 0"));
         }
-
-        if packed.len() * 8 < length * num_bits {
-            return Err(ParquetError::oos(format!(
-                "Unpacking {length} items with a number of bits {num_bits} requires at least {} bytes.",
-                length * num_bits / 8
-            )));
-        }
-
-        let packed = Chunks::new(packed, block_size);
-
-        Ok(Self {
-            length,
-            packed,
-            num_bits,
-            _pd: Default::default(),
-        })
+        Self::try_new_allow_zero(packed, num_bits, length)
     }
 
     pub fn num_bits(&self) -> usize {
