@@ -1,5 +1,7 @@
 //! Interface with cloud storage through the object_store crate.
 
+#[cfg(feature = "aws-config")]
+mod aws_native;
 #[cfg(feature = "aws")]
 mod aws_profile;
 #[cfg(feature = "cloud")]

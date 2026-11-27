@@ -110,6 +110,7 @@ parquet = [
 async = ["polars-lazy?/async"]
 cloud = ["polars-lazy?/cloud", "polars-io/cloud"]
 aws = ["async", "cloud", "polars-io/aws"]
+aws-config = ["aws", "polars-io/aws-config"]
 http = ["async", "cloud", "polars-io/http"]
 azure = ["async", "cloud", "polars-io/azure"]
 gcp = ["async", "cloud", "polars-io/gcp"]

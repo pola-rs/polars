@@ -537,6 +537,9 @@ impl CloudOptions {
                 from_options(AmazonS3ConfigKey::AccessKeyId),
                 from_options(AmazonS3ConfigKey::SecretAccessKey),
             );
+            let static_provider = |credential| -> object_store::aws::AwsCredentialProvider {
+                Arc::new(object_store::StaticCredentialProvider::new(credential))
+            };
             let credential = if key_id.is_some() || secret_key.is_some() {
                 // No session token from the environment, which may be for another endpoint.
                 key_id
@@ -546,6 +549,7 @@ impl CloudOptions {
                         secret_key,
                         token: from_options(AmazonS3ConfigKey::Token),
                     })
+                    .map(static_provider)
             } else if option(AmazonS3ConfigKey::AccessKeyId).is_some()
                 && (requested_profile.is_none() || profile.values.credential().is_none())
             {
@@ -556,16 +560,34 @@ impl CloudOptions {
                 let web_identity = requested_profile.is_none()
                     && option(AmazonS3ConfigKey::WebIdentityTokenFile).is_some()
                     && option(AmazonS3ConfigKey::RoleArn).is_some();
-                if let Some(err) = profile.error(web_identity) {
+                // Read by the AWS SDK, such as SSO.
+                #[cfg(feature = "aws-config")]
+                let native = match profile.source(web_identity) {
+                    Some(source) if super::aws_native::resolves(source) => {
+                        let region = option(AmazonS3ConfigKey::Region)
+                            .or_else(|| option(AmazonS3ConfigKey::DefaultRegion))
+                            .or_else(|| profile.values.region.clone());
+                        let provider =
+                            super::aws_native::profile_provider(&profile, source, region).await?;
+                        Some(provider.into_aws_provider())
+                    },
+                    _ => None,
+                };
+                #[cfg(not(feature = "aws-config"))]
+                let native: Option<object_store::aws::AwsCredentialProvider> = None;
+                if native.is_some() {
+                    native
+                } else if let Some(err) = profile.error(web_identity) {
                     return Err(err);
+                } else {
+                    (profile.values.credential())
+                        .filter(|_| !web_identity)
+                        .map(static_provider)
                 }
-                profile.values.credential().filter(|_| !web_identity)
             };
-            if let Some(credential) = credential {
+            if let Some(provider) = credential {
                 // Replaces partial credentials in the environment, such as a session token.
-                builder = builder.with_credentials(Arc::new(
-                    object_store::StaticCredentialProvider::new(credential),
-                ));
+                builder = builder.with_credentials(provider);
             }
         }
         // A Python provider object may use another profile; its own region and endpoint apply.

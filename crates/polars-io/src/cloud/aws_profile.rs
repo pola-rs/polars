@@ -59,8 +59,31 @@ pub(crate) struct AwsProfileValues {
     pub(crate) session_token: Option<String>,
     pub(crate) region: Option<String>,
     pub(crate) endpoint_url: Option<String>,
-    /// Where the profile gets credentials that are not read here, such as `role_arn`.
-    pub(crate) credential_source: Option<&'static str>,
+    pub(crate) credential_source: Option<CredentialSource>,
+}
+
+/// A source of credentials in a profile, other than keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CredentialSource {
+    Role,
+    RoleWithMfa,
+    WebIdentity,
+    Sso,
+    Login,
+    Process,
+}
+
+impl CredentialSource {
+    fn describe(self) -> &'static str {
+        match self {
+            Self::Role => "`role_arn`",
+            Self::RoleWithMfa => "a role that needs an MFA code",
+            Self::WebIdentity => "`web_identity_token_file`",
+            Self::Sso => "SSO",
+            Self::Login => "`login_session`",
+            Self::Process => "`credential_process`",
+        }
+    }
 }
 
 impl AwsProfileValues {
@@ -90,17 +113,19 @@ pub(crate) fn aws_profile_values(
     let has = |k: &str| settings.contains_key(k);
     let in_credentials = credentials.filter(|c| c.contains_key("aws_access_key_id"));
     let credential_source = if has("role_arn") && has("web_identity_token_file") {
-        Some("web_identity_token_file")
+        Some(CredentialSource::WebIdentity)
+    } else if has("role_arn") && has("mfa_serial") {
+        Some(CredentialSource::RoleWithMfa)
     } else if has("role_arn") {
-        Some("role_arn")
+        Some(CredentialSource::Role)
     } else if has("sso_account_id") || has("sso_role_name") {
-        Some("sso_account_id")
+        Some(CredentialSource::Sso)
     } else if in_credentials.is_some() {
         None
     } else if has("login_session") {
-        Some("login_session")
+        Some(CredentialSource::Login)
     } else if has("credential_process") {
-        Some("credential_process")
+        Some(CredentialSource::Process)
     } else {
         None
     };
@@ -122,8 +147,14 @@ pub(crate) fn aws_profile_values(
 }
 
 impl AwsProfile {
-    /// Why the profile's credentials cannot be read here, if so. Web identity from the
-    /// environment comes before the profile's sources other than `role_arn`.
+    /// The profile's credential source, unless web identity from the environment comes first.
+    pub(crate) fn source(&self, web_identity: bool) -> Option<CredentialSource> {
+        (self.values.credential_source).filter(|s| {
+            !web_identity || matches!(s, CredentialSource::Role | CredentialSource::RoleWithMfa)
+        })
+    }
+
+    /// Why the profile's credentials cannot be read here, if so.
     pub(crate) fn error(&self, web_identity: bool) -> Option<PolarsError> {
         let profile = &self.name;
         let values = &self.values;
@@ -133,20 +164,17 @@ impl AwsProfile {
                 ComputeError: "AWS profile '{profile}' is not defined in {config} or {credentials}"
             ));
         }
-        if web_identity && values.credential_source != Some("role_arn") {
-            return None;
-        }
-        if let Some(source) = values.credential_source {
-            let source = match source {
-                "sso_account_id" => "SSO".to_string(),
-                _ => format!("`{source}`"),
-            };
+        if let Some(source) = self.source(web_identity) {
+            let source = source.describe();
             return Some(polars_err!(
                 ComputeError: "AWS profile '{profile}' gets its credentials through {source}, \
                 which Polars reads only through boto3 in Python; set the credentials in the \
                 environment instead: \
                 eval \"$(aws configure export-credentials --profile {profile} --format env)\""
             ));
+        }
+        if web_identity {
+            return None;
         }
         match (&values.access_key_id, &values.secret_access_key) {
             (Some(_), None) => Some(polars_err!(
@@ -301,7 +329,7 @@ aws_secret_access_key = prod-secret
         let credentials = "[p]\naws_access_key_id = K\naws_secret_access_key = s\n";
         let source =
             |credentials| aws_profile_values("p", Some(config), credentials).credential_source;
-        assert_eq!(source(None), Some("credential_process"));
+        assert_eq!(source(None), Some(CredentialSource::Process));
         assert_eq!(source(Some(credentials)), None);
         // `sso_session` alone configures a bearer token, not credentials.
         let config =
