@@ -367,7 +367,7 @@ fn an_unclosed_string_fails_after_the_statements_before_it() {
 fn usage_errors() {
     // The start of the message; an empty one stands for clap's own wording.
     let cases: [(&[&str], &str); 6] = [
-        (&[], "no SQL was given\n"),
+        (&[], "no SQL was given: "),
         (
             &["--format", "parquet", "-c", "SELECT 1 AS a; SELECT 2 AS b"],
             "format 'parquet' writes one file, so the last statement must be the only one that \
