@@ -39,6 +39,19 @@ Polars is able to automatically load default credential configurations for some 
 cases when this does not happen, it is possible to manually configure the credentials for Polars to
 use for authentication. This can be done in a few ways:
 
+### Default AWS credentials
+
+Without credentials in `storage_options` or a `credential_provider`, Polars looks for AWS
+credentials as the AWS CLI does: keys in `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, web
+identity, then a profile from `~/.aws/config` and `~/.aws/credentials` (or `AWS_CONFIG_FILE` and
+`AWS_SHARED_CREDENTIALS_FILE`), then the container or instance role. The profile is the one named by
+`aws_profile` in `storage_options`, else `AWS_PROFILE` or `AWS_DEFAULT_PROFILE`, else `default`.
+
+With `boto3` installed, `boto3` resolves the profile, including SSO, assumed roles and
+`credential_process`. Without it, Polars reads the profile's keys, region and `endpoint_url` itself,
+and a profile that gets its credentials through SSO, a role or `credential_process` is an error that
+says how to put them in the environment.
+
 ### Using `storage_options`:
 
 - Credentials can be passed as configuration keys in a dict with the `storage_options` parameter:
