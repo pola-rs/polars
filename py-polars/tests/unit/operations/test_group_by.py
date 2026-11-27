@@ -1755,6 +1755,27 @@ def test_group_by_having(maintain_order: bool) -> None:
     assert_frame_equal(result, expected, check_row_order=maintain_order)
 
 
+def test_group_by_having_chained_reusable_30691() -> None:
+    df = pl.DataFrame({"g": ["a", "a", "b"], "v": [1, 2, 3]})
+    gb = (
+        df.group_by("g", maintain_order=True)
+        .having(pl.len() > 1)
+        .having(pl.col("v").sum() > 0)
+    )
+    expected = pl.DataFrame({"g": ["a"], "v": [3]})
+    assert_frame_equal(gb.agg(pl.col("v").sum()), expected)
+    assert_frame_equal(gb.agg(pl.col("v").sum()), expected)
+    assert_frame_equal(gb.head(1), pl.DataFrame({"g": ["a"], "v": [1]}))
+    assert len(list(gb)) == 1
+
+    # Generator input to a single having() should also remain reusable.
+    gb_gen = df.group_by("g", maintain_order=True).having(
+        p for p in [pl.len() > 1, pl.col("v").sum() > 0]
+    )
+    assert_frame_equal(gb_gen.agg(pl.col("v").sum()), expected)
+    assert_frame_equal(gb_gen.agg(pl.col("v").sum()), expected)
+
+
 def test_group_by_tuple_typing_24112() -> None:
     df = pl.DataFrame({"id": ["a", "b", "a"], "val": [1, 2, 3]})
     for (id_,), _ in df.group_by("id"):
