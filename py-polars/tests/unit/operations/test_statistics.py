@@ -315,6 +315,7 @@ _NUMERIC_DTYPES = [
 ]
 
 
+@pytest.mark.slow
 @given(
     s=series(allowed_dtypes=_NUMERIC_DTYPES, min_size=1),
 )
@@ -328,6 +329,7 @@ def test_skew_streaming_matches_in_memory(s: pl.Series, bias: bool) -> None:
     assert_frame_equal(in_memory, streaming, rel_tol=1e-5)
 
 
+@pytest.mark.slow
 @given(
     s=series(allowed_dtypes=_NUMERIC_DTYPES, min_size=1),
 )

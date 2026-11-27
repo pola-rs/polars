@@ -58,6 +58,7 @@ def assert_index_of(
     ).collect().get_column("series").to_list() == [expected_index]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_float(dtype: pl.DataType) -> None:
     values: list[Any] = [1.5, np.nan, np.inf, 3.0, None, -np.inf, 0.0, -0.0, -np.nan]
@@ -102,6 +103,7 @@ def test_empty() -> None:
     assert_index_of(series.sort(descending=False), 12)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "dtype",
     [
@@ -213,6 +215,7 @@ def test_randomized(
 ENUM = pl.Enum(["a", "b", "c"])
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("series", "extra_values", "sortable"),
     [

@@ -13,6 +13,7 @@ from polars.testing.parametric import column, dataframes
 from tests.unit.conftest import INTEGER_DTYPES, SIGNED_INTEGER_DTYPES
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         max_size=10,

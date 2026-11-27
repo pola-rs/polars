@@ -1028,6 +1028,7 @@ def test_sink_iceberg_overwrite_filter_keeps_deleted_rows_30616(tmp_path: Path) 
     assert _scan_sorted(tbl).rows() == [(3, "c"), (9, "z")]
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("rows_per_file", "overwrite_filter", "deleted"),
@@ -1316,6 +1317,7 @@ def _overwrite_filter_table(
     return tbl, df
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     "predicate",
@@ -1965,6 +1967,7 @@ _ICEBERG_TEMPORAL_SORT_TRANSFORMS: list[Any] = [
 ]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("partitioned", [False, True])
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
@@ -7175,6 +7178,7 @@ def test_fill_missing_fields_with_identity_partition_values_nested(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_scan_iceberg_min_max_statistics_filter(
     tmp_path: Path,

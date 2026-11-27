@@ -92,6 +92,7 @@ def test_group_by_multi_column_keys(keys: list[str], nulls: bool) -> None:
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("keys", KEYS, ids="-".join)
 @pytest.mark.parametrize("how", ["inner", "left", "full", "semi", "anti"])
 @pytest.mark.parametrize("nulls_equal", [False, True])
@@ -140,6 +141,7 @@ def test_join_many_multi_column_keys(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("keys", KEYS, ids="-".join)
 def test_join_multi_column_keys_sliced_build_side(keys: list[str]) -> None:
     left = keys_frame(300, nulls=True)
@@ -147,6 +149,7 @@ def test_join_multi_column_keys_sliced_build_side(keys: list[str]) -> None:
     assert_engines_equal(left.lazy().join(right.lazy(), on=keys, how="inner"))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("keys", KEYS, ids="-".join)
 def test_unique_multi_column_keys(keys: list[str]) -> None:
     lf = keys_frame(500, nulls=True).lazy()

@@ -892,6 +892,7 @@ def test_quantified_subquery_matches_in(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("op", [">", "<", ">=", "<=", "=", "<>"])
 @pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
 @pytest.mark.parametrize(

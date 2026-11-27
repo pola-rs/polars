@@ -611,6 +611,7 @@ def test_decimal32_64_scan_parquet(tmp_path: Path) -> None:
     ]
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize("use_dictionary", [True, False])
 def test_fixed_len_byte_array_decimal(tmp_path: Path, use_dictionary: bool) -> None:
@@ -1604,6 +1605,7 @@ def test_struct_plain_encoded_statistics() -> None:
     test_scan_round_trip(df)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=5,
@@ -1656,6 +1658,7 @@ def test_null_array_dict_pages_18085() -> None:
     pl.read_parquet(f)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=1,
@@ -1688,6 +1691,7 @@ def test_byte_stream_split_encoding_roundtrip(
     assert_frame_equal(pl.read_parquet(f), df)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=1,
@@ -1723,6 +1727,7 @@ def test_delta_encoding_roundtrip(df: pl.DataFrame, row_group_size: int) -> None
     assert_frame_equal(pl.read_parquet(f), df)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(min_size=1, max_size=1000, allowed_dtypes=[pl.String, pl.Binary]),
     row_group_size=st.integers(min_value=10, max_value=1000),
@@ -1745,6 +1750,7 @@ def test_delta_length_byte_array_encoding_roundtrip(
     assert_frame_equal(pl.read_parquet(f), df)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(min_size=1, max_size=1000, allowed_dtypes=[pl.String, pl.Binary]),
     row_group_size=st.integers(min_value=10, max_value=1000),
@@ -1771,6 +1777,7 @@ EQUALITY_OPERATORS = ["__eq__", "__lt__", "__le__", "__gt__", "__ge__"]
 BOOLEAN_OPERATORS = ["__or__", "__and__"]
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=0, max_size=100, min_cols=2, max_cols=5, allowed_dtypes=[pl.Int32]
@@ -1821,6 +1828,7 @@ def test_predicate_filtering(
     assert_frame_equal(result, df.filter(expr))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "use_dictionary",
     [False, True],
@@ -1871,6 +1879,7 @@ def test_pyarrow_slice_roundtrip(
     assert_frame_equal(scanned, df.slice(offset, length))
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=1,
@@ -2196,6 +2205,7 @@ def test_read_parquet_struct_without_list(
     _assert_nested_reads(path, expected)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("nullable", [False, True])
 @pytest.mark.parametrize("width", [None, 3])
 def test_read_parquet_structs_in_list(
@@ -2256,6 +2266,7 @@ def test_read_parquet_map_with_nulls(tmp_path: Path) -> None:
     _assert_nested_reads(path, expected)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=0,
@@ -2305,6 +2316,7 @@ def test_different_page_validity_across_pages(value: str | int | float | bool) -
     assert_frame_equal(df, pl.read_parquet(f))
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=0,
@@ -2365,6 +2377,7 @@ def test_delta_binary_packed_prefilter_multi_page_28536() -> None:
     )
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=0,
@@ -2388,6 +2401,7 @@ def test_general_prefiltering(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df.filter(expr))
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=0,
@@ -2415,6 +2429,7 @@ def test_row_index_prefiltering(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df.with_row_index("ri", 42).filter(expr))
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=0,
@@ -2451,6 +2466,7 @@ def _staged_df() -> pl.DataFrame:
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "expr",
     [
@@ -3256,6 +3272,7 @@ def test_categorical_sliced_20017() -> None:
     )
 
 
+@pytest.mark.slow
 @given(
     s=series(name="a", dtype=pl.String, min_size=7, max_size=7),
     mask=series(
@@ -3275,6 +3292,7 @@ def test_categorical_parametric_masked(s: pl.Series, mask: pl.Series) -> None:
     )
 
 
+@pytest.mark.slow
 @given(
     s=series(name="a", dtype=pl.String, min_size=7, max_size=7),
     start=st.integers(0, 6),
@@ -3599,6 +3617,7 @@ def get_tests_from_dtype(
     ]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("strategy", ["columns", "prefiltered"])
 @pytest.mark.parametrize(
     ("dtype", "values", "needles"),
@@ -4011,6 +4030,7 @@ def test_scan_parquet_filter_statistics_load_missing_column_21391(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "ty",
     [
@@ -5135,6 +5155,7 @@ def test_parquet_is_in_multiple_pages_25312() -> None:
     )
 
 
+@pytest.mark.slow
 @given(s=series(name="a", dtype=pl.String()))
 def test_regex_prefiltering_parametric(s: pl.Series) -> None:
     f = io.BytesIO()
@@ -5234,6 +5255,7 @@ def test_regex_contains_prefiltering(
         assert "RegexMatch" in capfd.readouterr().err
 
 
+@pytest.mark.slow
 @given(
     s=series(
         name="a",
@@ -5414,6 +5436,7 @@ def test_scan_parquet_is_in_with_long_string_26332() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.slow
 def test_parquet_data_page_size_dictionary_encoding_20141(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": ["A"] * 10_000}, schema={"a": pl.Enum(["A"])})
 

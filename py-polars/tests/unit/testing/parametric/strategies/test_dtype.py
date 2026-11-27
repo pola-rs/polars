@@ -1,4 +1,5 @@
 import hypothesis.strategies as st
+import pytest
 from hypothesis import given
 
 import polars as pl
@@ -10,6 +11,7 @@ def test_dtypes(dtype: pl.DataType) -> None:
     assert isinstance(dtype, pl.DataType)
 
 
+@pytest.mark.slow
 @given(dtype=dtypes(nesting_level=0))
 def test_dtypes_nesting_level(dtype: pl.DataType) -> None:
     assert not dtype.is_nested()
@@ -20,6 +22,7 @@ def test_dtypes_allow_time_zones(dtype: pl.DataType) -> None:
     assert getattr(dtype, "time_zone", None) is None
 
 
+@pytest.mark.slow
 @given(st.data())
 def test_dtypes_allowed(data: st.DataObject) -> None:
     allowed_dtype = data.draw(dtypes())
@@ -27,6 +30,7 @@ def test_dtypes_allowed(data: st.DataObject) -> None:
     assert result == allowed_dtype
 
 
+@pytest.mark.slow
 @given(st.data())
 def test_dtypes_excluded(data: st.DataObject) -> None:
     excluded_dtype = data.draw(dtypes())

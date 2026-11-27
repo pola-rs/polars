@@ -159,6 +159,7 @@ def test_forward_fill_is_length_preserving() -> None:
     )
 
 
+@pytest.mark.slow
 @given(
     s=series(allow_null=True),
     limit=st.one_of(st.none(), st.integers(min_value=0, max_value=10)),

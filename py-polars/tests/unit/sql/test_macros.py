@@ -97,6 +97,7 @@ def test_table_macros(ctx: pl.SQLContext[pl.DataFrame]) -> None:
         ctx.execute("SELECT * FROM t, rng(t.x)")
 
 
+@pytest.mark.slow
 def test_macro_depth(ctx: pl.SQLContext[pl.DataFrame]) -> None:
     for i in range(80):
         body = f"m{i + 1}(a)" if i < 79 else "a"
@@ -138,6 +139,7 @@ def test_macro_depth(ctx: pl.SQLContext[pl.DataFrame]) -> None:
         ctx.execute("SELECT deep_case(deep_case(1))")
 
 
+@pytest.mark.slow
 def test_macro_arguments(ctx: pl.SQLContext[pl.DataFrame]) -> None:
     ctx.execute("CREATE MACRO ov(b) AS b + 100, (a, b) AS a + b")
     assert rows(ctx, "SELECT ov(1, b := 2)") == [(3,)]

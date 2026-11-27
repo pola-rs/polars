@@ -2038,6 +2038,7 @@ def test_sum_unsupported_dtype_raises_in_all_contexts(dtype: pl.DataType) -> Non
             q.collect_schema()
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=1,
@@ -2054,6 +2055,7 @@ def test_single(df: pl.DataFrame) -> None:
     assert_frame_equal(q.collect(engine="streaming"), df)
 
 
+@pytest.mark.slow
 @given(df=dataframes(max_size=0))
 def test_single_empty(df: pl.DataFrame) -> None:
     q = df.lazy().select(pl.all().item())
@@ -2064,6 +2066,7 @@ def test_single_empty(df: pl.DataFrame) -> None:
         q.collect(engine="streaming")
 
 
+@pytest.mark.slow
 @given(df=dataframes(min_size=2))
 def test_item_too_many(df: pl.DataFrame) -> None:
     q = df.lazy().select(pl.all(ignore_nulls=False).item())
@@ -2074,6 +2077,7 @@ def test_item_too_many(df: pl.DataFrame) -> None:
         q.collect(engine="streaming")
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=1,
