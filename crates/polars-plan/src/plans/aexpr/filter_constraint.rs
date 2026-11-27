@@ -880,7 +880,7 @@ fn classify_into_constraints(
                 // column's values.
                 #[cfg(feature = "is_in")]
                 IRBooleanFunction::IsIn { .. } => {
-                    let Some(col_name) = as_column(expr_arena.get(input[0].node())) else {
+                    let Some(col_name) = input[0].as_column(expr_arena).cloned() else {
                         return Classification::Opaque;
                     };
                     let cc = column_constraints(constraints, schema, col_name);
@@ -1092,7 +1092,7 @@ fn classify_negation(
             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal, .. }),
             ..
         } => {
-            if !nulls_equal && let Some(col_name) = as_column(expr_arena.get(input[0].node())) {
+            if !nulls_equal && let Some(col_name) = input[0].as_column(expr_arena).cloned() {
                 let cc = column_constraints(constraints, schema, col_name);
                 if let Some(values) = as_value_set(expr_arena.get(input[1].node()), &cc.dtype) {
                     cc.add_disallowed(values);
@@ -1163,7 +1163,7 @@ fn classify_null(
     expr_arena: &Arena<AExpr>,
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
 ) -> Classification {
-    let Some(col_name) = as_column(expr_arena.get(col)) else {
+    let Some(col_name) = expr_arena.get(col).as_column().cloned() else {
         return Classification::Opaque;
     };
     let cc = column_constraints(constraints, schema, col_name.clone());
@@ -1188,7 +1188,7 @@ fn classify_is_between(
     expr_arena: &Arena<AExpr>,
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
 ) -> Classification {
-    let Some(col_name) = as_column(expr_arena.get(col)) else {
+    let Some(col_name) = expr_arena.get(col).as_column().cloned() else {
         return Classification::Opaque;
     };
     let cc = column_constraints(constraints, schema, col_name);
@@ -1210,14 +1210,6 @@ fn classify_is_between(
         Classification::Unsat
     } else {
         Classification::Bound
-    }
-}
-
-fn as_column(ae: &AExpr) -> Option<PlSmallStr> {
-    if let AExpr::Column(name) = ae {
-        Some(name.clone())
-    } else {
-        None
     }
 }
 

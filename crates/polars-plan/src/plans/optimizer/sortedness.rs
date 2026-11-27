@@ -22,7 +22,7 @@ use crate::plans::int_literal;
 use crate::plans::schema::join_right_output_names;
 use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
-    constant_evaluate, into_column,
+    constant_evaluate,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 
@@ -301,7 +301,7 @@ fn is_sorted_rec(
 
                 let amort_passed_columns = names_set_scratch.get();
                 amort_passed_columns.extend(expr.iter().filter_map(|e| {
-                    let column = into_column(e.node(), expr_arena)?;
+                    let column = e.as_column(expr_arena)?;
                     (column == e.output_name()).then(|| column.clone())
                 }));
 
@@ -338,7 +338,7 @@ fn is_sorted_rec(
 
                 let amort_passed_columns = names_set_scratch.get();
                 amort_passed_columns.extend(exprs.iter().filter_map(|e| {
-                    match into_column(e.node(), expr_arena) {
+                    match e.as_column(expr_arena) {
                         None => Some(e.output_name().clone()),
                         Some(c) if c == e.output_name() => None,
                         Some(_) => Some(e.output_name().clone()),
@@ -400,7 +400,7 @@ fn is_sorted_rec(
                 .zip(&sort_options.descending)
                 .zip(&sort_options.nulls_last)
                 .map_while(|((e, &d), &nl)| {
-                    into_column(e.node(), expr_arena).map(|c| Sorted {
+                    e.as_column(expr_arena).map(|c| Sorted {
                         column: c.clone(),
                         descending: Some(d),
                         nulls_last: Some(nl),
@@ -432,7 +432,7 @@ fn is_sorted_rec(
 
             let amort_passed_columns = names_set_scratch.get();
             amort_passed_columns.extend(keys.iter().filter_map(|e| {
-                let column = into_column(e.node(), expr_arena)?;
+                let column = e.as_column(expr_arena)?;
                 (column == e.output_name()).then(|| column.clone())
             }));
 

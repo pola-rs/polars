@@ -26,7 +26,6 @@ use super::{
 use crate::plans::aexpr::filter_constraint::{ColumnBounds, and_chain_bounds};
 use crate::plans::{
     AExpr, ExprIR, FunctionIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR,
-    into_column,
 };
 use crate::prelude::{JoinType, Operator};
 use crate::utils::aexpr_to_leaf_names_iter;
@@ -113,7 +112,7 @@ fn key_column_names(
             },
             IR::Select { expr: exprs, .. } | IR::HStack { exprs, .. } => {
                 aliases.extend(exprs.iter().filter_map(|e| {
-                    let source = into_column(e.node(), expr_arena)?;
+                    let source = e.as_column(expr_arena)?;
                     (source != e.output_name()).then_some((e.output_name(), source))
                 }));
             },
@@ -253,10 +252,8 @@ pub(crate) fn node_stats_with_cache(
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             // A computed key holds neither the values nor the distinct count of the
             // column it is named after, so only a key reading one column contributes.
-            let sources: Vec<Option<&PlSmallStr>> = keys
-                .iter()
-                .map(|k| into_column(k.node(), expr_arena))
-                .collect();
+            let sources: Vec<Option<&PlSmallStr>> =
+                keys.iter().map(|k| k.as_column(expr_arena)).collect();
             let ndv = sources
                 .iter()
                 .copied()
@@ -636,7 +633,7 @@ fn passed_through_columns(
             kept.insert(e.output_name().clone(), stats);
             continue;
         }
-        let Some(source) = into_column(e.node(), expr_arena) else {
+        let Some(source) = e.as_column(expr_arena) else {
             continue;
         };
         if let Some(stats) = inner.column(source) {
@@ -661,8 +658,7 @@ fn shadowed_columns(
         .filter_map(|e| Some((e.output_name(), literal_column(e, expr_arena)?)))
         .collect();
     let overwrites = |e: &ExprIR| {
-        into_column(e.node(), expr_arena) != Some(e.output_name())
-            && columns.contains_key(e.output_name())
+        e.as_column(expr_arena) != Some(e.output_name()) && columns.contains_key(e.output_name())
     };
     if literals.is_empty() && !exprs.iter().any(overwrites) {
         return inner.columns.clone();
@@ -1116,7 +1112,7 @@ fn null_check(conjunct: Node, expr_arena: &Arena<AExpr>) -> Option<(&PlSmallStr,
             let [arg] = input.as_slice() else {
                 return None;
             };
-            Some((into_column(arg.node(), expr_arena)?, is_null))
+            Some((arg.as_column(expr_arena)?, is_null))
         },
         // Pushing an equi-join key into one of its sides leaves `x == x` behind. That
         // is a null check on the key, not the arbitrary comparison it looks like.
@@ -1125,8 +1121,8 @@ fn null_check(conjunct: Node, expr_arena: &Arena<AExpr>) -> Option<(&PlSmallStr,
             op: Operator::Eq,
             right,
         } => {
-            let name = into_column(*left, expr_arena)?;
-            (name == into_column(*right, expr_arena)?).then_some((name, false))
+            let name = expr_arena.get(*left).as_column()?;
+            (name == expr_arena.get(*right).as_column()?).then_some((name, false))
         },
         _ => None,
     }
