@@ -362,6 +362,19 @@ def test_scan_ndjson_http_empty_file_range_ignored() -> None:
 
 
 @pytest.mark.slow
+def test_scan_ndjson_http_extra_key_error_omits_query_29330() -> None:
+    # A signed URL's query string carries credentials.
+    data = b'{"a": 1}\n{"a": 2, "b": 3}\n'
+    files = {"/a.ndjson": data, "/a.ndjson?X-Amz-Signature=secret": data}
+    with _http_file_server(files) as (endpoint, _):
+        url = f"{endpoint}/a.ndjson?X-Amz-Signature=secret"
+        with pytest.raises(pl.exceptions.ComputeError) as exc:
+            pl.scan_ndjson(url, infer_schema_length=1).collect()
+    assert f"in file '{endpoint}/a.ndjson'," in str(exc.value)
+    assert "secret" not in str(exc.value)
+
+
+@pytest.mark.slow
 def test_scan_ndjson_http_prefix_metrics_retried_body(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:

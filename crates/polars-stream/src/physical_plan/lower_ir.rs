@@ -1038,6 +1038,16 @@ fn lower_ir_inner(
                     FileScanIR::NDJson { options } => Arc::new(
                         crate::nodes::io_sources::ndjson::builder::NDJsonReaderBuilder {
                             options: Arc::new(options.clone()),
+                            file_schema: {
+                                // The IR schema also holds the row index and file path columns.
+                                let mut schema = file_info.schema.as_ref().clone();
+                                let row_index = unified_scan_args.row_index.as_ref();
+                                (row_index.map(|ri| &ri.name).into_iter())
+                                    .chain(&unified_scan_args.include_file_paths)
+                                    .for_each(|name| _ = schema.shift_remove(name));
+                                Arc::new(schema)
+                            },
+                            extra_columns_policy: unified_scan_args.extra_columns_policy,
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
@@ -1147,6 +1157,8 @@ fn lower_ir_inner(
                         FileScanIR::Parquet { .. } => unified_scan_args.extra_columns_policy,
                         #[cfg(feature = "csv")]
                         FileScanIR::Csv { .. } => unified_scan_args.extra_columns_policy,
+                        #[cfg(feature = "json")]
+                        FileScanIR::NDJson { .. } => unified_scan_args.extra_columns_policy,
 
                         _ => {
                             if unified_scan_args.projection.is_some() {
