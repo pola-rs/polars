@@ -458,6 +458,8 @@ impl PySQLContext {
                         CallArg::Int(i) => py_args.set_item(arg, i)?,
                         CallArg::Bool(b) => py_args.set_item(arg, b)?,
                         CallArg::Array(values) => py_args.set_item(arg, values)?,
+                        CallArg::IntArray(values) => py_args.set_item(arg, values)?,
+                        CallArg::Timestamp(us) => py_args.set_item(arg, us)?,
                         CallArg::Map(pairs) => {
                             let map = PyDict::new(py);
                             for (k, v) in pairs {
