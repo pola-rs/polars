@@ -121,6 +121,33 @@ def test_replace_categorical_absent_old_does_not_fill_categories() -> None:
     assert cats.to_series().len() == 250
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("values", "mapping", "expected"),
+    [
+        (["a"] * 8, {"a": "b", "b": "c"}, "b"),
+        (["a"] * 8, {None: "b", "a": "c"}, "c"),
+        ([None] * 8, {None: "b", "b": "c"}, "b"),
+    ],
+)
+def test_replace_categorical_only_adds_values_for_present_keys(
+    values: list[str | None],
+    mapping: dict[str | None, str],
+    expected: str,
+    engine: EngineType,
+) -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    dtype = pl.Categorical(cats)
+    seed = pl.Series(["a", *(f"c{i}" for i in range(253))], dtype=dtype)
+    lf = pl.LazyFrame({"s": values}, schema={"s": dtype})
+
+    with pl.Config(streaming_chunk_size=1):
+        result = lf.select(pl.col("s").replace(mapping)).collect(engine=engine)
+
+    assert_frame_equal(result, pl.DataFrame({"s": [expected] * 8}, schema={"s": dtype}))
+    assert cats.to_series().len() == seed.len() + 1
+
+
 @pytest.mark.parametrize("make_categories", CATEGORIES)
 def test_replace_categorical_adds_new_values(
     make_categories: Callable[[], pl.Categories],

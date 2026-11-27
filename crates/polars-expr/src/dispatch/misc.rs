@@ -626,7 +626,7 @@ pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
         }
         let mut fill_value = s[1].clone();
         if fill_value.len() == s[0].len() {
-            let nulls = Column::full_null(PlSmallStr::EMPTY, fill_value.len(), &DataType::String);
+            let nulls = Column::full_null(PlSmallStr::EMPTY, 1, &DataType::String);
             fill_value = fill_value.zip_with_same_type(&s[0].is_null(), &nulls)?;
         }
         fill_value.cast(s[0].dtype())

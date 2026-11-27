@@ -541,3 +541,24 @@ def test_replace_strict_str_enum_27060() -> None:
     enum = pl.Enum(["A", "B"])
     out = pl.Series(["A", "B"]).cast(enum).replace_strict({"A": "X", "B": "Y"})
     assert_series_equal(out, pl.Series(["X", "Y"]))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("register_absent", [False, True])
+def test_replace_strict_categorical_validates_all_numeric_replacements(
+    engine: EngineType, register_absent: bool
+) -> None:
+    cats = pl.Categories.random()
+    dtype = pl.Categorical(cats)
+    lf = pl.LazyFrame({"s": ["a"]}, schema={"s": dtype})
+    if register_absent:
+        pl.Series(["absent"], dtype=dtype)
+
+    with pytest.raises(
+        InvalidOperationError, match="conversion from `str` to `u8` failed"
+    ):
+        lf.select(
+            pl.col("s").replace_strict(
+                {"a": "1", "absent": "bad"}, return_dtype=pl.UInt8
+            )
+        ).collect(engine=engine)

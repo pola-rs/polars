@@ -57,6 +57,7 @@ pub fn replace(s: &Series, old: &ListChunked, new: &ListChunked) -> PolarsResult
     let dtype = s.dtype();
     let (old, kept) = cast_to_match(&old, dtype)?;
     let new = filter_new(new, kept.as_ref())?;
+    let (old, new) = retain_matching_replacements(s, old, new, true)?;
     if old.is_empty() {
         return Ok(s.clone());
     }
@@ -121,6 +122,8 @@ pub fn replace_or_default(
 
     let (old, kept) = cast_to_match(&old, s.dtype())?;
     let new = filter_new(new, kept.as_ref())?;
+    let (old, new) =
+        retain_matching_replacements(s, old, new, return_dtype.contains_categoricals())?;
     if old.is_empty() {
         return default.broadcast_owned_to(s.len());
     }
@@ -140,7 +143,7 @@ pub fn replace_strict(
     s: &Series,
     old: &ListChunked,
     new: &ListChunked,
-    return_dtype: Option<DataType>,
+    mut return_dtype: Option<DataType>,
 ) -> PolarsResult<Series> {
     find_output_length(
         "replace_strict",
@@ -180,7 +183,12 @@ pub fn replace_strict(
     }
 
     let (old, kept) = cast_to_match(&old, s.dtype())?;
+    let new = match return_dtype.take_if(|dtype| !dtype.contains_categoricals()) {
+        Some(dtype) => new.strict_cast(&dtype)?,
+        None => new,
+    };
     let new = filter_new(new, kept.as_ref())?;
+    let (old, new) = retain_matching_replacements(s, old, new, return_dtype.is_some())?;
     if old.is_empty() {
         // No `old` value can match, so all values are unmatched (a null mask): only nulls pass.
         let mask = BooleanChunked::full_null(PlSmallStr::EMPTY, s.len());
@@ -386,6 +394,23 @@ fn filter_new(new: Series, kept: Option<&BooleanChunked>) -> PolarsResult<Series
         },
         _ => Ok(new),
     }
+}
+
+/// A key must match an input row before its replacement can register a category.
+fn retain_matching_replacements(
+    s: &Series,
+    old: Series,
+    new: Series,
+    add_categories: bool,
+) -> PolarsResult<(Series, Series)> {
+    if !add_categories || !s.dtype().is_categorical() || old.is_empty() {
+        return Ok((old, new));
+    }
+    let present = is_in(&old, &s.implode()?.into_series(), true)?;
+    if present.all() {
+        return Ok((old, new));
+    }
+    Ok((old.filter(&present)?, filter_new(new, Some(&present))?))
 }
 
 /// Validate the `new` input.
