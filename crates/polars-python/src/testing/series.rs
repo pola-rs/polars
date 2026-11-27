@@ -28,5 +28,5 @@ pub fn assert_series_equal_py(
         categorical_as_str,
     };
 
-    py.enter_polars(|| assert_series_equal(&left.series.read(), &right.series.read(), options))
+    py.enter_polars(|| assert_series_equal(&left.series(), &right.series(), options))
 }

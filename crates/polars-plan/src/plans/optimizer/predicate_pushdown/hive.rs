@@ -363,7 +363,10 @@ fn make_predicate(
 
     AExprBuilder::col(predicate_name, expr_arena)
         .is_in(
-            AExprBuilder::lit(LiteralValue::Series(SpecialEq::new(values)), expr_arena),
+            AExprBuilder::lit(
+                LiteralValue::Series(SpecialEq::new(values.into())),
+                expr_arena,
+            ),
             // Hive __HIVE_DEFAULT_PARTITION__ can produce nulls
             true,
             expr_arena,

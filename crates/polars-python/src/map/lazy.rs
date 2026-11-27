@@ -23,14 +23,14 @@ pub(crate) fn call_lambda_with_series(
 
     let series_objects = s
         .iter()
-        .map(|c| PySeries::new(c.as_materialized_series().clone()).into_py_any(py))
+        .map(|c| PySeries::from_column(c.clone()).into_py_any(py))
         .collect::<PyResult<Vec<Py<PyAny>>>>()?;
 
     let result = lambda.call(py, (series_objects,), Some(&dict))?;
     Ok(result
         .extract::<PySeries>(py)
         .map_err(PyErr::from)
-        .map(|s| s.series.into_inner().into_column())?)
+        .map(|s| s.into_frame_column())?)
 }
 
 pub fn map_expr(

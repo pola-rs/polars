@@ -132,6 +132,20 @@ impl<'a> Lookup<'a> {
     }
 }
 
+impl DictionaryColumn {
+    /// The boolean `op` evaluated once per dictionary value that rows use (once on every
+    /// dictionary value when that is cheaper) and spread to the rows by code: a comparison of
+    /// the column with a constant. A null row gives what `op` gives for a null.
+    ///
+    /// The result is one chunk, whatever the chunks of the column.
+    pub fn compare_with(
+        &self,
+        op: impl Fn(&Series) -> PolarsResult<BooleanChunked>,
+    ) -> PolarsResult<BooleanChunked> {
+        dictionary_mask(self, &op).map(|ca| ca.rechunk().into_owned())
+    }
+}
+
 type CompareFn = fn(&Series, &Series) -> PolarsResult<BooleanChunked>;
 
 fn compare_broadcasting(lhs: &Column, rhs: &Column, op: CompareFn) -> PolarsResult<BooleanChunked> {

@@ -498,15 +498,20 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
     } else if let Ok(pystr) = value.cast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
-        let s = series.series.into_inner();
         if is_scalar {
+            let s = series.into_series();
             let av = s
                 .get(0)
                 .map_err(|_| PyValueError::new_err("expected at least 1 value"))?;
             let av = av.into_static();
             Ok(dsl::lit(Scalar::new(s.dtype().clone(), av)).into())
         } else {
-            Ok(dsl::lit(s).into())
+            // Keeps a Dictionary column unmaterialised; a Scalar column becomes a Series.
+            Ok(match series.column.into_inner() {
+                Column::Scalar(sc) => dsl::lit(sc.as_materialized_series().clone()),
+                c => dsl::lit(c),
+            }
+            .into())
         }
     } else if value.is_none() {
         Ok(dsl::lit(Null {}).into())
@@ -531,9 +536,8 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             AnyValue::ObjectOwned(_) => {
                 // Check again for object allowance as for cached addresses this is not checked.
                 if allow_object {
-                    let s = PySeries::new_object(py, "", vec![value.extract()?], false)
-                        .series
-                        .into_inner();
+                    let s =
+                        PySeries::new_object(py, "", vec![value.extract()?], false).into_series();
                     Ok(dsl::lit(s).into())
                 } else {
                     Err(raise())

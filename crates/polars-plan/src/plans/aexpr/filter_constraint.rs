@@ -1270,7 +1270,9 @@ fn value_set_series(ae: &AExpr) -> Option<Series> {
     };
     let values: Series = match lit {
         LiteralValue::Scalar(s) => list_inner(s.value())?,
-        LiteralValue::Series(s) if s.len() == 1 => list_inner(&s.get(0).ok()?)?,
+        LiteralValue::Series(s) if s.len() == 1 => {
+            list_inner(&s.as_materialized_series().get(0).ok()?)?
+        },
         _ => return None,
     };
     (values.len() <= MAX_IS_IN_VALUES && !values.has_nulls()).then_some(values)

@@ -1,12 +1,12 @@
 use polars_ffi::version_0::SeriesExport;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
-use pyo3::types::{PyCapsule, PyList};
+use pyo3::types::{PyCapsule, PyList, PyString};
 
 use super::PySeries;
 use crate::error::PyPolarsErr;
 use crate::interop;
-use crate::interop::arrow::to_py::series_to_stream;
+use crate::interop::arrow::to_py::column_to_stream;
 use crate::prelude::*;
 use crate::utils::EnterPolarsExt;
 
@@ -15,7 +15,40 @@ impl PySeries {
     /// Convert this Series to a Python list.
     /// This operation copies data.
     pub fn to_list<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let series = &self.series.read();
+        // A dictionary column converts each used value once, not each row, and keeps its codes.
+        let dictionary = match &*self.column.read() {
+            Column::Dictionary(d) => Some(d.clone()),
+            _ => None,
+        };
+        if let Some(d) = dictionary {
+            let values = d.dict().values();
+            // A slice keeps the whole dictionary: index by code only when the rows are not
+            // far fewer than its values, else by a map, so the cost follows the rows.
+            let string = |code: u32| PyString::new(py, values.value(code as usize));
+            let mut dense: Vec<Option<Bound<'py, PyString>>> = if d.len() * 4 >= values.len() {
+                vec![None; values.len()]
+            } else {
+                Vec::new()
+            };
+            let mut sparse = std::collections::HashMap::<u32, Bound<'py, PyString>>::new();
+            let mut out = Vec::with_capacity(d.len());
+            for code in d.codes().iter() {
+                out.push(match code {
+                    None => py.None().into_bound(py),
+                    Some(code) if !dense.is_empty() => dense[code as usize]
+                        .get_or_insert_with(|| string(code))
+                        .clone()
+                        .into_any(),
+                    Some(code) => sparse
+                        .entry(code)
+                        .or_insert_with(|| string(code))
+                        .clone()
+                        .into_any(),
+                });
+            }
+            return Ok(PyList::new(py, out)?.into_any());
+        }
+        let series = &self.series();
 
         fn to_list_recursive<'py>(py: Python<'py>, series: &Series) -> PyResult<Bound<'py, PyAny>> {
             let pylist = match series.dtype() {
@@ -188,7 +221,18 @@ impl PySeries {
         // lock across that lets any thread blocking on the write lock (which it does while
         // holding the GIL) deadlock against us.
         let (array, field) = py.enter_polars(|| {
-            let s = self.series.read();
+            let column = self.column.read().clone();
+            // A dictionary column gathers its values without filling its shared cache.
+            if let Column::Dictionary(d) = &column
+                && d.lazy_as_materialized_series().is_none()
+            {
+                let field = column.field().to_arrow(compat_level.0);
+                let array = column
+                    .slice((0i64, column.len()))
+                    .rechunk_to_arrow(compat_level.0);
+                return PolarsResult::Ok((array, field));
+            }
+            let s = column.take_materialized_series();
             PolarsResult::Ok((
                 s.try_to_arrow(0, compat_level.0)?,
                 s.field().to_arrow(compat_level.0),
@@ -205,11 +249,12 @@ impl PySeries {
         py: Python<'py>,
         requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        series_to_stream(&self.series.read(), py)
+        let column = self.column.read().clone();
+        column_to_stream(&column, py)
     }
 
     pub fn _export(&self, _py: Python<'_>, location: usize) {
-        let export = polars_ffi::version_0::export_series(&self.series.read());
+        let export = polars_ffi::version_0::export_series(&self.series());
         unsafe {
             (location as *mut SeriesExport).write(export);
         }

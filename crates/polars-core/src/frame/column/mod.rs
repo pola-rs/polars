@@ -1541,6 +1541,14 @@ impl Column {
 
     pub fn unique(&self) -> PolarsResult<Column> {
         match self {
+            // The values the rows use, in order of first use (which is also an order of the
+            // unordered `unique`).
+            Column::Dictionary(d) if d.is_sorted_flag() == IsSorted::Not => {
+                match d.used_values_with_counts() {
+                    Some((values, _)) => Ok(values.into()),
+                    None => self.as_materialized_series().unique().map(Column::from),
+                }
+            },
             Column::Series(_) | Column::Dictionary(_) => {
                 let s = self.as_materialized_series();
                 s.unique().map(Column::from)
@@ -1557,6 +1565,17 @@ impl Column {
     }
     pub fn unique_stable(&self) -> PolarsResult<Column> {
         match self {
+            // The values the rows use, in order of first use (which is also an order of the
+            // unordered `unique`).
+            Column::Dictionary(d) if d.is_sorted_flag() == IsSorted::Not => {
+                match d.used_values_with_counts() {
+                    Some((values, _)) => Ok(values.into()),
+                    None => self
+                        .as_materialized_series()
+                        .unique_stable()
+                        .map(Column::from),
+                }
+            },
             Column::Series(_) | Column::Dictionary(_) => {
                 let s = self.as_materialized_series();
                 s.unique_stable().map(Column::from)
@@ -1795,6 +1814,13 @@ impl Column {
 
     pub fn min_reduce(&self) -> PolarsResult<Scalar> {
         match self {
+            // The extreme of the values the rows use.
+            Column::Dictionary(d) if d.is_sorted_flag() == IsSorted::Not => {
+                match d.used_values_with_counts() {
+                    Some((values, _)) => values.min_reduce(),
+                    None => self.as_materialized_series().min_reduce(),
+                }
+            },
             Column::Series(_) | Column::Dictionary(_) => {
                 let s = self.as_materialized_series();
                 s.min_reduce()
@@ -1808,6 +1834,13 @@ impl Column {
     }
     pub fn max_reduce(&self) -> PolarsResult<Scalar> {
         match self {
+            // The extreme of the values the rows use.
+            Column::Dictionary(d) if d.is_sorted_flag() == IsSorted::Not => {
+                match d.used_values_with_counts() {
+                    Some((values, _)) => values.max_reduce(),
+                    None => self.as_materialized_series().max_reduce(),
+                }
+            },
             Column::Series(_) | Column::Dictionary(_) => {
                 let s = self.as_materialized_series();
                 s.max_reduce()
@@ -1922,6 +1955,12 @@ impl Column {
     }
     pub fn n_unique(&self) -> PolarsResult<usize> {
         match self {
+            Column::Dictionary(d) if d.is_sorted_flag() == IsSorted::Not => {
+                match d.used_values_with_counts() {
+                    Some((values, _)) => Ok(values.len()),
+                    None => self.as_materialized_series().n_unique(),
+                }
+            },
             Column::Series(_) | Column::Dictionary(_) => {
                 let s = self.as_materialized_series();
                 s.n_unique()

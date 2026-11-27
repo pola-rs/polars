@@ -82,7 +82,7 @@ pub(super) fn try_extract_is_in_haystack(
 ) -> Option<(Series, bool)> {
     let lv = constant_evaluate(lv_node, expr_arena, schema, 0)??;
     let av = match lv.as_ref() {
-        LiteralValue::Series(s) if s.len() == 1 => s.get(0).ok()?,
+        LiteralValue::Series(s) if s.len() == 1 => s.as_materialized_series().get(0).ok()?,
         lv => lv.to_any_value()?,
     };
     let s = match av {

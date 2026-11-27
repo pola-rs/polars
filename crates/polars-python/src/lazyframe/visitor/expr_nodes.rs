@@ -896,7 +896,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     }
                 },
                 LiteralValue::Range(range) => (range.low, range.high).into_py_any(py)?,
-                LiteralValue::Series(s) => PySeries::new((**s).clone()).into_py_any(py)?,
+                LiteralValue::Series(s) => {
+                    PySeries::new(s.as_materialized_series().clone()).into_py_any(py)?
+                },
             };
 
             Literal {

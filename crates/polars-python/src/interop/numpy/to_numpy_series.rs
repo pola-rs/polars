@@ -26,7 +26,7 @@ impl PySeries {
     /// is required. Set `writable` to make sure the resulting array is writable, possibly requiring
     /// copying the data.
     fn to_numpy(&self, py: Python<'_>, writable: bool, allow_copy: bool) -> PyResult<Py<PyAny>> {
-        series_to_numpy(py, &self.series.read(), writable, allow_copy)
+        series_to_numpy(py, &self.series(), writable, allow_copy)
     }
 
     /// Create a view of the data as a NumPy ndarray.
@@ -35,7 +35,7 @@ impl PySeries {
     /// which may be any value. The caller is responsible for handling nulls
     /// appropriately.
     fn to_numpy_view(&self, py: Python) -> Option<Py<PyAny>> {
-        let (view, _) = try_series_to_numpy_view(py, &self.series.read(), true, false)?;
+        let (view, _) = try_series_to_numpy_view(py, &self.series(), true, false)?;
         Some(view)
     }
 
@@ -51,7 +51,7 @@ impl PySeries {
         writable: bool,
         allow_copy: bool,
     ) -> PyResult<(Py<PyAny>, Option<Py<PyAny>>)> {
-        let s = self.series.read().clone();
+        let s = self.series();
         let s = s.propagate_nulls().unwrap_or(s);
         let values = series_values_to_numpy(py, &s, writable, allow_copy)?;
         let mask = series_null_mask_to_numpy(py, &s)?;

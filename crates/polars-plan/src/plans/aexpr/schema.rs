@@ -129,7 +129,7 @@ impl AExpr {
                 Err(PolarsError::StructFieldNotFound(name.to_string().into()))
             },
             Literal(sv) => Ok(match sv {
-                LiteralValue::Series(s) => s.field().into_owned(),
+                LiteralValue::Series(s) => s.field(),
                 _ => Field::new(sv.output_column_name(), sv.get_datatype()),
             }),
             BinaryExpr { left, right, op } => {

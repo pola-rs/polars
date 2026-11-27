@@ -612,7 +612,7 @@ mod approx_quantile {
         let series = |values: &[f64]| Series::new(PlSmallStr::EMPTY, values);
         let list_scalar = |values: &[f64]| {
             Expr::Literal(
-                LiteralValue::Series(SpecialEq::new(series(values)))
+                LiteralValue::Series(SpecialEq::new(series(values).into()))
                     .implode()
                     .unwrap(),
             )

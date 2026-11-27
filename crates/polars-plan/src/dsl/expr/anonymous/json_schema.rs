@@ -47,6 +47,20 @@ impl schemars::JsonSchema for SpecialEq<Series> {
     }
 }
 
+impl schemars::JsonSchema for SpecialEq<crate::plans::LiteralColumn> {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        Series::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        Series::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        Series::json_schema(generator)
+    }
+}
+
 impl schemars::JsonSchema for SpecialEq<Arc<dyn AnonymousAgg>> {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "AnonymousAgg".into()

@@ -14,7 +14,7 @@ pub fn extract_quantiles(fraction: PySeries, allow_list: bool) -> PyResult<Vec<f
         true => QuantileFractionDtypes::NumberOrList,
         false => QuantileFractionDtypes::Number,
     };
-    let fraction = fraction.series.into_inner();
+    let fraction = fraction.series();
     let quantiles = polars::prelude::extract_non_null_quantiles(&fraction, allowed)
         .map_err(PyPolarsErr::from)?;
     Ok(quantiles)

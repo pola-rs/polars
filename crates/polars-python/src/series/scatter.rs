@@ -8,21 +8,22 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PySeries {
     fn scatter(&self, py: Python<'_>, idx: PySeries, values: PySeries) -> PyResult<()> {
+        let idx = idx.series();
+        let values = values.series();
         py.enter_polars(|| {
-            let mut lock = self.series.write();
+            let mut lock = self.column.write();
             // Prepare while the series is still in place, so an error or a panic leaves it intact.
-            let (idx, values) =
-                prepare_scatter(&lock, &idx.series.into_inner(), &values.series.into_inner())?;
+            let (idx, values) = prepare_scatter(lock.as_materialized_series(), &idx, &values)?;
             // We take the value because we want a ref count of 1 so that we can
             // have mutable access cheaply via _get_inner_mut().
-            let s = std::mem::take(&mut *lock);
+            let s = std::mem::take(lock.into_materialized_series());
             match scatter(s, &idx, &values) {
                 Ok(out) => {
-                    *lock = out;
+                    *lock = Column::Series(out.into());
                     Ok(())
                 },
                 Err((s, e)) => {
-                    *lock = s; // Restore original series.
+                    *lock = Column::Series(s.into()); // Restore original series.
                     Err(e)
                 },
             }
