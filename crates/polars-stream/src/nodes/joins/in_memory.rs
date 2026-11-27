@@ -18,6 +18,8 @@ enum InMemoryJoinState {
 
 pub struct InMemoryJoinNode {
     state: InMemoryJoinState,
+    /// Per input, whether the output is empty when that input is.
+    empty_input_gives_empty_output: [bool; 2],
     joiner: Arc<dyn Fn(DataFrame, DataFrame) -> PolarsResult<DataFrame> + Send + Sync>,
 }
 
@@ -26,6 +28,7 @@ impl InMemoryJoinNode {
         left_input_schema: Arc<Schema>,
         right_input_schema: Arc<Schema>,
         joiner: Arc<dyn Fn(DataFrame, DataFrame) -> PolarsResult<DataFrame> + Send + Sync>,
+        empty_input_gives_empty_output: [bool; 2],
         task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         Self {
@@ -34,6 +37,7 @@ impl InMemoryJoinNode {
                 right: InMemorySinkNode::new(right_input_schema, task_metrics),
             },
             joiner,
+            empty_input_gives_empty_output,
         }
     }
 }
@@ -54,6 +58,16 @@ impl ComputeNode for InMemoryJoinNode {
         // If the output doesn't want any more data, transition to being done.
         if send[0] == PortState::Done && !matches!(self.state, InMemoryJoinState::Done) {
             self.state = InMemoryJoinState::Done;
+        }
+
+        // An input that ended without rows can make the output empty.
+        if let InMemoryJoinState::Sink { left, right } = &self.state {
+            let [left_empty, right_empty] = self.empty_input_gives_empty_output;
+            if (left_empty && recv[0] == PortState::Done && left.is_empty())
+                || (right_empty && recv[1] == PortState::Done && right.is_empty())
+            {
+                self.state = InMemoryJoinState::Done;
+            }
         }
 
         // If the input is done, transition to being a source.

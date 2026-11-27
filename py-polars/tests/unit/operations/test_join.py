@@ -947,6 +947,13 @@ def test_join_validation_many_keys() -> None:
                 df1.join(df2, on=["val1", "val2"], how=join_type, validate=val)
 
 
+def test_join_validation_empty_input() -> None:
+    left = pl.LazyFrame({"a": pl.Series([], dtype=pl.Int64)})
+    right = pl.LazyFrame({"a": [1, 1]})
+    with pytest.raises(ComputeError):
+        left.join(right, on="a", validate="m:1").collect(engine="streaming")
+
+
 def test_full_outer_join_bool() -> None:
     df1 = pl.DataFrame({"id": [True, False], "val": [1, 2]})
     df2 = pl.DataFrame({"id": [True, False], "val": [0, -1]})
