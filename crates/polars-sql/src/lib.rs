@@ -24,6 +24,7 @@ mod params;
 mod pivot;
 mod positional_join;
 mod resolver;
+mod sample;
 mod sql_expr;
 mod sql_visitors;
 mod subquery;
