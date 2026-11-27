@@ -1084,7 +1084,9 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Expr:
         """
-        Return the bytes offset of the first substring matching a pattern.
+        Return the character offset of the first substring matching a pattern.
+
+        The offset is in Unicode code points, the same unit as :meth:`slice`.
 
         If the pattern is not found, returns None.
 
@@ -2671,7 +2673,9 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         patterns
-            String patterns to search.
+            String patterns to search: one list for the whole column, as a Python
+            list or an expression that returns a single list, such as
+            `pl.col("p").implode()`.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
@@ -2729,16 +2733,15 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         patterns
-            String patterns to search and replace.
-            Accepts expression input. Strings are parsed as column names, and other
-            non-expression inputs are parsed as literals. Also accepts a mapping of
-            patterns to their replacement as syntactic sugar for
-            `replace_many(pl.Series(mapping.keys()), pl.Series(mapping.values()))`.
+            String patterns to search and replace: one list for the whole column, as a
+            Python list or an expression that returns a single list, such as
+            `pl.col("p").implode()`. Also accepts a mapping of patterns to their
+            replacement as syntactic sugar for
+            `replace_many(list(mapping.keys()), list(mapping.values()))`.
         replace_with
-            Strings to replace where a pattern was a match.
-            Accepts expression input. Non-expression inputs are parsed as literals.
-            Length must match the length of `patterns` or have length 1. This can be
-            broadcasted, so it supports many:one and many:many.
+            Strings to replace where a pattern was a match: one list, like
+            `patterns`. Its length must match the length of `patterns` or be 1. This
+            can be broadcasted, so it supports many:one and many:many.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
@@ -3021,7 +3024,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Use the Aho-Corasick algorithm to find many matches.
 
-        The function will return the bytes offset of the start of each match.
+        The function will return the character offset (in Unicode code points) of
+        the start of each match.
         The return type will be `List<UInt32>`
 
         .. engine-support:: in-memory, streaming, distributed

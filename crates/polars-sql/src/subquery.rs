@@ -2031,6 +2031,7 @@ impl SQLContext {
         });
 
         // Grouping collects the candidate values of each outer row into a list.
+        let value = value.implode(true);
         let equality_only =
             general.is_empty() && corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq);
         let joined = if equality_only {
@@ -2101,7 +2102,7 @@ impl SQLContext {
             Some(false) => Ok(false),
             None => polars_bail!(
                 SQLInterface:
-                "EXISTS subquery is not currently supported in this position: {:?}", subquery
+                "EXISTS subquery is not currently supported in this position: `{}`", subquery
             ),
         }
     }
@@ -2569,14 +2570,28 @@ fn build_semi_anti_join(
             join_right.push(r.clone());
         }
     }
-    let joined = lf
-        .clone()
+    let (mut outer, mut inner) = (lf.clone(), inner_lf.clone());
+    let added = crate::join_keys::distinct_key_names(
+        &mut outer,
+        &mut inner,
+        &mut join_left,
+        &mut join_right,
+        outer_schema,
+        inner_schema,
+    );
+    let mut joined = outer
         .join_builder()
-        .with(inner_lf.clone())
+        .with(inner)
         .left_on(join_left)
         .right_on(join_right)
         .how(join_type)
         .finish()?;
+    if !added.is_empty() {
+        joined = joined.drop(Selector::ByName {
+            names: added.into(),
+            strict: false,
+        });
+    }
     if !correct_not_in {
         return Ok(Some(joined));
     }
@@ -2658,13 +2673,32 @@ fn refine_not_in_anti_join(
             }));
     }
 
-    // Correlated
-    let corr_keys = |lf: LazyFrame| lf.select(corr_inner).unique(None, UniqueKeepStrategy::Any);
+    // Correlated; inner keys that share a name are renamed.
+    let names: Vec<_> = corr_inner
+        .iter()
+        .map(|key| key.clone().meta().output_name().ok())
+        .collect();
+    let distinct = names.iter().flatten().collect::<PlHashSet<_>>().len() == names.len();
+    let (corr_select, corr_right): (Vec<Expr>, Vec<Expr>) = if distinct {
+        (corr_inner.to_vec(), corr_inner.to_vec())
+    } else {
+        corr_inner
+            .iter()
+            .map(|key| {
+                let name = unique_column_name();
+                (key.clone().alias(name.clone()), col(name))
+            })
+            .unzip()
+    };
+    let corr_keys = |lf: LazyFrame| {
+        lf.select(corr_select.clone())
+            .unique(None, UniqueKeepStrategy::Any)
+    };
     let exclude_groups = |rows: LazyFrame, groups: LazyFrame| {
         rows.join_builder()
             .with(groups)
             .left_on(corr_outer)
-            .right_on(corr_inner)
+            .right_on(corr_right.clone())
             .how(JoinType::Anti)
             .finish()
     };

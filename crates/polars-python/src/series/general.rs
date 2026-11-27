@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::{IntoPyObjectExt, Python};
 
-use super::PySeries;
+use super::{PySeries, keeps_sorted_flag};
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
@@ -91,14 +91,12 @@ impl PySeries {
             .collect())
     }
 
-    // From the materialised Series, as before: the flag of a `Column::Dictionary` was not
-    // checked to equal it. (A `Column::Scalar` says `Ascending`, as its Series does.)
     fn is_sorted_ascending_flag(&self) -> bool {
-        matches!(self.series().is_sorted_flag(), IsSorted::Ascending)
+        matches!(self.sorted_flag(), IsSorted::Ascending)
     }
 
     fn is_sorted_descending_flag(&self) -> bool {
-        matches!(self.series().is_sorted_flag(), IsSorted::Descending)
+        matches!(self.sorted_flag(), IsSorted::Descending)
     }
 
     fn can_fast_explode_flag(&self) -> bool {
@@ -135,9 +133,17 @@ impl PySeries {
 
     /// Returns the string format of a single element of the Series.
     fn get_fmt(&self, index: usize, str_len_limit: usize) -> String {
-        let s = self.series();
-        let v = format!("{}", s.get(index).unwrap());
-        if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) = s.dtype() {
+        // A scalar or dictionary column reads the value without materialising.
+        let column = self.compressed();
+        let series;
+        let (v, dtype) = match &column {
+            Some(c) => (format!("{}", c.get(index).unwrap()), c.dtype()),
+            None => {
+                series = self.series();
+                (format!("{}", series.get(index).unwrap()), series.dtype())
+            },
+        };
+        if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) = dtype {
             let v_no_quotes = &v[1..v.len() - 1];
             let v_trunc = &v_no_quotes[..v_no_quotes
                 .char_indices()
@@ -285,9 +291,13 @@ impl PySeries {
         py.enter_polars(|| {
             // Prevent self-append deadlocks.
             // A scalar column keeps the Series path: it merges equal values into one chunk.
-            if matches!(self.compressed(), Some(Column::Dictionary(_))) {
+            if let Some(c @ Column::Dictionary(_)) = self.compressed() {
                 let other = other.column.read().clone();
-                return self.column.write().append(&other).map(drop);
+                // `Column::append` of a dictionary column drops the sorted flag, which the
+                // Series path keeps in these cases: they take the Series path.
+                if !(keeps_sorted_flag(&c) && keeps_sorted_flag(&other)) {
+                    return self.column.write().append(&other).map(drop);
+                }
             }
             let other = other.series();
             self.with_series_mut(|s| s.append(&other).map(drop))
@@ -300,9 +310,13 @@ impl PySeries {
             // A scalar column keeps the Series path: `extend` clears the sorted flag of a
             // String Series, which `Column::extend` (ascending, as a scalar column always
             // is) would not.
-            if matches!(self.compressed(), Some(Column::Dictionary(_))) {
+            if let Some(c @ Column::Dictionary(_)) = self.compressed() {
                 let other = other.column.read().clone();
-                return self.column.write().extend(&other).map(drop);
+                // `Column::extend` of a dictionary column drops the sorted flag, which the
+                // Series path keeps in these cases: they take the Series path.
+                if !(keeps_sorted_flag(&c) && keeps_sorted_flag(&other)) {
+                    return self.column.write().extend(&other).map(drop);
+                }
             }
             let other = other.series();
             self.with_series_mut(|s| s.extend(&other).map(drop))
@@ -397,14 +411,25 @@ impl PySeries {
         check_names: bool,
         null_equal: bool,
     ) -> PyResult<bool> {
+        // The cheap answers come from the columns, before either is materialised. Each is what
+        // `equals`/`equals_missing` answers anyway: false for another length or null count (and
+        // `equals` is false for any null).
+        let info = |p: &PySeries| {
+            let c = p.column.read();
+            (c.dtype().clone(), c.name().clone(), c.len(), c.null_count())
+        };
+        let (s_dtype, s_name, s_len, s_nulls) = info(self);
+        let (o_dtype, o_name, o_len, o_nulls) = info(other);
+        if (check_dtypes && s_dtype != o_dtype)
+            || (check_names && s_name != o_name)
+            || s_len != o_len
+            || (null_equal && s_nulls != o_nulls)
+            || (!null_equal && (s_nulls > 0 || o_nulls > 0))
+        {
+            return Ok(false);
+        }
         let s = self.series();
         let o = other.series();
-        if check_dtypes && (s.dtype() != o.dtype()) {
-            return Ok(false);
-        }
-        if check_names && (s.name() != o.name()) {
-            return Ok(false);
-        }
         if null_equal {
             py.enter_polars_ok(|| s.equals_missing(&o))
         } else {

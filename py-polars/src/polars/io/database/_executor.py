@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Coroutine, Iterable, Sequence
+import sys
+from collections import Counter
+from collections.abc import Coroutine, Iterable, Mapping, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Final, cast
@@ -23,7 +25,7 @@ from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Generator, Iterator
     from types import TracebackType
     from typing import Self
 
@@ -51,19 +53,178 @@ _INVALID_QUERY_TYPES: Final[set[str]] = {
     "VACUUM",
 }
 
+# the Databricks SQLAlchemy dialect's driver ("databricks-sql-python" before
+# databricks-sqlalchemy 2.x)
+_DATABRICKS_ALCHEMY_DRIVERS: Final = frozenset({"databricks", "databricks-sql-python"})
 
-class CloseAfterFrameIter:
-    """Allows cursor close to be deferred until the last batch is returned."""
 
-    def __init__(self, frames: Any, *, cursor: Cursor) -> None:
-        self._iter_frames = frames
-        self._cursor = cursor
+def _has_text(dtype: Any) -> bool:
+    """Whether a dtype holds a String, also nested or in an extension."""
+    from polars.datatypes import Array, BaseExtension, List, Map, String, Struct
 
-    def __iter__(self) -> Iterator[DataFrame]:
-        yield from self._iter_frames
+    if dtype == String:
+        return True
+    if isinstance(dtype, BaseExtension):
+        return _has_text(dtype.ext_storage())
+    if isinstance(dtype, (List, Array)):
+        return _has_text(dtype.inner)
+    if isinstance(dtype, Map):
+        return _has_text(dtype.key) or _has_text(dtype.value)
+    if isinstance(dtype, Struct):
+        return any(_has_text(f.dtype) for f in dtype.fields)
+    return False
 
-        if hasattr(self._cursor, "close"):
-            self._cursor.close()
+
+def _as_binary(dtype: Any) -> Any:
+    """The physical dtype with Binary for each String, or None if it holds no String."""
+    from polars.datatypes import Array, Binary, Field, List, String, Struct
+
+    if dtype == String:
+        return Binary
+    if isinstance(dtype, (List, Array)):
+        inner = _as_binary(dtype.inner)
+        if inner is None:
+            return None
+        return List(inner) if isinstance(dtype, List) else Array(inner, dtype.size)
+    if isinstance(dtype, Struct):
+        fields = [_as_binary(f.dtype) for f in dtype.fields]
+        if all(f is None for f in fields):
+            return None
+        return Struct(
+            [
+                Field(f.name, f.dtype if b is None else b)
+                for f, b in zip(dtype.fields, fields, strict=True)
+            ]
+        )
+    return None
+
+
+def _check_utf8(df: DataFrame) -> DataFrame:
+    """
+    The frame, if its text is valid UTF-8, also nested in lists, structs and maps.
+
+    A driver that hands the bytes of a text value over as they are (the Databricks
+    connector and ADBC drivers over a `STRING` made of `unhex('FF')`) would otherwise
+    reach the caller as a String that breaks its contract (memory unsafety in string
+    operations).
+    """
+    from polars.exceptions import ComputeError
+
+    for s in df.iter_columns():
+        if not _has_text(s.dtype):
+            continue
+        # `to_physical` selects the column by name, which may be a pattern
+        physical = s.rename("s").to_physical()
+        try:
+            physical.cast(_as_binary(physical.dtype)).cast(physical.dtype)
+        except Exception as e:
+            msg = (
+                "the database returned text that isn't valid UTF-8 (a STRING made "
+                "of other bytes); read the column as BINARY with "
+                f"CAST(<column> AS BINARY) and decode it in Polars ({e})"
+            )
+            raise ComputeError(msg) from e
+    return df
+
+
+# the drivers that pass on the bytes of a text value without checking them
+_UNCHECKED_TEXT_DRIVERS: Final = frozenset({"adbc", "databricks"})
+
+
+def _close_after_frames(
+    frames: Any, *, close: Callable[[], None]
+) -> Generator[DataFrame]:
+    """
+    Yield the frames, then call `close` (also on an early stop or an error).
+
+    The query has already run when this is returned. A generator that never started
+    skips its `finally` when closed or collected, so it is primed here: it waits at
+    a first `yield` inside the `try`, and `close()` before the first `next()` works.
+    """
+
+    def gen() -> Generator[DataFrame]:
+        try:
+            yield None  # type: ignore[misc]  # (priming)
+            yield from frames
+        finally:
+            close()
+
+    g = gen()
+    next(g)
+    return g
+
+
+def _trino_field_names(value: tuple[Any, ...]) -> list[str | None]:
+    attrs = vars(value)
+    annotations = attrs.get("__annotations__")
+    names_attr = attrs.get("_names")
+    for metadata, names in (
+        (
+            annotations,
+            annotations.get("names") if isinstance(annotations, dict) else None,
+        ),
+        (names_attr, names_attr),
+    ):
+        # Trino sets named fields as attributes. A field can replace a
+        # metadata container or the whole instance dictionary (__dict__).
+        if (
+            isinstance(names, list)
+            and len(names) == len(value)
+            and all(name is None or isinstance(name, str) for name in names)
+            and not any(
+                metadata is field_value or attrs is field_value for field_value in value
+            )
+        ):
+            return names
+    msg = "Cannot determine field names for a Trino ROW: missing or shadowed driver metadata"
+    raise ValueError(msg)
+
+
+def _convert_trino_value(value: Any, row_type: type[tuple[Any, ...]]) -> Any:
+    """Recursively convert trino `NamedRowTuple` values to dicts (struct-like)."""
+    if isinstance(value, row_type):
+        names = _trino_field_names(value)
+        counts = Counter(names)
+        fields: dict[str, Any] = {}
+        fallback = 0
+        for idx, (name, field_value) in enumerate(zip(names, value, strict=True)):
+            if name is not None and counts[name] == 1:
+                field_name = name
+            else:
+                fallback = max(fallback, idx)
+                # Keep candidate names reserved for unique fields later in the row.
+                while counts[field_name := f"field_{fallback}"] == 1:
+                    fallback += 1
+                fallback += 1
+            fields[field_name] = _convert_trino_value(field_value, row_type)
+        return fields
+    elif isinstance(value, list):
+        return [_convert_trino_value(v, row_type) for v in value]
+    elif isinstance(value, dict):
+        return {k: _convert_trino_value(v, row_type) for k, v in value.items()}
+    return value
+
+
+def _convert_trino_rows(
+    rows: Iterable[Sequence[Any] | Mapping[str, Any]],
+    row_type: type[tuple[Any, ...]],
+    row_columns: list[tuple[int, str]],
+) -> list[Sequence[Any] | Mapping[str, Any]]:
+    """Convert Trino ROW values in the columns identified by the cursor."""
+    converted: list[Sequence[Any] | Mapping[str, Any]] = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            mapping = dict(row)
+            for _, name in row_columns:
+                if name in mapping:
+                    mapping[name] = _convert_trino_value(mapping[name], row_type)
+            converted.append(mapping)
+        else:
+            values = list(row)
+            for idx, _ in row_columns:
+                values[idx] = _convert_trino_value(values[idx], row_type)
+            converted.append(values)
+    return converted
 
 
 class ConnectionExecutor:
@@ -72,6 +233,8 @@ class ConnectionExecutor:
     # indicate if we can/should close the cursor on scope exit. note that we
     # should never close the underlying connection, or a user-supplied cursor.
     can_close_cursor: bool = False
+    # a SQLAlchemy result whose cursor is read as Arrow (Databricks): ours to close
+    _owned_result: Any = None
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
         self.driver_name = (
@@ -102,15 +265,38 @@ class ConnectionExecutor:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        # if we created it and are finished with it, we can
-        # close the cursor (but NOT the connection)
-        if self._is_alchemy_async(self.cursor):
-            from sqlalchemy.ext.asyncio import AsyncConnection
+        # if we created it and are finished with it, we can close it
+        # (but NOT a connection or cursor of the caller's)
+        if (cleanup := self._take_cleanup()) is not None:
+            cleanup()
 
-            if isinstance(self.cursor, AsyncConnection):
-                _run_async(self._close_async_cursor())
-        elif self.can_close_cursor and hasattr(self.cursor, "close"):
-            self.cursor.close()
+    def _take_cleanup(self) -> Callable[[], None] | None:
+        """
+        Take over closing what the executor opened; the returned callable closes it.
+
+        That is a SQLAlchemy result read as Arrow (`_owned_result`), then the cursor if
+        it is ours (`can_close_cursor`). Once taken, `__exit__` leaves both to the
+        callable, so a batch iterator can close them after its last batch.
+        """
+        result = self._owned_result
+        cursor = self.cursor if self.can_close_cursor else None
+        if result is None and cursor is None:
+            return None
+        self._owned_result = None
+        self.can_close_cursor = False
+        close_async = cursor is not None and self._is_alchemy_async(cursor)
+
+        def cleanup() -> None:
+            try:
+                if result is not None:
+                    result.close()
+            finally:
+                if close_async:
+                    _run_async(self._close_async_cursor(cursor))
+                elif cursor is not None and hasattr(cursor, "close"):
+                    cursor.close()
+
+        return cleanup
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} module={self.driver_name!r}>"
@@ -129,12 +315,12 @@ class ConnectionExecutor:
             df = df.with_columns(cast_cols)
         return df
 
-    async def _close_async_cursor(self) -> None:
-        if self.can_close_cursor and hasattr(self.cursor, "close"):
-            from sqlalchemy.ext.asyncio.exc import AsyncContextNotStarted
+    @staticmethod
+    async def _close_async_cursor(cursor: Any) -> None:
+        from sqlalchemy.ext.asyncio.exc import AsyncContextNotStarted
 
-            with suppress(AsyncContextNotStarted):
-                await self.cursor.close()
+        with suppress(AsyncContextNotStarted):
+            await cursor.close()
 
     @staticmethod
     def _check_module_version(module_name: str, minimum_version: str) -> None:
@@ -193,24 +379,26 @@ class ConnectionExecutor:
             yield arrow
 
     @staticmethod
-    def _fetchall_rows(result: Cursor, *, is_alchemy: bool) -> Iterable[Sequence[Any]]:
+    def _fetchall_rows(
+        result: Cursor, *, is_alchemy: bool
+    ) -> Iterable[Sequence[Any] | Mapping[str, Any]]:
         """Fetch row data in a single call, returning the complete result set."""
         rows = result.fetchall()
         return (
             rows
-            if rows and (is_alchemy or isinstance(rows[0], (list, tuple, dict)))
+            if rows and (is_alchemy or isinstance(rows[0], (list, tuple, Mapping)))
             else [tuple(row) for row in rows]
         )
 
     def _fetchmany_rows(
         self, result: Cursor, *, batch_size: int | None, is_alchemy: bool
-    ) -> Iterable[Sequence[Any]]:
+    ) -> Iterable[Iterable[Sequence[Any] | Mapping[str, Any]]]:
         """Fetch row data incrementally, yielding over the complete result set."""
         while True:
             rows = result.fetchmany(batch_size)
             if not rows:
                 break
-            elif is_alchemy or isinstance(rows[0], (list, tuple, dict)):
+            elif is_alchemy or isinstance(rows[0], (list, tuple, Mapping)):
                 yield rows
             else:
                 yield [tuple(row) for row in rows]
@@ -257,16 +445,18 @@ class ConnectionExecutor:
                     )
                     raise ValueError(msg)  # noqa: TRY301
 
+                check = driver in _UNCHECKED_TEXT_DRIVERS
                 frames = (
-                    self._apply_overrides(batch, (schema_overrides or {}))
-                    if isinstance(batch, DataFrame)
-                    else self._apply_overrides(
-                        DataFrame(batch), (schema_overrides or {})
+                    self._apply_overrides(
+                        _check_utf8(df) if check else df, (schema_overrides or {})
                     )
-                    for batch in self._fetch_arrow(
-                        driver_properties,
-                        iter_batches=iter_batches,
-                        batch_size=batch_size,
+                    for df in (
+                        batch if isinstance(batch, DataFrame) else DataFrame(batch)
+                        for batch in self._fetch_arrow(
+                            driver_properties,
+                            iter_batches=iter_batches,
+                            batch_size=batch_size,
+                        )
                     )
                 )
                 return frames if iter_batches else next(frames)  # type: ignore[arg-type,return-value]
@@ -324,6 +514,29 @@ class ConnectionExecutor:
                     schema_overrides=(schema_overrides or {}),
                 )
                 result_columns = [nm for nm, _ in cursor_desc]
+                row_batches: Iterable[Iterable[Sequence[Any] | Mapping[str, Any]]] = (
+                    self._fetchmany_rows(
+                        self.result,
+                        batch_size=batch_size,
+                        is_alchemy=is_alchemy,
+                    )
+                    if iter_batches
+                    else [self._fetchall_rows(self.result, is_alchemy=is_alchemy)]
+                )
+                if trino_row_type := self._trino_row_type():
+                    row_columns = [
+                        (idx, name)
+                        for idx, (name, desc) in enumerate(cursor_desc)
+                        if isinstance(desc, tuple)
+                        and desc
+                        and isinstance(desc[0], str)
+                        and re.search(r"\brow\s*\(", desc[0], flags=re.IGNORECASE)
+                    ]
+                    if row_columns:
+                        row_batches = (
+                            _convert_trino_rows(rows, trino_row_type, row_columns)
+                            for rows in row_batches
+                        )
                 frames = (
                     DataFrame(
                         data=rows,
@@ -332,21 +545,37 @@ class ConnectionExecutor:
                         infer_schema_length=infer_schema_length,
                         orient="row",
                     )
-                    for rows in (
-                        self._fetchmany_rows(
-                            self.result,
-                            batch_size=batch_size,
-                            is_alchemy=is_alchemy,
-                        )
-                        if iter_batches
-                        else [self._fetchall_rows(self.result, is_alchemy=is_alchemy)]  # type: ignore[list-item]
-                    )
+                    for rows in row_batches
                 )
                 return frames if iter_batches else next(frames)  # type: ignore[arg-type]
             return None
         finally:
             if is_async:
                 original_result.close()
+
+    def _trino_row_type(self) -> type[tuple[Any, ...]] | None:
+        """
+        Return Trino's `NamedRowTuple` type if this is a Trino result.
+
+        The trino driver returns `ROW` values as `NamedRowTuple`, a tuple subclass
+        whose `__getattr__` returns `None` for unknown attributes; it therefore looks
+        like a namedtuple (it appears to have `_fields`) without behaving as one,
+        so these values need converting before frame init.
+        """
+        if (trino_types := sys.modules.get("trino.types")) is None:
+            return None
+        if self.driver_name == "sqlalchemy":
+            dialect = getattr(getattr(self.result, "context", None), "dialect", None)
+            if getattr(dialect, "name", None) != "trino":
+                return None
+        elif self.driver_name != "trino":
+            cursor_type = getattr(sys.modules.get("trino.dbapi"), "Cursor", ())
+            if not (
+                isinstance(self.cursor, cursor_type)
+                or isinstance(self.result, cursor_type)
+            ):
+                return None
+        return getattr(trino_types, "NamedRowTuple", None)
 
     def _inject_type_overrides(
         self,
@@ -454,10 +683,7 @@ class ConnectionExecutor:
                 return conn
             else:
                 # where possible, use the raw connection to access arrow integration
-                if conn.engine.driver == "databricks-sql-python":
-                    self.driver_name = "databricks"
-                    return conn.engine.raw_connection().cursor()
-                elif conn.engine.driver == "duckdb_engine":
+                if conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
                     return conn
                 elif self._is_alchemy_engine(conn):
@@ -538,8 +764,15 @@ class ConnectionExecutor:
         is_async = self._is_alchemy_async(self.cursor)
         if (
             not is_async
-            and isinstance(params, Sequence)
             and hasattr(self.cursor, "exec_driver_sql")
+            and (
+                isinstance(params, Sequence)
+                # The legacy Databricks dialect accepts native DBAPI placeholders.
+                or (
+                    isinstance(query, str)
+                    and self.cursor.engine.driver == "databricks-sql-python"  # type: ignore[attr-defined]
+                )
+            )
         ):
             cursor_execute = self.cursor.exec_driver_sql
             if isinstance(query, TextClause):
@@ -574,7 +807,13 @@ class ConnectionExecutor:
 
         options = options or {}
 
+        databricks_arrow = False
         if self._is_alchemy_object(self.cursor):
+            databricks_arrow = (
+                isinstance(query, str)
+                and getattr(getattr(self.cursor, "engine", None), "driver", None)
+                in _DATABRICKS_ALCHEMY_DRIVERS
+            )
             # note: the Arrow "fetch_df_*" methods take raw SQL, so the Oracle fast-path
             # is only available for string queries; anything else must be compiled first
             if (
@@ -632,6 +871,17 @@ class ConnectionExecutor:
             result = self.cursor
         if self.driver_name == "duckdb" and self._is_alchemy_result(result):
             result = result.cursor  # type: ignore[union-attr]
+        elif (
+            databricks_arrow
+            and self._is_alchemy_result(result)
+            and result.returns_rows  # type: ignore[union-attr]
+            and hasattr(result.cursor, "fetchall_arrow")  # type: ignore[union-attr]
+        ):
+            # Arrow from the driver's cursor (rows lose nested values and the time
+            # zone of a TIMESTAMP); the result is kept open until the read is done
+            self.driver_name = "databricks"
+            self._owned_result = result
+            result = result.cursor  # type: ignore[union-attr]
 
         self.result = result
         return self
@@ -654,33 +904,21 @@ class ConnectionExecutor:
             msg = "cannot return a frame before executing a query"
             raise RuntimeError(msg)
 
-        can_close = self.can_close_cursor
+        for frame_init in (
+            self._from_arrow,  # init from arrow-native data (where support exists)
+            self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
+        ):
+            frame = frame_init(
+                batch_size=batch_size,
+                iter_batches=iter_batches,
+                schema_overrides=schema_overrides,
+                infer_schema_length=infer_schema_length,
+            )
+            if frame is not None:
+                if iter_batches and (cleanup := self._take_cleanup()) is not None:
+                    frame = _close_after_frames(frame, close=cleanup)
+                return frame
 
-        if defer_cursor_close := (iter_batches and can_close):
-            self.can_close_cursor = False
-
-        try:
-            for frame_init in (
-                self._from_arrow,  # init from arrow-native data (where support exists)
-                self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
-            ):
-                frame = frame_init(
-                    batch_size=batch_size,
-                    iter_batches=iter_batches,
-                    schema_overrides=schema_overrides,
-                    infer_schema_length=infer_schema_length,
-                )
-                if frame is not None:
-                    if defer_cursor_close:
-                        frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
-                        frame = (df for df in frame_cursor)
-                    return frame
-        except BaseException:
-            # no frame iterator owns the cursor, so `__exit__` should close it
-            self.can_close_cursor = can_close
-            raise
-
-        self.can_close_cursor = can_close
         msg = (
             f"Currently no support for {self.driver_name!r} connection {self.cursor!r}"
         )

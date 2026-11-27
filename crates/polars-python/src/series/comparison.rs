@@ -4,6 +4,7 @@ use polars_core::series::IsSorted;
 use pyo3::prelude::*;
 
 use crate::PySeries;
+use crate::conversion::py_int_to_u128;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::utils::EnterPolarsExt;
@@ -64,7 +65,10 @@ impl PySeries {
             },
             Column::Dictionary(d) => {
                 // A full-length column of a non-String scalar compares on the Series path.
-                if full.as_ref().is_some_and(|f| f.dtype() != &DataType::String) {
+                if full
+                    .as_ref()
+                    .is_some_and(|f| f.dtype() != &DataType::String)
+                {
                     return None;
                 }
                 if d.is_sorted_flag() != IsSorted::Not {
@@ -163,6 +167,15 @@ impl PySeries {
 }
 
 macro_rules! impl_op {
+    ($op:ident, $name:ident, u128) => {
+        #[pymethods]
+        impl PySeries {
+            fn $name(&self, py: Python<'_>, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
+                let rhs = py_int_to_u128(rhs)?;
+                self.compare_with_const(py, |s| s.$op(rhs))
+            }
+        }
+    };
     ($op:ident, $name:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {

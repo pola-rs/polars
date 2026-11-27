@@ -57,8 +57,8 @@ def test_sample_df() -> None:
     assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
     assert df.sample(n=pl.Series([2]), seed=0).shape == (2, 3)
     assert df.sample(fraction=pl.Series([0.4]), seed=0).shape == (1, 3)
-    assert df.select(pl.col("foo").sample(n=pl.Series([2]), seed=0)).shape == (2, 1)
-    assert df.select(pl.col("foo").sample(fraction=pl.Series([0.4]), seed=0)).shape == (
+    assert df.select(pl.col("foo").sample(n=pl.lit(2), seed=0)).shape == (2, 1)
+    assert df.select(pl.col("foo").sample(fraction=pl.lit(0.4), seed=0)).shape == (
         1,
         1,
     )

@@ -72,7 +72,7 @@ impl Resolver {
         if let Some(schema) = &self.user_schema {
             for (name, dtype) in schema.iter() {
                 name.hash(&mut h);
-                dtype.hash(&mut h);
+                crate::database::options::hash_dtype(dtype, &mut h);
             }
         }
         h.finish()

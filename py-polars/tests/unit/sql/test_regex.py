@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLSyntaxError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from tests.unit.sql import assert_sql_matches
 
 
@@ -232,6 +232,32 @@ def test_regexp_extract_errors() -> None:
         df.sql("SELECT REGEXP_EXTRACT(s) FROM self")
     with pytest.raises(SQLSyntaxError, match="non-negative integer literal"):
         df.sql("SELECT REGEXP_EXTRACT(s, 'x', -1) FROM self")
+
+
+def test_regexp_substr() -> None:
+    # as in Postgres: NULL when there is no such match
+    df = pl.DataFrame({"s": ["user=Ann path=/a", "path=/b", "USER=bo user=cy", None]})
+    res = df.sql(
+        r"""
+        SELECT
+          REGEXP_SUBSTR(s, 'user=(\w+)', 1, 1, 'c', 1) AS u,
+          REGEXP_SUBSTR(s, 'user=\w+', 1, 2, 'i') AS second,
+          REGEXP_SUBSTR(s, '/\w') AS p,
+          REGEXP_SUBSTR(s, '/\w', 1, 1, '', 1) AS whole
+        FROM self
+        """
+    )
+    # a pattern without capture groups is its own group 1
+    assert res.rows() == [
+        ("Ann", None, "/a", "/a"),
+        (None, None, "/b", "/b"),
+        ("cy", "user=cy", None, None),
+        (None, None, None, None),
+    ]
+    with pytest.raises(SQLSyntaxError, match="REGEXP_SUBSTR expects 2-6 arguments"):
+        df.sql("SELECT REGEXP_SUBSTR(s) FROM self")
+    with pytest.raises(SQLInterfaceError, match="a `start` of 1 only"):
+        df.sql(r"SELECT REGEXP_SUBSTR(s, '\w+', 6) FROM self")
 
 
 def test_regexp_matches() -> None:

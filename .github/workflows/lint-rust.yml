@@ -14,6 +14,8 @@ on:
       - py-polars/polars-iceberg/**
       - deny.toml
       - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
       - .github/workflows/lint-rust.yml
   push:
     branches:
@@ -31,6 +33,8 @@ on:
       - py-polars/polars-iceberg/**
       - deny.toml
       - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
       - .github/workflows/lint-rust.yml
 
 concurrency:

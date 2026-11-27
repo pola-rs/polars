@@ -25,6 +25,7 @@ use polars_utils::{UnitVec, format_pl_smallstr, unitvec};
 use crate::constants::get_len_name;
 use crate::dsl::{FieldSelection, FileScanIR, PredicateFileSkip, ScanFieldSelection, UnionOptions};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
+use crate::plans::optimizer::join_utils::join_right_output_to_input;
 use crate::plans::optimizer::projection_pushdown::edge::{
     GetParentKeyAndPort as _, GetProjectionState, ParentKeyAndPort, Projection, ProjectionState,
 };
@@ -35,7 +36,7 @@ use crate::plans::optimizer::recursive_caches::caches_shared_across_rounds;
 use crate::plans::options::JoinTypeOptionsIR;
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::{
-    AExpr, ArenaExprIter, ArenaLpIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr, IRBuilder,
+    AExpr, ArenaExprIter, ArenaLpIter, ExprIR, FunctionIR, IR, IRAggExpr, IRBuilder,
     IRFunctionExpr, OutputName, det_join_schema,
 };
 use crate::prelude::{DistinctOptionsIR, Operator, ProjectionOptions};
@@ -1011,30 +1012,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 project_left.reserve(input_schema_left.len());
                 project_right.reserve(input_schema_right.len());
 
-                let coalesced_to_right = self.names_set_scratch3.get();
-
-                if options.args.should_coalesce()
-                    && let JoinType::Right = &options.args.how
-                {
-                    coalesced_to_right.extend_whole(options.options.left_on().map(|expr| {
-                        let node = match self.expr_arena.get(expr.node()) {
-                            AExpr::Cast {
-                                expr,
-                                dtype: _,
-                                options: _,
-                            } => *expr,
-
-                            _ => expr.node(),
-                        };
-
-                        let AExpr::Column(name) = self.expr_arena.get(node) else {
-                            // All keys should be columns when coalesce=True
-                            unreachable!()
-                        };
-
-                        name.clone()
-                    }))
-                }
+                let right_output_to_input =
+                    join_right_output_to_input(&input_schema_left, &input_schema_right, options)
+                        .unwrap();
 
                 let has_cross_filter =
                     matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. });
@@ -1073,38 +1053,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     .iter_names()
                     .filter(|name| is_projected_in_output(name) || reads_in_predicate(name))
                 {
-                    match ExprOrigin::get_column_origin(
-                        output_name,
-                        &input_schema_left,
-                        &input_schema_right,
-                        options.args.suffix(),
-                        Some(&|name| coalesced_to_right.contains_key(name)),
-                    )
-                    .unwrap()
-                    {
-                        ExprOrigin::None => {},
-                        ExprOrigin::Left => {
-                            project_left.insert_merged(
-                                output_name.clone(),
-                                output_selection_of(output_name),
-                            );
-                        },
-                        ExprOrigin::Right => {
-                            let name = if !input_schema_right.contains(output_name.as_str()) {
-                                PlSmallStr::from_str(
-                                    output_name
-                                        .strip_suffix(options.args.suffix().as_str())
-                                        .unwrap(),
-                                )
-                            } else {
-                                output_name.clone()
-                            };
-
-                            debug_assert!(input_schema_right.contains(name.as_str()));
-
-                            project_right.insert_merged(name, output_selection_of(output_name));
-                        },
-                        ExprOrigin::Both => unreachable!(),
+                    let selection = output_selection_of(output_name);
+                    if let Some(input_name) = right_output_to_input.get(output_name) {
+                        project_right.insert_merged(input_name.clone(), selection);
+                    } else {
+                        debug_assert!(input_schema_left.contains(output_name));
+                        project_left.insert_merged(output_name.clone(), selection);
                     }
                 }
 

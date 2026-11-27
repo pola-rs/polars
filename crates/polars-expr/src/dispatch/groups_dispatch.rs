@@ -8,14 +8,15 @@ use polars_arrow::offset::OffsetsBuffer;
 use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
-use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
+use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::frame::DataFrame;
 use polars_core::frame::group_by::aggregations::GroupQuantile;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
     AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, ExplodeOptions,
     Float64Chunked, GroupPositions, GroupsIdx, GroupsType, IDX_DTYPE, IntoColumn, IntoSeries,
-    LargeListArray, ListChunked, explode_with_row_offsets,
+    LargeListArray, ListChunked, QuantileFractionDtypes, cast_quantile_fractions,
+    explode_with_row_offsets, extract_quantiles,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -302,7 +303,7 @@ pub fn bitwise_agg<'a>(
 
     if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &ac.state {
         let dtype = s.dtype();
-        polars_ensure!(
+        polars_core::error::polars_ensure!(
             dtype.is_bool() | dtype.is_primitive_numeric(),
             op = op,
             dtype
@@ -693,18 +694,7 @@ pub fn quantile<'a>(
     let keep_name = ac.get_values().name().clone();
 
     let (quantile_column, per_group) = if inputs[1].is_literal() {
-        let c = inputs[1].evaluate(df, state)?;
-        polars_ensure!(
-            !c.is_empty(),
-            ComputeError:
-                "the 'quantile' expression input should produce a single quantile, got an empty input"
-        );
-        polars_ensure!(
-            c.len() == 1,
-            ComputeError:
-                "polars only supports computing a single quantile in a groupby aggregation context"
-        );
-        (c, false)
+        (inputs[1].evaluate(df, state)?, false)
     } else {
         match inputs[1].evaluate_on_groups(df, groups, state)?.state {
             AggState::LiteralScalar(c) => (c, false),
@@ -716,35 +706,39 @@ pub fn quantile<'a>(
             ),
         }
     };
-    polars_ensure!(
-        quantile_column.dtype().is_numeric(),
-        SchemaMismatch:
-            "expected expression of dtype 'numeric' for quantile, got '{}'",
-        quantile_column.dtype()
-    );
+    let quantile_column = quantile_column.as_materialized_series();
+    let aggregated_scalar = |out: Column| {
+        Ok(AggregationContext::from_agg_state(
+            AggState::AggregatedScalar(out),
+            Cow::Borrowed(groups),
+        ))
+    };
 
     let per_group_quantiles;
     let quantile = if per_group {
-        per_group_quantiles = quantile_column.cast(&DataType::Float64)?;
+        per_group_quantiles =
+            cast_quantile_fractions(quantile_column, QuantileFractionDtypes::Number)?;
         let quantiles = per_group_quantiles.f64()?;
         if let AggState::LiteralScalar(c) = &ac.state {
             // The quantile of a single value is that value, for any valid quantile.
             let value = c.quantile_reduce(0.5, method)?;
             let dtype = value.dtype().clone();
-            let valid: BooleanChunked = quantiles
-                .iter()
-                .map(|q| q.is_some_and(|q| (0.0..=1.0).contains(&q)))
-                .collect();
-            let out = Column::new_scalar(keep_name.clone(), value, groups.len())
-                .zip_with(&valid, &Column::full_null(keep_name, groups.len(), &dtype))?;
-            return Ok(AggregationContext::from_agg_state(
-                AggState::AggregatedScalar(out),
-                Cow::Borrowed(groups),
-            ));
+            let mut out = Column::new_scalar(keep_name.clone(), value, groups.len());
+            if quantiles.has_nulls() {
+                let null = Column::full_null(keep_name, groups.len(), &dtype);
+                out = out.zip_with(&quantiles.is_not_null(), &null)?;
+            }
+            return aggregated_scalar(out);
         }
         GroupQuantile::PerGroup(quantiles)
     } else {
-        let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
+        let quantile = extract_quantiles(quantile_column, QuantileFractionDtypes::Number)?
+            .and_then(|quantiles| quantiles[0]);
+        let Some(quantile) = quantile else {
+            // A null fraction gives a null for every group, of the dtype of the quantile.
+            let null = ac.flat_naive().clear().quantile_reduce(0.5, method)?;
+            return aggregated_scalar(Column::new_scalar(keep_name, null, groups.len()));
+        };
         if let AggState::LiteralScalar(c) = &mut ac.state {
             *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
             return Ok(ac);

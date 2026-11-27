@@ -80,8 +80,9 @@ impl DataFrame {
                     }
                 }
                 cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
-                    // SAFETY: we are casting back to the supertype
-                    let mut s = unsafe { buf.into_series().cast_unchecked(dtype).unwrap() };
+                    // SAFETY: the buffer holds the physical values of `dtype`.
+                    let mut s =
+                        unsafe { buf.into_series().from_physical_unchecked(dtype).unwrap() };
                     s.rename(name.clone());
                     s.into()
                 }));

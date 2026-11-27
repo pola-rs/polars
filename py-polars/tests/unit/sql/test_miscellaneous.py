@@ -912,3 +912,17 @@ def test_typeof() -> None:
     assert df.sql("SELECT TYPEOF(UNNEST(ARRAY_AGG(i))) AS t FROM self").height == 2
     with pytest.raises(SQLSyntaxError, match=r"TYPEOF expects 1 argument \(found 2\)"):
         df.sql("SELECT TYPEOF(i, s) FROM self")
+
+
+def test_show_functions() -> None:
+    with pl.SQLContext() as ctx:
+        names = ctx.execute("SHOW FUNCTIONS", eager=True)["name"].to_list()
+        assert {"abs", "array_agg", "read_csv", "regexp_replace", "string_agg"} <= set(
+            names
+        )
+        assert names == sorted(names)
+        res = ctx.execute("SHOW FUNCTIONS LIKE 'REGEXP_R%'", eager=True)
+        assert res["name"].to_list() == ["regexp_replace"]
+        # a backslash escapes, as in Postgres
+        res = ctx.execute(r"SHOW FUNCTIONS LIKE 'read\_csv%'", eager=True)
+        assert res["name"].to_list() == ["read_csv"]

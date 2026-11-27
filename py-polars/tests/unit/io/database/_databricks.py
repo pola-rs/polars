@@ -29,9 +29,8 @@ Tables:
   `b` is binary).
 - `edge_chars`: strings with escapes, control characters, quotes and non-ASCII text.
 - `edge_collations`: strings under the collations Databricks has.
-- `rand_view`, `plain_view`: views over `rand()` and over constant rows; `nested_*`:
-  views over those, naming them unqualified; `rand_udtf`, a SQL table function over
-  `rand()`, and `udtf_view` reading it.
+- `rand_view`, `plain_view`: views over `rand()` and over constant rows;
+  `nested_plain_view`: a view over `plain_view`, naming it unqualified.
 """
 
 from __future__ import annotations
@@ -394,24 +393,11 @@ def seed(conn: Any, catalog: str, schema: str) -> None:
         f"CREATE OR REPLACE VIEW {t('plain_view')} AS "
         "SELECT id, id * 2 AS twice FROM range(1, 101) AS t(id)"
     )
-    # views over views: their text names `rand_view` and `plain_view` unqualified
-    run(
-        f"CREATE OR REPLACE VIEW {t('nested_rand_view')} AS SELECT id, r FROM rand_view"
-    )
+    # a view over a view: its text names `plain_view` unqualified
     run(
         f"CREATE OR REPLACE VIEW {t('nested_plain_view')} AS "
         "SELECT id, twice FROM plain_view"
     )
-    run(
-        f"CREATE OR REPLACE VIEW {t('nested_rand_query')} AS "
-        "SELECT * FROM (SELECT id FROM nested_rand_view) AS q"
-    )
-    # a SQL table function over `rand()`, and a view reading it
-    run(
-        f"CREATE OR REPLACE FUNCTION {t('rand_udtf')}() "
-        "RETURNS TABLE (id INT, r DOUBLE) RETURN SELECT 1, rand()"
-    )
-    run(f"CREATE OR REPLACE VIEW {t('udtf_view')} AS SELECT * FROM {t('rand_udtf')}()")
     # last: a seeder that stopped halfway leaves no current version
     run(
         f"CREATE OR REPLACE TABLE {t('_seed_version')} AS SELECT '{VERSION}' AS version"

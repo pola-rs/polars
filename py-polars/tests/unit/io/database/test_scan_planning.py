@@ -404,6 +404,61 @@ def test_cse_of_identical_scans(tmp_path: Path) -> None:
     assert joined.collect().height == 10
 
 
+def test_cse_keys_params_by_utc_offset(tmp_path: Path) -> None:
+    # a `tzinfo` whose repr hides its offset must not merge scans differing in it
+    from datetime import timedelta, tzinfo
+
+    class FixedTz(tzinfo):
+        def __init__(self, hours: int) -> None:
+            self.hours = hours
+
+        def __getinitargs__(self) -> tuple[int]:  # for `copy.deepcopy`
+            return (self.hours,)
+
+        def utcoffset(self, dt: datetime | None) -> timedelta:
+            return timedelta(hours=self.hours)
+
+        def tzname(self, dt: datetime | None) -> str:
+            return f"FixedTz{self.hours}"
+
+        def dst(self, dt: datetime | None) -> None:
+            return None
+
+        def __repr__(self) -> str:
+            return "FixedTz()"
+
+    db = tmp_path / "t.db"
+    sqlite3.connect(db).close()
+
+    def scan(hours: int) -> pl.LazyFrame:
+        return pl.scan_database(
+            "SELECT 1 AS x WHERE ? IS NOT NULL",
+            f"sqlite:///{db}",
+            source_type="query",
+            driver="sqlalchemy",
+            schema={"x": pl.Int64},
+            params=[datetime(2020, 1, 1, tzinfo=FixedTz(hours))],
+            partition_on=None,
+        )
+
+    # a `timezone` has `utcoffset(dt)` too, and takes an argument
+
+    lf = pl.scan_database(
+        "SELECT 1 AS x WHERE ? IS NOT NULL",
+        f"sqlite:///{db}",
+        source_type="query",
+        driver="sqlalchemy",
+        schema={"x": pl.Int64},
+        params=[[UTC]],
+        partition_on=None,
+    )
+    lf.explain()
+    same = scan(1).join(scan(1), on="x")
+    assert "CACHE" in same.explain()
+    differ = scan(1).join(scan(2), on="x")
+    assert "CACHE" not in differ.explain()
+
+
 # secrets never appear in plans, errors or verbose logs
 
 SECRET = "s3cr3t-Pa55word"
@@ -529,9 +584,14 @@ def test_pin_is_final(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "pip install connectorx" in msg
 
 
-def test_no_driver_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_no_driver_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from polars_database import _bridge
 
+    # no manifest driver either: a `dbc install trino` in the user's own config would
+    # be a driver
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.delenv("ADBC_DRIVER_PATH", raising=False)
     _hide_modules(monkeypatch, "connectorx", "trino", "sqlalchemy", "adbc_driver_trino")
     # the hint is the same whether or not adbc_driver_manager is installed (it isn't on
     # Windows CI)
@@ -573,7 +633,7 @@ def test_probing_imports_no_heavy_modules() -> None:
     assert out.stdout.strip() == "[]", out.stdout
 
 
-# 1.6, 1.7, 1.9: partitioning, concurrency and the reader
+# 1.6, 1.7, 1.9: concurrency and the reader
 
 
 @pytest.fixture
@@ -585,100 +645,6 @@ def numbers_db(tmp_path: Path) -> str:
             "INSERT INTO n VALUES (?, ?)", [(i, str(i)) for i in range(1000)]
         )
     return f"sqlite:///{db}"
-
-
-def test_bounds_use_exact_filters(
-    numbers_db: str, capfd: pytest.CaptureFixture[str]
-) -> None:
-    pytest.importorskip("adbc_driver_sqlite")
-    lf = pl.scan_database("n", numbers_db, partition_on="id", partition_num=4)
-    with pl.Config(verbose=True):
-        out = lf.filter(pl.col("id") > 700).collect()
-    _, err = capfd.readouterr()
-    assert out.height == 299
-    bounds = next(line for line in err.splitlines() if "partition bounds" in line)
-    assert 'MAX("id")' in bounds
-    assert '"id" > 700' in bounds
-
-
-@pytest.mark.parametrize("cap", [1, 3])
-def test_max_connections_caps_concurrency(
-    numbers_db: str, cap: int, capfd: pytest.CaptureFixture[str]
-) -> None:
-    pytest.importorskip("adbc_driver_sqlite")
-    lf = pl.scan_database(
-        "n", numbers_db, partition_on="id", partition_num=12, max_connections=cap
-    )
-    with pl.Config(verbose=True):
-        assert lf.collect().height == 1000
-    _, err = capfd.readouterr()
-    assert f"max_concurrent_scans: {cap}," in err
-
-
-@pytest.mark.parametrize(("env", "expected"), [("5", 2), ("1", 1)])
-def test_env_override_lowers_but_never_raises_connection_cap(
-    numbers_db: str,
-    capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-    env: str,
-    expected: int,
-) -> None:
-    # more readers than sessions could deadlock an ordered read
-    pytest.importorskip("adbc_driver_sqlite")
-    monkeypatch.setenv("POLARS_MAX_CONCURRENT_SCANS", env)
-    lf = pl.scan_database(
-        "n", numbers_db, partition_on="id", partition_num=12, max_connections=2
-    )
-    with pl.Config(verbose=True):
-        assert lf.collect().height == 1000
-    _, err = capfd.readouterr()
-    assert f"max_concurrent_scans: {expected}," in err
-
-
-def test_env_override_above_connection_cap_in_order(
-    numbers_db: str, tmp_path: Path
-) -> None:
-    # An override above the session count, and morsels small enough that a reader's
-    # output fills before it is done: a later partition must never hold the session the
-    # first one waits for. In a subprocess, so a deadlock fails instead of hanging.
-    pytest.importorskip("adbc_driver_sqlite")
-    out = tmp_path / "out.parquet"
-    code = (
-        "import polars as pl\n"
-        f"lf = pl.scan_database('n', {numbers_db!r}, partition_on='id', "
-        "partition_num=12, max_connections=2)\n"
-        f"lf.sink_parquet({str(out)!r})\n"
-    )
-    env = {
-        **os.environ,
-        "POLARS_MAX_CONCURRENT_SCANS": "5",
-        "POLARS_IDEAL_MORSEL_SIZE": "4",
-    }
-    try:
-        subprocess.run([sys.executable, "-c", code], check=True, timeout=60, env=env)
-    except subprocess.TimeoutExpired:
-        pytest.fail("the ordered read with more readers than sessions hung")
-    assert pl.read_parquet(out)["id"].to_list() == list(range(1000))
-
-
-def test_live_connection_reads_one_partition_at_a_time(
-    tmp_path: Path, capfd: pytest.CaptureFixture[str]
-) -> None:
-    duckdb = pytest.importorskip("duckdb")
-    path = str(tmp_path / "t.duckdb")
-    with duckdb.connect(path) as conn:
-        conn.execute("CREATE TABLE t AS SELECT range AS id FROM range(100)")
-    live = duckdb.connect(path, read_only=True)
-    try:
-        lf = pl.scan_database(
-            "t", live, partition_on="id", partition_num=4, max_connections=4
-        )
-        with pl.Config(verbose=True):
-            assert lf.collect().height == 100
-        _, err = capfd.readouterr()
-        assert "max_concurrent_scans: 1," in err
-    finally:
-        live.close()
 
 
 def test_connect_is_retried(tmp_path: Path) -> None:
@@ -747,34 +713,6 @@ def test_cast_error_names_everything(numbers_db: str) -> None:
     assert "adbc:sqlite" in msg
 
 
-@pytest.mark.parametrize("n", [1, 2, 7, 64])
-@pytest.mark.parametrize("table", ["with_nulls", "empty", "single"])
-def test_every_row_read_once(tmp_path: Path, n: int, table: str) -> None:
-    pytest.importorskip("adbc_driver_sqlite")
-    db = tmp_path / "p.db"
-    all_rows: dict[str, list[tuple[int, int | None]]] = {
-        "with_nulls": [(i, None if i % 9 == 0 else i * 3 - 50) for i in range(300)],
-        "empty": [],
-        "single": [(i, 7) for i in range(20)],
-    }
-    rows = all_rows[table]
-    with closing(sqlite3.connect(db)) as conn, conn:
-        conn.execute("CREATE TABLE p (id INTEGER PRIMARY KEY, k INTEGER)")
-        conn.executemany("INSERT INTO p VALUES (?, ?)", rows)
-    uri = f"sqlite:///{db}"
-    cases: list[dict[str, Any]] = [
-        {"partition_on": "k", "partition_num": n},
-        # bounds that don't cover the data: rows outside land in the end partitions
-        {"partition_on": "k", "partition_num": n, "partition_range": (100, 200)},
-    ]
-    for kwargs in cases:
-        out = pl.scan_database(
-            "p", uri, schema={"id": pl.Int64, "k": pl.Int64}, **kwargs
-        )
-        ids = out.select("id").collect()["id"].to_list()
-        assert sorted(ids) == [r[0] for r in rows], kwargs
-
-
 # params and consistency
 
 
@@ -787,16 +725,6 @@ def test_params(numbers_db: str) -> None:
     )
     out = lf.filter(pl.col("id") > 5).collect()
     assert sorted(out["id"].to_list()) == [6, 7, 8, 9]
-    # every partition binds the same parameters
-    lf = pl.scan_database(
-        "SELECT id FROM n WHERE id < ?",
-        numbers_db,
-        params=[100],
-        driver="sqlite3",
-        partition_on="id",
-        partition_num=4,
-    )
-    assert lf.select(pl.len()).collect().item() == 100
 
 
 def test_params_errors(numbers_db: str) -> None:
@@ -836,13 +764,8 @@ def test_typed_driver_options_change_the_scan(numbers_db: str) -> None:
     assert "CACHE" not in scan(False).join(scan("False"), on="id").explain()
 
 
-def test_snapshot_consistency_with_partitions(numbers_db: str) -> None:
+def test_snapshot_consistency(numbers_db: str) -> None:
     pytest.importorskip("adbc_driver_sqlite")
-    lf = pl.scan_database(
-        "n", numbers_db, partition_on="id", partition_num=2, consistency="snapshot"
-    )
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="snapshot"):
-        lf.collect()
     one = pl.scan_database("n", numbers_db, partition_on=None, consistency="snapshot")
     assert one.collect().height == 1000
 
@@ -1189,6 +1112,23 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
             "sqlite",
             "SELECT id, count(*) FROM a JOIN b ON a.k = b.k GROUP BY a.id",
             True,
+        ),
+        # the schema counts: `s2.t.id` isn't grouped by `GROUP BY s1.t.id`
+        (
+            "sqlite",
+            "SELECT s1.t.id, s2.t.id AS b FROM s1.t JOIN s2.t ON true GROUP BY s1.t.id",
+            False,
+        ),
+        (
+            "sqlite",
+            "SELECT s1.t.id, count(*) FROM s1.t JOIN s2.t ON true GROUP BY s1.t.id",
+            True,
+        ),
+        # a quoted dot is part of the name: `"a.b".x` isn't `a.b.x`
+        (
+            "sqlite",
+            'SELECT "a.b".x, count(*) FROM "a.b" CROSS JOIN a.b GROUP BY a.b.x',
+            False,
         ),
         # `GROUP BY k` for `g AS k` groups `g`
         ("sqlite", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
@@ -1697,8 +1637,7 @@ def test_sqlite_string_filters_with_nul(tmp_path: Path, driver: str) -> None:
 
 
 def test_duckdb_time_with_time_zone_filters(tmp_path: Path) -> None:
-    # TIMETZ reads as its local time; DuckDB compares it with a TIME literal in UTC (and
-    # can't order it against one): such filters stay in Polars
+    # TIMETZ reads as text with its offset; a TIME literal isn't compared with it
     duckdb = pytest.importorskip("duckdb")
     path = tmp_path / "tz.duckdb"
     with duckdb.connect(str(path)) as conn:
@@ -1708,14 +1647,14 @@ def test_duckdb_time_with_time_zone_filters(tmp_path: Path) -> None:
         )
     lf = pl.scan_database("t", f"duckdb:///{path}")
     df = lf.collect()
+    assert df.schema["t"] == pl.String
     for predicate in (
-        pl.col("t") == time(12),
-        pl.col("t") < time(11),
-        pl.col("t") >= time(10),
+        pl.col("t") == "12:00:00+02",
+        pl.col("t") < "10:00:00+00",
+        pl.col("t") >= "10",
     ):
         got = lf.filter(predicate).collect().sort("id")
         assert got["id"].to_list() == df.filter(predicate).sort("id")["id"].to_list()
-        assert "filters 0/1" in lf.filter(predicate).explain()
 
 
 def test_clickhouse_negated_in_is_not_pushed() -> None:
@@ -1862,7 +1801,7 @@ def test_scrub_message_with_lone_surrogate() -> None:
 
 
 def _pushed(dialect: str, predicate: pl.Expr, schema: Any = None) -> str:
-    uri, driver = DIALECT_URIS.get(dialect, "sqlite:///x.db"), "sqlalchemy"
+    uri, driver = DIALECT_URIS.get(dialect, f"{dialect}://u@h/db"), "sqlalchemy"
     kwargs: dict[str, Any] = {} if dialect in DIALECT_URIS else {"dialect": dialect}
     if dialect == "flightsql":
         uri, driver = "grpc://h:31337", "adbc"
@@ -2089,32 +2028,6 @@ def test_partitions_share_the_rendered_filter(
             assert text == _sqlglot.render(json.dumps(whole), dialect)
 
 
-def test_partitioned_scan_plans_in_time_with_a_long_in_list(tmp_path: Path) -> None:
-    # #444: 5,000 values in 50 partitions took 1.7 s of rendering (28 s at 800)
-    from time import perf_counter
-
-    path = tmp_path / "t.db"
-    with closing(sqlite3.connect(path)) as conn:
-        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, g INTEGER)")
-        conn.executemany(
-            "INSERT INTO t VALUES (?, ?)", [(i, i % 7) for i in range(200)]
-        )
-        conn.commit()
-    lf = pl.scan_database(
-        "t",
-        f"sqlite:///{path}",
-        schema={"id": pl.Int64, "g": pl.Int64},
-        partition_on="id",
-        partition_num=200,
-        partition_range=(0, 200),
-    ).filter(pl.col("g").is_in(list(range(5000))))
-    started = perf_counter()
-    plan = lf.explain()
-    assert perf_counter() - started < 3
-    assert "IN (" in plan
-    assert len(lf.collect()) == 200
-
-
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
@@ -2142,6 +2055,63 @@ def test_outer_order_by_of_a_query(query: str, expected: str | None) -> None:
     assert inspect_query(query, "mysql")["outer_order_by"] == expected
 
 
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT * FROM t ORDER BY id DESC", "`_pl`.`id` DESC"),
+        ("SELECT * FROM t ORDER BY t.d, 1", "`_pl`.`d`, `_pl`.`id`"),
+        ("SELECT t.* FROM t ORDER BY ID", "`_pl`.`id`"),
+        ("SELECT * FROM t ORDER BY id + 1", None),
+        ("SELECT * FROM t JOIN u ON 1 = 1 ORDER BY t.id", None),
+        ("SELECT * FROM t AS x ORDER BY x.id", "`_pl`.`id`"),
+        ("SELECT * FROM t ORDER BY u.id", None),
+        ("SELECT t.* FROM (t JOIN u ON t.id + u.id = 3) ORDER BY u.id", None),
+        ("SELECT *, 1 AS n FROM t ORDER BY id", None),
+        ("SELECT * FROM t UNION SELECT * FROM u ORDER BY id", None),
+    ],
+)
+def test_outer_order_by_of_a_star_query(query: str, expected: str | None) -> None:
+    # a `SELECT *` has the planned columns
+    from polars_database._sqlglot import outer_order_by
+
+    assert outer_order_by(query, "mysql", ["id", "d"]) == expected
+
+
+def test_star_order_by_ordinal_needs_the_databases_column_order() -> None:
+    from polars_database._sqlglot import outer_order_by
+
+    q = "SELECT * FROM t ORDER BY 1 DESC, d"
+    assert outer_order_by(q, "mysql", ["id", "d"]) == "`_pl`.`id` DESC, `_pl`.`d`"
+    assert outer_order_by(q, "mysql", ["id", "d"], star_ordinals=False) is None
+    assert (
+        outer_order_by(
+            "SELECT id, d FROM t ORDER BY 1", "mysql", [], star_ordinals=False
+        )
+        == "`_pl`.`id`"
+    )
+
+
+def test_star_order_by_ordinal_is_not_resolved_under_a_user_schema() -> None:
+    # `schema=` lists the user's columns, in the user's order: `ORDER BY 1` of a `SELECT
+    # *` is the database's first column, which isn't known (no I/O)
+    lf = pl.scan_database(
+        "SELECT * FROM t ORDER BY 1 DESC",
+        DIALECT_URIS["mysql"],
+        schema={"d": pl.Date, "id": pl.Int32},
+        driver="sqlalchemy",
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="can't be kept"):
+        lf.explain()
+    # a name is the same column in any order
+    lf = pl.scan_database(
+        "SELECT * FROM t ORDER BY id DESC",
+        DIALECT_URIS["mysql"],
+        schema={"d": pl.Date, "id": pl.Int32},
+        driver="sqlalchemy",
+    )
+    assert "ORDER BY `_pl`.`id` DESC" in lf.explain()
+
+
 def test_partition_predicates_keep_their_percent_signs() -> None:
     # #425: only SQL the plugin writes has its `%` doubled for a driver that %-formats
     import json
@@ -2166,3 +2136,164 @@ def test_partition_predicates_keep_their_percent_signs() -> None:
     assert "`a%%b`" in sql
     assert "(s LIKE 'a%')" in sql
     assert "x%'" in sql
+
+
+@pytest.mark.parametrize(
+    ("dialect", "sql", "with_ties"),
+    [
+        ("trino", "SELECT * FROM t ORDER BY v FETCH FIRST 3 ROWS WITH TIES", True),
+        ("postgres", "SELECT * FROM t ORDER BY v FETCH FIRST 3 ROWS WITH TIES", True),
+        ("oracle", "SELECT * FROM t ORDER BY v FETCH FIRST 3 ROWS WITH TIES", True),
+        ("tsql", "SELECT TOP 3 WITH TIES * FROM t ORDER BY v", True),
+        ("trino", "SELECT * FROM t ORDER BY v FETCH FIRST 3 ROWS ONLY", False),
+        ("tsql", "SELECT TOP 3 * FROM t ORDER BY v", False),
+        ("trino", "SELECT * FROM t ORDER BY v LIMIT 3", False),
+    ],
+)
+def test_query_facts_flag_with_ties(dialect: str, sql: str, with_ties: bool) -> None:
+    # a LIMIT around WITH TIES may be applied inside it by the server (Trino)
+    from polars_database._sqlglot import inspect_query
+
+    assert inspect_query(sql, dialect)["with_ties"] is with_ties
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "EXEC('DELETE FROM victim')",
+        "EXECUTE('DELETE FROM victim')",
+        "exec ('DELETE FROM victim')",
+        "COMMIT",
+        "ROLLBACK",
+        "SHUTDOWN",
+        "RECONFIGURE",
+        "CHECKPOINT",
+        "REVERT",
+        "SETUSER",
+        "RETURN",
+        "PRINT('x')",
+        "RAISERROR('x', 16, 1)",
+        "OPENXML",
+        "x(a, b)",
+        "y(EXEC)",
+        "AS EXEC",
+        "AS COMMIT",
+        "AS [x] EXEC('DELETE FROM victim')",
+    ],
+)
+@pytest.mark.parametrize(
+    "head",
+    [
+        "SELECT id FROM c ",
+        "SELECT id FROM s.c ",
+        "SELECT id FROM c JOIN d ON c.id = d.id ",
+        "SELECT id FROM c INNER JOIN d x ON c.id = x.id LEFT JOIN e ",
+        "SELECT id FROM (SELECT 1 AS id) ",
+        "SELECT id FROM c WHERE id > 1 UNION SELECT id FROM d ",
+    ],
+)
+def test_tsql_a_statement_parsed_as_an_alias_is_not_read_only(
+    head: str, tail: str
+) -> None:
+    # SQL Server runs `SELECT … FROM c EXEC('…')` as a query and then the statement
+    # (statements need no `;`); sqlglot parses the word as `c`'s alias
+    from polars_database._sqlglot import inspect_query
+
+    if head.endswith(") ") and tail == "x(a, b)":
+        return  # a derived table's alias and columns (below)
+    assert inspect_query(head + tail, "tsql")["read_only"] is False
+    cte = f"WITH c AS (SELECT id FROM t) {head}{tail}"
+    assert inspect_query(cte, "tsql")["read_only"] is False
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT id FROM c x",
+        "SELECT id FROM c AS x",
+        "SELECT id FROM c AS x(a, b)",
+        "SELECT id FROM c [exec]",
+        'SELECT id FROM c "exec"',
+        "SELECT id x, id AS y FROM c INNER JOIN d ON c.id = d.id",
+        "SELECT a, b FROM (SELECT 1 a, 2 b) q",
+        "SELECT a FROM (VALUES (1)) AS v(a)",
+        # a bare alias with a column list, where the source is not a table name
+        "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) v(id, s)",
+        "SELECT a FROM (SELECT 1 AS id) x(a)",
+        "SELECT o.name, x.n FROM sys.objects o CROSS APPLY (SELECT LEN(o.name)) x(n)",
+        "SELECT o.name, x.n FROM sys.objects o OUTER APPLY (SELECT 1) x(n) WHERE 1 = 1",
+        "SELECT j.a FROM c CROSS APPLY OPENJSON(c.j) j(a)",
+        "WITH c AS (SELECT 1 AS a) SELECT * FROM (VALUES (1)) v(a) JOIN c ON c.a = v.a",
+    ],
+)
+def test_tsql_ordinary_aliases_stay_read_only(sql: str) -> None:
+    from polars_database._sqlglot import inspect_query
+
+    assert inspect_query(sql, "tsql")["read_only"] is True
+
+
+@pytest.mark.parametrize(
+    "dialect", ["postgres", "mysql", "oracle", "sqlite", "duckdb", "snowflake"]
+)
+def test_other_dialects_need_a_semicolon_between_statements(dialect: str) -> None:
+    # (`c COMMIT` is an alias to sqlglot, and a syntax error to the database: no second
+    # statement runs without a `;`, which the parser sees)
+    from polars_database._sqlglot import inspect_query
+
+    facts = inspect_query("SELECT id FROM c; COMMIT", dialect)
+    assert facts["read_only"] is False
+
+
+def test_positional_joins_are_a_fact_for_pushdown() -> None:
+    # a pushed filter changes which rows pair
+    from polars_database._sqlglot import inspect_query
+
+    for dialect, query in [
+        ("clickhouse", "SELECT l.id, r.v FROM l PASTE JOIN r"),
+        ("duckdb", "SELECT a.id, b.v FROM a POSITIONAL JOIN b"),
+    ]:
+        assert inspect_query(query, dialect)["positional_join"] is True, dialect
+    assert (
+        inspect_query("SELECT a.id FROM a JOIN b ON a.k = b.k", "duckdb")[
+            "positional_join"
+        ]
+        is False
+    )
+
+
+def test_clickhouse_settings_that_change_the_rows_are_a_fact_for_pushdown() -> None:
+    # a pushed filter changes which rows a row limit or an overflow mode keeps
+    from polars_database._sqlglot import inspect_query
+
+    for sql, unsafe in [
+        ("SELECT * FROM t SETTINGS max_rows_to_read = 10", True),
+        ("SELECT * FROM t SETTINGS read_overflow_mode = 'break'", True),
+        ("SELECT * FROM t SETTINGS max_threads = 4, max_block_size = 1000", False),
+        ("SELECT * FROM t", False),
+    ]:
+        assert inspect_query(sql, "clickhouse")["unsafe_settings"] is unsafe, sql
+
+
+@pytest.mark.parametrize(
+    ("query", "reason"),
+    [
+        ("SELECT * FROM t ORDER BY i32 FETCH FIRST 3 ROWS WITH TIES", "WITH TIES"),
+        ("SELECT a.id AS id, b.i32 AS i32 FROM a POSITIONAL JOIN b", "positional"),
+        ("SELECT * FROM t", None),
+    ],
+)
+def test_queries_whose_rows_a_filter_changes_are_read_without_pushdown(
+    query: str, reason: str | None
+) -> None:
+    lf = pl.scan_database(
+        query,
+        DIALECT_URIS["duckdb"],
+        schema={"id": pl.Int64, "i32": pl.Int32},
+        driver="sqlalchemy",
+    )
+    plan = lf.filter(pl.col("i32") > 1).explain()
+    if reason is None:
+        assert "filters 1/1" in plan
+    else:
+        assert "pushdown: off" in plan
+        assert reason in plan

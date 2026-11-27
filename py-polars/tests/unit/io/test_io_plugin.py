@@ -16,6 +16,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from polars._typing import EngineType
+
 
 def test_io_plugin_predicate_no_serialization_21130() -> None:
     def custom_io() -> pl.LazyFrame:
@@ -359,6 +361,33 @@ def test_io_plugin_object_dtype_25740() -> None:
     out = lf.collect()
     assert out.schema == df.schema
     assert out.to_dict(as_series=False) == {"a": [dummy, None]}
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "query",
+    [
+        lambda lf: lf.limit(3).filter(pl.col("a") > 2),
+        lambda lf: lf.head(3).filter(pl.col("a") > 2),
+        lambda lf: lf.slice(0, 3).filter(pl.col("a") > 2),
+        lambda lf: lf.limit(2).filter(pl.col("a") > 2),
+        lambda lf: lf.limit(4).filter(pl.col("a") % 2 == 0),
+        lambda lf: lf.limit(3).filter(pl.col("a") > 2).select("b"),
+        lambda lf: lf.limit(2).filter(pl.col("a") > 2).limit(1),
+        lambda lf: lf.filter(pl.col("a") > 2).limit(2),
+    ],
+)
+def test_defer_slice_before_predicate_30916(query: Any, engine: EngineType) -> None:
+    # A pushed-down slice counts source rows, before the pushed-down predicate.
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, 6],
+            "b": ["x", "y", "z", "a", "b", "c"],
+            "c": [0.5, 1.5, 2.5, 3.5, 4.5, 5.5],
+        }
+    )
+    lf = pl.defer(lambda: df, schema=df.schema)
+    assert_frame_equal(query(lf).collect(engine=engine), query(df.lazy()).collect())
 
 
 def _scan_fn(lf: pl.LazyFrame) -> Any:

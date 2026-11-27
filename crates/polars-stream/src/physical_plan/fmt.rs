@@ -905,6 +905,7 @@ fn visualize_plan_rec(
             runtime_filters: _,
             estimated_rows: _,
             key_ranges: _,
+            pre_drop_schema: _,
         } => {
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",
@@ -929,6 +930,27 @@ fn visualize_plan_rec(
                 &fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases),
                 args,
             );
+            if let PhysNodeKind::EquiJoin {
+                pre_drop_schema: Some(pre_drop_schema),
+                ..
+            }
+            | PhysNodeKind::SemiAntiJoin {
+                pre_drop_schema: Some(pre_drop_schema),
+                ..
+            } = &phys_sm[node_key].kind
+            {
+                let output_schema = phys_sm[node_key].output_schema(0);
+                let mut projection_fmt = String::new();
+                write!(
+                    EscapeLabel(&mut projection_fmt),
+                    "project {} / {}: {}",
+                    output_schema.len(),
+                    pre_drop_schema.len(),
+                    output_schema.iter_names().join(", ")
+                )
+                .unwrap();
+                label.push_str(&format!("\n{projection_fmt}"));
+            }
             if let PhysNodeKind::EquiJoin {
                 fused_predicate: Some(fused_predicate),
                 ..

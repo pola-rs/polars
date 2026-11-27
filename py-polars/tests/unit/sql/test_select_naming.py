@@ -77,6 +77,25 @@ def test_verbatim_duplicate_selection_still_errors(df_naming: pl.DataFrame) -> N
             ctx.execute("SELECT *, a FROM t1")
 
 
+def test_repeated_expressions_are_renamed() -> None:
+    df = pl.DataFrame({"s": ["ab", None]})
+    res = df.sql("SELECT LEFT(s, 2), SUBSTR(s, 1, 2), UPPER(s), UPPER(s) FROM self")
+    assert res.columns == ["s", "s:1", "s:2", "s:3"]
+    assert res.rows() == [("ab", "ab", "AB", "AB"), (None, None, None, None)]
+    res = df.sql("SELECT UPPER(MIN(s)), UPPER(MIN(s)) FROM self")
+    assert res.columns == ["s", "s:1"]
+    assert res.rows() == [("AB", "AB")]
+    res = df.sql("SELECT GROUPING(s), GROUPING(s) FROM self GROUP BY ROLLUP(s)")
+    assert res.columns == ["GROUPING(s)", "GROUPING(s):1"]
+
+
+def test_repeated_join_column_still_errors() -> None:
+    left = pl.DataFrame({"id": [1], "s": ["x"]})
+    right = pl.DataFrame({"id": [1], "s": ["y"]})
+    with pytest.raises(pl.exceptions.DuplicateError):
+        pl.sql("SELECT r.s, r.s FROM left AS l JOIN right AS r USING (id)", eager=True)
+
+
 def test_repeated_constants_are_renamed(df_naming: pl.DataFrame) -> None:
     """A repeated unaliased constant gets a new name, like distinct constants."""
     with pl.SQLContext(frames={"t1": df_naming}, eager=True) as ctx:

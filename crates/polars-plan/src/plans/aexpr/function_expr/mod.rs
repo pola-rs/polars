@@ -1294,7 +1294,8 @@ impl IRFunctionExpr {
             F::Atan2 => FunctionOptions::elementwise(),
             #[cfg(feature = "sign")]
             F::Sign => FunctionOptions::elementwise(),
-            F::FillNull => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            F::FillNull => FunctionOptions::elementwise()
+                .with_casting_rules(CastingRules::FirstArgLosslessOrSupertypeWithWarning),
             F::FillNullWithStrategy(strategy) if strategy.is_elementwise() => {
                 FunctionOptions::elementwise()
             },
@@ -1550,6 +1551,52 @@ impl IRFunctionExpr {
             #[cfg(feature = "dtype-struct")]
             F::RowDecode { .. } => FunctionOptions::elementwise(),
             F::DynamicPred { .. } | F::DynamicSkipBatch { .. } => FunctionOptions::elementwise(),
+        }
+    }
+
+    /// The inputs that must be scalar, with the names of their arguments.
+    pub fn scalar_inputs(&self) -> &'static [(usize, &'static str)] {
+        use IRFunctionExpr as F;
+        match self {
+            #[cfg(all(feature = "dtype-array", feature = "array_count"))]
+            F::ArrayExpr(IRArrayFunction::CountMatches) => &[(1, "element")],
+            #[cfg(feature = "list_count")]
+            F::ListExpr(IRListFunction::CountMatches) => &[(1, "element")],
+            #[cfg(all(feature = "strings", feature = "find_many"))]
+            F::StringExpr(IRStringFunction::ContainsAny { .. }) => &[(1, "patterns")],
+            #[cfg(all(feature = "strings", feature = "find_many"))]
+            F::StringExpr(IRStringFunction::ReplaceMany { .. }) => {
+                &[(1, "patterns"), (2, "replace_with")]
+            },
+            #[cfg(feature = "index_of")]
+            F::IndexOf => &[(1, "element")],
+            #[cfg(feature = "range")]
+            F::Range(function) => function.scalar_inputs(),
+            F::Shift => &[(1, "n")],
+            F::ShiftAndFill => &[(1, "n"), (2, "fill_value")],
+            #[cfg(feature = "diff")]
+            F::Diff(_) => &[(1, "n")],
+            #[cfg(feature = "pct_change")]
+            F::PctChange => &[(1, "n")],
+            F::Quantile { .. } => &[(1, "quantile")],
+            #[cfg(feature = "approx_quantile")]
+            F::ApproxQuantileEstimate { .. } => &[(1, "quantile")],
+            // Flat `old` and `new` are imploded by type coercion, as the kernel takes one list.
+            #[cfg(feature = "replace")]
+            F::Replace | F::ReplaceStrict { .. } => &[(1, "old"), (2, "new")],
+            #[cfg(feature = "top_k")]
+            F::TopK { .. } | F::TopKBy { .. } => &[(1, "k")],
+            #[cfg(feature = "random")]
+            F::Random {
+                method: IRRandomMethod::Sample { is_fraction, .. },
+                ..
+            } => match is_fraction {
+                true => &[(1, "fraction")],
+                false => &[(1, "n")],
+            },
+            F::Repeat => &[(0, "value"), (1, "n")],
+            F::ExtendConstant => &[(1, "value"), (2, "n")],
+            _ => &[],
         }
     }
 }

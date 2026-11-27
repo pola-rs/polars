@@ -1,3 +1,4 @@
+pub(crate) mod find;
 mod get;
 mod namespace;
 mod slice;

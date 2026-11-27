@@ -33,7 +33,11 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
                             let (start, end) = unsafe {
                                 (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
                             };
-                            let offset = if idx >= 0 { start + idx } else { end + idx };
+                            let offset = if idx >= 0 {
+                                start.saturating_add(idx)
+                            } else {
+                                end + idx
+                            };
                             if offset >= end || offset < start || start == end {
                                 if null_on_oob {
                                     Ok(None)
@@ -57,7 +61,11 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
                             let (start, end) = unsafe {
                                 (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
                             };
-                            let offset = if idx >= 0 { start + idx } else { end + idx };
+                            let offset = if idx >= 0 {
+                                start.saturating_add(idx)
+                            } else {
+                                end + idx
+                            };
                             if offset >= end || offset < start || start == end {
                                 if null_on_oob {
                                     Ok(None)
@@ -91,7 +99,7 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
             } else {
                 Ok(Column::full_null(
                     ca.name().clone(),
-                    ca.len(),
+                    index.len(),
                     ca.inner_dtype(),
                 ))
             }

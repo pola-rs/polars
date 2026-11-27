@@ -112,6 +112,8 @@ async fn finish_initialize_multi_scan_pipeline(
             } = initialize_scan_predicate(
                 config.predicate.as_ref().map(|x| &x.scan_io_predicate),
                 config.hive_parts.as_deref(),
+                &config.sources,
+                config.include_file_paths.as_deref(),
                 config.table_statistics.as_ref(),
                 verbose,
             )?;

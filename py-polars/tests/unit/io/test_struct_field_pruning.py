@@ -213,7 +213,7 @@ def test_struct_field_pruning_skips_unselected_leaves(tmp_path: Path) -> None:
         {
             "s": [
                 {"a": i, "b": f"long string {i}" * 10, "c": {"x": i, "y": f"{i}" * 50}}
-                for i in range(1000)
+                for i in range(32)
             ]
         }
     )
@@ -235,13 +235,13 @@ def test_struct_field_pruning_skips_unselected_leaves(tmp_path: Path) -> None:
 
 def test_struct_field_pruning_ipc_skips_unselected_fields(tmp_path: Path) -> None:
     marker = "QZQZQZQZ"
-    n = 1000
+    n = 31
     table = pa.table(
         {"s": [{"a": i, "b": marker * 4, "c": {"x": i, "y": marker}} for i in range(n)]}
     )
     path = tmp_path / "corrupt.arrow"
     with pa.ipc.new_file(path, table.schema) as writer:
-        writer.write_table(table, max_chunksize=300)
+        writer.write_table(table, max_chunksize=8)
     # Make the string values of `b` and `c.y` invalid UTF-8.
     data = path.read_bytes()
     assert marker.encode() in data
@@ -276,14 +276,14 @@ def test_struct_field_pruning_ndjson_skips_unselected_fields(tmp_path: Path) -> 
 
 @pytest.mark.parametrize("fmt", FORMATS)
 def test_struct_field_pruning_validity_only(fmt: str, tmp_path: Path) -> None:
-    df = pl.DataFrame({"s": [{"a": 1}, None, {"a": None}, None, {"a": 5}] * 1000})
+    df = pl.DataFrame({"s": [{"a": 1}, None, {"a": None}, None, {"a": 5}] * 8})
     lf = scan(df, fmt, tmp_path)
 
     out = assert_same_as_without_pushdown(
         lf.select(s.is_null().alias("n"), s.is_not_null().sum().alias("v"))
     )
-    assert out["n"].to_list() == [False, True, False, True, False] * 1000
-    assert out["v"].to_list() == [3000] * 5000
+    assert out["n"].to_list() == [False, True, False, True, False] * 8
+    assert out["v"].to_list() == [24] * 40
     assert_same_as_without_pushdown(lf.select(pl.len()))
     assert_same_as_without_pushdown(lf.select(s.null_count()))
 

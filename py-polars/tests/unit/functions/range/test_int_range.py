@@ -166,7 +166,7 @@ def test_int_ranges_schema_dtype_arg() -> None:
 
 
 def test_int_range_input_shape_empty() -> None:
-    empty = pl.Series(dtype=pl.Time)
+    empty = pl.Series(dtype=pl.Int64)
     single = pl.Series([5])
 
     with pytest.raises(ShapeError):

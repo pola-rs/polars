@@ -1,5 +1,8 @@
 use std::borrow::Cow;
+use std::ops::Range;
 
+use polars_arrow::array::builder::{ShareStrategy, make_builder};
+use polars_arrow::bitmap::utils::BitmapIter;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::filter::filter_with_bitmap;
@@ -74,6 +77,26 @@ impl MapChunked {
 
         let storage = canonicalize_map_storage(&storage)?.unwrap_or(storage);
         Ok(Self { dtype, storage })
+    }
+
+    /// One row from its entries, trusting key uniqueness like an Arrow import; `None` if the
+    /// entries do not satisfy the storage safety contract for `dtype`.
+    pub(crate) fn from_row_entries(
+        name: PlSmallStr,
+        dtype: &DataType,
+        entries: &Series,
+    ) -> Option<Self> {
+        // `Categorical`/`Enum` equality ignores the mapping, so `dtype` may not describe the
+        // entries; the storage carries the dtype derived from the entries instead.
+        let own_dtype = entries.dtype().map_from_positional_entries_dtype()?;
+        if own_dtype.map_entries_dtype().as_ref() != Some(entries.dtype()) || &own_dtype != dtype {
+            return None;
+        }
+        let storage = entries.implode().ok()?.with_name(name);
+        ensure_live_entries_non_null(&storage).ok()?;
+        // SAFETY: `own_dtype` is a valid Map dtype built from the entries' own fields, and the
+        // only row has no null entries or keys.
+        Some(unsafe { Self::from_storage_unchecked(own_dtype, storage.into_series()) })
     }
 
     pub fn name(&self) -> &PlSmallStr {
@@ -469,8 +492,8 @@ pub fn try_unpack_map_entries(entries: &Series) -> PolarsResult<(Series, Series)
 /// Pack equally sized flat key and value fields into map entries.
 ///
 /// The result does not retain Map row boundaries. Rebuilding a Map column must reattach it to
-/// its original [`ListChunked`] storage.
-pub(crate) fn pack_map_entries(keys: &Series, values: &Series) -> Series {
+/// its original [`ListChunked`] storage. Keys are not deduplicated.
+pub fn pack_map_entries(keys: &Series, values: &Series) -> Series {
     // `StructChunked::from_series` broadcasts unit-length fields.
     assert_eq!(
         keys.len(),
@@ -504,34 +527,110 @@ fn windowed_entries_array(arr: &LargeListArray) -> ArrayRef {
     }
 }
 
-/// Mask the windowed entries by row validity; `None` if no null row spans an entry.
-///
-/// Scans validity runs once, allocating only once a null row is found to span entries.
-fn live_entry_mask(arr: &LargeListArray) -> Option<Bitmap> {
-    let validity = arr.validity().filter(|v| v.unset_bits() > 0)?;
-    let offsets = arr.offsets();
-    let first = *offsets.first() as usize;
-    let n_entries = offsets.range() as usize;
+/// The runs of the windowed entries of a chunk that no null row spans, in order; walked from its
+/// validity runs without allocating.
+#[derive(Clone)]
+struct LiveEntryRuns<'a> {
+    offsets: &'a [i64],
+    first: i64,
+    rows: BitmapIter<'a>,
+    /// The next row of `rows`.
+    row: usize,
+    /// The first entry after the last null-row window.
+    live: usize,
+    n_entries: usize,
+}
 
-    let mut mask: Option<BitmapBuilder> = None;
-    let mut runs = validity.iter();
-    let mut row = 0;
-    while runs.num_remaining() > 0 {
-        row += runs.take_leading_ones();
-        let end = row + runs.take_leading_zeros();
-        let (start, stop) = (offsets[row] as usize, offsets[end] as usize);
-        if stop > start {
-            // Fill the live run before this null-row window in bulk.
-            let mask = mask.get_or_insert_with(|| BitmapBuilder::with_capacity(n_entries));
-            mask.extend_constant(start - first - mask.len(), true);
-            mask.extend_constant(stop - start, false);
-        }
-        row = end;
+impl<'a> LiveEntryRuns<'a> {
+    /// `None` if the chunk has no null row.
+    fn new(arr: &'a LargeListArray) -> Option<Self> {
+        let validity = arr.validity().filter(|v| v.unset_bits() > 0)?;
+        Some(Self {
+            offsets: arr.offsets().as_slice(),
+            first: *arr.offsets().first(),
+            rows: validity.iter(),
+            row: 0,
+            live: 0,
+            n_entries: arr.offsets().range() as usize,
+        })
     }
+}
 
-    let mut mask = mask?;
-    mask.extend_constant(n_entries - mask.len(), true);
-    Some(mask.freeze())
+impl Iterator for LiveEntryRuns<'_> {
+    type Item = Range<usize>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Range<usize>> {
+        while self.rows.num_remaining() > 0 {
+            self.row += self.rows.take_leading_ones();
+            let end = self.row + self.rows.take_leading_zeros();
+            let start = (self.offsets[self.row] - self.first) as usize;
+            let stop = (self.offsets[end] - self.first) as usize;
+            self.row = end;
+            if stop > start {
+                let run = self.live..start;
+                self.live = stop;
+                if !run.is_empty() {
+                    return Some(run);
+                }
+            }
+        }
+        let run = self.live..self.n_entries;
+        self.live = self.n_entries;
+        (!run.is_empty()).then_some(run)
+    }
+}
+
+/// The shortest average run worth copying run by run instead of filtering with a mask, which
+/// costs a bit per entry.
+const MIN_COPIED_RUN_LEN: usize = 64;
+
+/// The entries of `runs` of `entries`, or `None` if the runs cover them all: a slice for one run,
+/// copied run by run when the runs are long, and filtered with a mask otherwise.
+///
+/// Walks the runs once to count them and once to take them, so that no strategy stores them. The
+/// count stops once the runs are too many to copy, which bounds the first walk to a
+/// `MIN_COPIED_RUN_LEN`th of the entries.
+fn take_entry_runs(entries: &ArrayRef, runs: LiveEntryRuns<'_>) -> Option<ArrayRef> {
+    let max_copied = entries.len() / MIN_COPIED_RUN_LEN;
+    let (mut count, mut live, mut first) = (0, 0, None);
+    for run in runs.clone() {
+        count += 1;
+        live += run.len();
+        first.get_or_insert(run.start);
+        if count > max_copied.max(1) {
+            break;
+        }
+    }
+    // Two runs have a null row with entries between them, so only a single run can cover all.
+    if count <= 1 && live == entries.len() {
+        return None;
+    }
+    Some(match (count, first) {
+        (1, Some(start)) => entries.sliced(start, live),
+        _ if count <= max_copied => {
+            let mut builder = make_builder(entries.dtype());
+            builder.reserve(live);
+            for run in runs {
+                builder.subslice_extend(
+                    entries.as_ref(),
+                    run.start,
+                    run.len(),
+                    ShareStrategy::Always,
+                );
+            }
+            builder.freeze_reset()
+        },
+        _ => {
+            let mut mask = BitmapBuilder::with_capacity(entries.len());
+            for run in runs {
+                mask.extend_constant(run.start - mask.len(), false);
+                mask.extend_constant(run.len(), true);
+            }
+            mask.extend_constant(entries.len() - mask.len(), false);
+            filter_with_bitmap(entries.as_ref(), &mask.freeze())
+        },
+    })
 }
 
 /// One chunk's entries of the field at `i`, restricted to the entries of live rows.
@@ -544,10 +643,9 @@ fn live_entry_field_chunk(arr: &LargeListArray, i: usize) -> ArrayRef {
         .downcast_ref::<StructArray>()
         .expect("map entries are a struct");
     let field = entries.values()[i].clone();
-    match live_entry_mask(arr) {
-        Some(mask) => filter_with_bitmap(field.as_ref(), &mask),
-        None => field,
-    }
+    LiveEntryRuns::new(arr)
+        .and_then(|runs| take_entry_runs(&field, runs))
+        .unwrap_or(field)
 }
 
 /// Zero-based row offsets over the live entries of `arr`, with null rows emptied.
@@ -579,9 +677,7 @@ fn live_lengths(arr: &LargeListArray) -> impl Iterator<Item = usize> + '_ {
 
 /// Filter out entries under null rows and rebuild offsets; `None` if unchanged.
 pub(crate) fn compact_null_rows_chunk(arr: &LargeListArray) -> Option<LargeListArray> {
-    let mask = live_entry_mask(arr)?;
-    let entries = windowed_entries_array(arr);
-    let entries = filter_with_bitmap(entries.as_ref(), &mask);
+    let entries = take_entry_runs(&windowed_entries_array(arr), LiveEntryRuns::new(arr)?)?;
     let validity = arr.validity().expect("a masked chunk has null rows");
 
     Some(LargeListArray::new(
@@ -1453,6 +1549,66 @@ mod test {
         );
     }
 
+    /// A chunk of `Int64` keys and values `0..n`, with rows of `lens` entries.
+    fn int_chunk(lens: &[usize], row_validity: &[bool]) -> LargeListArray {
+        let n = lens.iter().sum::<usize>() as i64;
+        let ints = PrimitiveArray::<i64>::from_vec((0..n).collect());
+        let entries = StructArray::new(
+            map_dtype(DataType::Int64, DataType::Int64)
+                .map_entries_dtype()
+                .unwrap()
+                .to_arrow(CompatLevel::newest()),
+            n as usize,
+            vec![ints.clone().boxed(), ints.boxed()],
+            None,
+        );
+        LargeListArray::new(
+            LargeListArray::default_datatype(entries.dtype().clone()),
+            Offsets::try_from_lengths(lens.iter().copied())
+                .unwrap()
+                .into(),
+            entries.boxed(),
+            Some(Bitmap::from(row_validity)),
+        )
+    }
+
+    fn keys(arr: &LargeListArray) -> &PrimitiveArray<i64> {
+        let entries: &StructArray = arr.values().as_any().downcast_ref().unwrap();
+        entries.values()[0].as_any().downcast_ref().unwrap()
+    }
+
+    #[test]
+    fn compact_null_rows_chunk_slices_a_single_live_run() {
+        let arr = int_chunk(&[2, 3], &[true, false]);
+
+        let compacted = compact_null_rows_chunk(&arr).unwrap();
+
+        assert_eq!(keys(&compacted).values().as_slice(), &[0, 1]);
+        // The live entries are shared, not copied.
+        assert_eq!(
+            keys(&compacted).values().as_ptr(),
+            keys(&arr).values().as_ptr()
+        );
+    }
+
+    #[test]
+    fn compact_null_rows_chunk_keeps_every_live_run() {
+        // Long runs are copied run by run, short ones filtered with a mask.
+        for lens in [[10, 180, 10], [1, 1, 1]] {
+            let arr = int_chunk(&lens, &[true, false, true]);
+
+            let compacted = compact_null_rows_chunk(&arr).unwrap();
+
+            let last = lens.iter().sum::<usize>() as i64;
+            let expected: Vec<i64> = (0..lens[0] as i64)
+                .chain(last - lens[2] as i64..last)
+                .collect();
+            assert_eq!(keys(&compacted).values().as_slice(), expected, "{lens:?}");
+            let (head, len) = (lens[0] as i64, expected.len() as i64);
+            assert_eq!(compacted.offsets().as_slice(), [0, head, head, len]);
+        }
+    }
+
     #[test]
     fn deposit_pads_with_null_rows() {
         let map = three_row_map().into_series();
@@ -1550,5 +1706,53 @@ mod test {
             unsafe { array.set_inner_dtype(map.dtype().clone()) };
             assert_eq!(array.inner_dtype(), map.dtype());
         }
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn scalar_map_deserialization_deduplicates_keys() {
+        let keys = str_keys(&[Some("a"), Some("b"), Some("a")]);
+        let values = i64_values(&[Some(1), Some(2), Some(3)]);
+        let scalar = Scalar::new(
+            map_dtype(DataType::String, DataType::Int64),
+            AnyValue::Map(pack_map_entries(&keys, &values)),
+        );
+        let json = serde_json::to_string(&scalar).unwrap();
+        let scalar: Scalar = serde_json::from_str(&json).unwrap();
+        let s = scalar.into_series(PlSmallStr::from_static("m"));
+        let map = s.map().unwrap();
+        assert_eq!(
+            str_values(&map.keys()),
+            [Some("a".into()), Some("b".into())]
+        );
+        assert_eq!(map.values().i64().unwrap().to_vec(), [Some(3), Some(2)]);
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    #[test]
+    fn scalar_map_series_keeps_the_entries_categorical_mapping() {
+        use polars_dtype::categorical::{CategoricalMapping, Categories};
+        use polars_utils::aliases::PlSeedableRandomStateQuality;
+
+        let cats = Categories::random(PlSmallStr::EMPTY, CategoricalPhysical::U32);
+        let keys = str_keys(&[Some("a")])
+            .cast(&DataType::from_categories(cats.clone()))
+            .unwrap();
+        let entries = pack_map_entries(&keys, &i64_values(&[Some(1)]));
+        // Equal to the entries' key dtype, since equality ignores the mapping.
+        let other_mapping = Arc::new(CategoricalMapping::with_hasher(
+            cats.physical().max_categories(),
+            PlSeedableRandomStateQuality::default(),
+        ));
+        let dtype = map_dtype(
+            DataType::Categorical(cats.clone(), other_mapping),
+            DataType::Int64,
+        );
+        let s =
+            Scalar::new(dtype, AnyValue::Map(entries)).into_series(PlSmallStr::from_static("m"));
+        let DataType::Categorical(_, mapping) = s.map().unwrap().key_dtype() else {
+            panic!("expected a Categorical key")
+        };
+        assert!(Arc::ptr_eq(mapping, &cats.mapping()));
     }
 }

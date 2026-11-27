@@ -656,12 +656,20 @@ fn expand_for_literal_pat<'a>(pat: &str, val: &'a str) -> PolarsResult<std::borr
     if !val.contains('$') {
         return Ok(std::borrow::Cow::Borrowed(val));
     }
-    let reg = polars_utils::regex_cache::compile_regex(pat)?;
     let mut out = String::new();
-    if let Some(caps) = reg.captures(pat) {
-        caps.expand(val, &mut out);
-    }
+    expand_for_literal_pat_into(pat, val, &mut out)?;
     Ok(std::borrow::Cow::Owned(out))
+}
+
+#[cfg(feature = "regex")]
+fn expand_for_literal_pat_into(pat: &str, val: &str, out: &mut String) -> PolarsResult<()> {
+    out.clear();
+    polars_utils::regex_cache::with_regex_cache(|cache| {
+        if let Some(caps) = cache.compile(pat)?.captures(pat) {
+            caps.expand(val, out);
+        }
+        Ok(())
+    })
 }
 
 #[cfg(feature = "regex")]
@@ -678,6 +686,9 @@ fn replace_n(
             let Some(val) = val.get(0) else {
                 return Ok(ca.clone());
             };
+            if n == 0 {
+                return Ok(ca.clone());
+            }
             if literal {
                 return ca.replace_literal(pat, val, n);
             }
@@ -725,9 +736,7 @@ fn replace_n(
 
             Ok(iter_and_replace(ca, val, f))
         },
-        _ => polars_bail!(
-            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
-        ),
+        _ => replace_per_row(ca, pat, val, literal, Some(n)),
     }
 }
 
@@ -781,10 +790,109 @@ fn replace_all(
 
             Ok(iter_and_replace(ca, val, f))
         },
-        _ => polars_bail!(
-            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
-        ),
+        _ => replace_per_row(ca, pat, val, literal, None),
     }
+}
+
+/// Write `s` with the first `limit` matches of the literal `pat` replaced by `val` into
+/// `buf`, or all matches if `limit` is 0. Returns whether `pat` matched.
+#[cfg(feature = "regex")]
+fn literal_replacen_into(s: &str, pat: &str, val: &str, limit: usize, buf: &mut String) -> bool {
+    let mut matches = s.match_indices(pat);
+    let Some((start, m)) = matches.next() else {
+        return false;
+    };
+    buf.clear();
+    buf.push_str(&s[..start]);
+    buf.push_str(val);
+    let mut last_match = start + m.len();
+    let rest = if limit == 0 { usize::MAX } else { limit - 1 };
+    for (start, m) in matches.take(rest) {
+        buf.push_str(&s[last_match..start]);
+        buf.push_str(val);
+        last_match = start + m.len();
+    }
+    buf.push_str(&s[last_match..]);
+    true
+}
+
+/// Replace with a pattern per row, for at most `limit` matches, or all if `limit` is `None`.
+/// Each row follows the rules for a single pattern, so that the result does not depend on how
+/// the rows are split into batches.
+#[cfg(feature = "regex")]
+fn replace_per_row(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
+    literal: bool,
+    limit: Option<usize>,
+) -> PolarsResult<StringChunked> {
+    fn values(c: &StringChunked, len: usize) -> Box<dyn Iterator<Item = Option<&str>> + '_> {
+        if c.len() == len {
+            Box::new(c.iter())
+        } else {
+            Box::new(std::iter::repeat_n(c.get(0), len))
+        }
+    }
+    let len = broadcast_len([ca.len(), pat.len(), val.len()])?;
+    if limit == Some(0) {
+        polars_ensure!(
+            !pat.has_nulls(),
+            ComputeError: "pattern cannot be 'null' in 'replace' expression"
+        );
+        return Ok(if ca.len() == len {
+            ca.clone()
+        } else {
+            ca.new_from_index(0, len)
+        });
+    }
+
+    let mut buf = String::new();
+    let mut expanded = String::new();
+    let mut builder = StringChunkedBuilder::new(ca.name().clone(), len);
+    for ((opt_src, opt_pat), opt_val) in values(ca, len).zip(values(pat, len)).zip(values(val, len))
+    {
+        let Some(pat) = opt_pat else {
+            polars_bail!(ComputeError: "pattern cannot be 'null' in 'replace' expression");
+        };
+        let replaced = match opt_val {
+            None => {
+                polars_ensure!(
+                    limit.is_some(),
+                    ComputeError: "value cannot be 'null' in 'replace' expression"
+                );
+                false
+            },
+            Some(val) if literal => opt_src.is_some_and(|src| {
+                literal_replacen_into(src, pat, val, limit.unwrap_or(0), &mut buf)
+            }),
+            Some(mut val) if is_literal_pat(pat) => {
+                if val.contains('$') {
+                    expand_for_literal_pat_into(pat, val, &mut expanded)?;
+                    val = &expanded;
+                }
+                opt_src.is_some_and(|src| {
+                    literal_replacen_into(src, pat, val, limit.unwrap_or(0), &mut buf)
+                })
+            },
+            // An invalid pattern raises, also in rows where nothing is replaced.
+            Some(val) => polars_utils::regex_cache::with_regex_cache(|cache| {
+                polars_ensure!(
+                    limit.is_none_or(|n| n <= 1),
+                    ComputeError: "regex replacement with 'n > 1' not yet supported"
+                );
+                let reg = cache.compile(pat)?;
+                PolarsResult::Ok(opt_src.is_some_and(|src| {
+                    regex_replacen_into(reg, src, limit.unwrap_or(0), val, &mut buf)
+                }))
+            })?,
+        };
+        match opt_src {
+            Some(src) => builder.append_value(if replaced { buf.as_str() } else { src }),
+            None => builder.append_null(),
+        }
+    }
+    Ok(builder.finish())
 }
 
 pub(super) fn format(

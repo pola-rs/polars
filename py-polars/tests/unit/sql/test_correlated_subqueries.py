@@ -2861,3 +2861,87 @@ def test_nested_subquery_reading_outermost_query() -> None:
     with pytest.raises(pl.exceptions.SQLInterfaceError) as exc:
         ctx.execute(query, eager=True)
     assert "named 'a'" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT a, (SELECT b.v FROM (SELECT o.a * 10 AS v) AS b) AS r FROM t AS o",
+            [(1, 10), (2, 20), (3, 30), (4, 40)],
+        ),
+        (
+            """
+            SELECT a, (SELECT MAX(s.x) FROM (SELECT x FROM u WHERE u.k = o.a) AS s) AS r
+            FROM t AS o
+            """,
+            [(1, 6), (2, 7), (3, 8), (4, None)],
+        ),
+        (
+            """
+            SELECT a, (
+                SELECT COUNT(*) FROM (SELECT x AS y FROM u WHERE u.k = o.a) AS s
+                WHERE s.y > 5
+            ) AS r FROM t AS o
+            """,
+            [(1, 1), (2, 1), (3, 1), (4, 0)],
+        ),
+        (
+            "SELECT a, (SELECT MIN(x) FROM (SELECT u.x FROM u WHERE u.k = o.a) AS s) AS r FROM t AS o",
+            [(1, 5), (2, 7), (3, 8), (4, None)],
+        ),
+        (
+            """
+            SELECT a, NULL AS r FROM t AS o
+            WHERE (SELECT MAX(s.x) FROM (SELECT x FROM u WHERE u.k = o.a) AS s) > 6
+            """,
+            [(2, None), (3, None)],
+        ),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_scalar_subquery_derived_table_reads_outer(
+    query: str, expected: list[tuple[int, int | None]], engine: EngineType
+) -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"a": [1, 2, 3, 4]}),
+        u=pl.DataFrame({"k": [1, 1, 2, 3], "x": [5, 6, 7, 8]}),
+    )
+    res = ctx.execute(query).sort("a").collect(engine=engine)
+    assert res.rows() == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # A limit of the derived table applies per outer row.
+        """
+        SELECT a, (
+            SELECT SUM(s.x) FROM (SELECT x FROM u WHERE u.k = o.a ORDER BY x LIMIT 1) AS s
+        ) AS r FROM t AS o
+        """,
+        # The aggregate of a value of the outer row would aggregate the outer query.
+        "SELECT a, (SELECT MAX(b.v) FROM (SELECT o.a * 10 AS v FROM u) AS b) AS r FROM t AS o",
+        # `u.k` reads the outer `u`, not the relation of the derived table.
+        """
+        SELECT o.a, (
+            SELECT MAX(s.x) FROM (SELECT x FROM u WHERE u.k = o.a) AS s WHERE s.x > u.k
+        ) AS r FROM t AS o CROSS JOIN (SELECT 5 AS k) AS u
+        """,
+        # An item that is not read must still resolve.
+        "SELECT a, (SELECT COUNT(*) FROM (SELECT o.b AS v FROM u) AS d) AS r FROM t AS o",
+        # The selector reads the columns of the derived table.
+        """
+        SELECT a, (
+            SELECT MAX(COLUMNS('^x$')) FROM (SELECT k AS x FROM u WHERE u.k = o.a) AS d
+        ) AS r FROM t AS o
+        """,
+    ],
+)
+def test_scalar_subquery_derived_table_reads_outer_unsupported(query: str) -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"a": [1, 2, 3, 4]}),
+        u=pl.DataFrame({"k": [1, 1, 2, 3], "x": [5, 6, 7, 8]}),
+    )
+    with pytest.raises(pl.exceptions.SQLInterfaceError, match="named 'o'"):
+        ctx.execute(query, eager=True)

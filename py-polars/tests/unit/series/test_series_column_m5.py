@@ -1,4 +1,4 @@
-"""Scalar and Dictionary columns held by a `pl.Series` through literals, concat, UDFs, export."""
+"""Scalar and Dictionary columns in a `pl.Series`: literals, concat, UDFs, export."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from polars._typing import PolarsDataType
 
 LONG = [
     f"https://example.com/section-{i:03d}/item-page-{i * 7:05d}/view" for i in range(50)
@@ -38,7 +40,7 @@ def _coded_df(tmp_path: Path) -> pl.DataFrame:
     return df
 
 
-def _scalar(n: int, value: object = 7, dtype: pl.DataType = pl.Int64) -> pl.Series:
+def _scalar(n: int, value: object = 7, dtype: PolarsDataType = pl.Int64) -> pl.Series:
     s = pl.DataFrame({"x": list(range(n))}).with_columns(
         pl.lit(value, dtype=dtype).alias("c")
     )["c"]
@@ -75,18 +77,18 @@ def test_lit_series_keeps_variant(column: pl.Series, engine: str) -> None:
     kind = _kind(column)
     expected = _plain(column)
 
-    # The streaming engine does not keep Dictionary columns through its pipelines; a Scalar
-    # column becomes a Series at the literal (the engine's scalar path differs from a plain
-    # column's).
+    # The streaming engine does not keep Dictionary columns through its pipelines; a
+    # Scalar column becomes a Series at the literal (the engine's scalar path differs
+    # from a plain column's).
     keeps = kind == "dictionary" and engine == "in-memory"
     kind_in = "series" if kind == "scalar" else kind
 
-    out = base.lazy().with_columns(column).collect(engine=engine)  # type: ignore[arg-type]
+    out = base.lazy().with_columns(column).collect(engine=engine)  # type: ignore[call-overload]
     assert_series_equal(out[column.name], expected)
     assert out.columns == ["i", column.name]
     assert not keeps or _kind(out[column.name]) == kind
 
-    out = base.lazy().select(column).collect(engine=engine)  # type: ignore[arg-type]
+    out = base.lazy().select(column).collect(engine=engine)  # type: ignore[call-overload]
     assert_series_equal(out[column.name], expected)
     assert not keeps or _kind(out[column.name]) == kind
 
@@ -109,7 +111,9 @@ def test_lit_series_does_not_materialise_cache(column: pl.Series) -> None:
         lambda: base.lazy().select(column).collect(engine="in-memory"),
         lambda: base.lazy().with_columns(column).explain(),
         lambda: pl.lit(column),
-        lambda: base.lazy().select(column, column.alias("b")).collect(engine="in-memory"),
+        lambda: (
+            base.lazy().select(column, column.alias("b")).collect(engine="in-memory")
+        ),
     ):
         out = f()
         assert not column._s._is_materialised()
@@ -132,8 +136,12 @@ def test_lit_series_other_consumers(column: pl.Series) -> None:
     n = len(column)
     df = pl.DataFrame({"i": pl.int_range(n, eager=True)})
     plain = _plain(column)
-    got = df.select(pl.when(pl.col("i") % 2 == 0).then(column).otherwise(None).alias("w"))
-    exp = df.select(pl.when(pl.col("i") % 2 == 0).then(plain).otherwise(None).alias("w"))
+    got = df.select(
+        pl.when(pl.col("i") % 2 == 0).then(column).otherwise(None).alias("w")
+    )
+    exp = df.select(
+        pl.when(pl.col("i") % 2 == 0).then(plain).otherwise(None).alias("w")
+    )
     assert_frame_equal(got, exp)
 
     needles = column.head(3)
@@ -159,7 +167,9 @@ def test_lit_series_serialisation_unchanged(column: pl.Series) -> None:
     )
     # Byte equality with the base build is checked by the export probe.
     b = lf.serialize()
-    assert_frame_equal(pl.LazyFrame.deserialize(io.BytesIO(b)).collect(), plain.collect())
+    assert_frame_equal(
+        pl.LazyFrame.deserialize(io.BytesIO(b)).collect(), plain.collect()
+    )
     assert lf.explain() == plain.explain()
 
 
@@ -204,7 +214,11 @@ def test_concat_plain_series_unchanged() -> None:
 def test_map_batches_returns_column(coded: pl.Series) -> None:
     df = pl.DataFrame({"k": coded})
     assert _kind(df["k"]) == "dictionary"
-    out = df.lazy().select(pl.col("k").map_batches(lambda s: s)).collect(engine="in-memory")
+    out = (
+        df.lazy()
+        .select(pl.col("k").map_batches(lambda s: s))
+        .collect(engine="in-memory")
+    )
     assert _kind(out["k"]) == "dictionary"
     assert_series_equal(out["k"], _plain(coded))
 
@@ -222,12 +236,16 @@ def test_map_batches_scalar(column: pl.Series) -> None:
     if _kind(column) != "scalar":
         pytest.skip("scalar only")
     df = pl.DataFrame({"c": column})
-    out = df.lazy().select(pl.col("c").map_batches(lambda s: s)).collect(engine="in-memory")
+    out = (
+        df.lazy()
+        .select(pl.col("c").map_batches(lambda s: s))
+        .collect(engine="in-memory")
+    )
     assert _kind(out["c"]) == "series"
     assert_series_equal(out["c"], _plain(column))
 
 
-# --- export ----------------------------------------------------------------------------
+# --- export ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("how", ["to_arrow", "to_arrow_old", "stream"])
@@ -271,4 +289,7 @@ def test_export_dictionary_shapes(tmp_path: Path) -> None:
         arr = pa.chunked_array(t)
         assert arr.to_pylist() == exp.to_list()
         assert arr.num_chunks == n_chunks
-        assert t.to_arrow(compat_level=pl.CompatLevel.newest()).to_pylist() == exp.to_list()
+        assert (
+            t.to_arrow(compat_level=pl.CompatLevel.newest()).to_pylist()
+            == exp.to_list()
+        )

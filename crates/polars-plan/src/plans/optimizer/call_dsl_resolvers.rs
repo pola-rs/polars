@@ -372,11 +372,15 @@ pub(super) fn call_dsl_resolvers(
     Ok(())
 }
 
-/// Waits for the resolvers still running when another one failed. A resolver may call a plugin
-/// on a blocking thread, which can't be aborted: it must not keep running after the query has
-/// returned its error.
+/// Waits (a bounded time, [`crate::utils::RESOLVER_DRAIN_TIMEOUT`]) for the resolvers still running
+/// when another one failed. A resolver may call a plugin on a blocking thread, which can't be
+/// aborted: it should not keep running after the query has returned its error, but one that never
+/// returns must not hang the error.
 fn drain_resolve_tasks<T>(resolve_tasks: &mut FuturesUnordered<Pin<Box<dyn Future<Output = T>>>>) {
-    if !resolve_tasks.is_empty() {
-        ASYNC.block_in_place_on(async { while resolve_tasks.next().await.is_some() {} });
+    if !resolve_tasks.is_empty()
+        && ASYNC.block_in_place_on(crate::utils::drain_bounded(resolve_tasks))
+        && verbose()
+    {
+        eprintln!("call_dsl_resolvers: gave up waiting for resolvers still running after an error");
     }
 }

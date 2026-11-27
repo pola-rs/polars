@@ -31,4 +31,14 @@ impl ExternalReaderBuilder {
             ExternalReaderBuilder::Rust(()) => unimplemented!(),
         }
     }
+
+    /// Whether a negative slice may be resolved from the row counts of the sources. An I/O
+    /// plugin counts with a statement of its own, so the rows may change before they are read.
+    pub fn counts_match_reads(&self) -> bool {
+        match self {
+            #[cfg(feature = "io_plugin_ffi")]
+            ExternalReaderBuilder::Ffi(_) => false,
+            _ => true,
+        }
+    }
 }

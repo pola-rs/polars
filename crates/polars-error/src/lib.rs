@@ -10,7 +10,9 @@ use std::ops::Deref;
 use std::sync::{Arc, LazyLock};
 use std::{env, io};
 pub mod abort;
+mod sql_location;
 
+pub use sql_location::*;
 pub use warning::*;
 
 #[cfg(feature = "python")]
@@ -123,7 +125,12 @@ pub enum PolarsError {
 #[non_exhaustive]
 pub enum ErrorAttachment {
     /// The plan as far as it was resolved when the error happened.
-    ResolvedPlan { node: String, plan: String },
+    ResolvedPlan {
+        node: String,
+        plan: String,
+    },
+    SqlLocation(SqlLocation),
+    Hint(Cow<'static, str>),
 }
 
 impl ErrorAttachment {
@@ -134,7 +141,31 @@ impl ErrorAttachment {
                 "\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node} <---\n{plan}"
             )
             .unwrap(),
+            ErrorAttachment::SqlLocation(location) => location.write_after_message(out),
+            ErrorAttachment::Hint(hint) => write!(out, "\n\nHint: {hint}").unwrap(),
         }
+    }
+}
+
+/// Writes `attachments` (innermost first): the innermost SQL location, the hints, the rest.
+fn write_attachments<'a>(
+    out: &mut String,
+    attachments: impl Iterator<Item = &'a ErrorAttachment> + Clone,
+) {
+    let is_location = |a: &ErrorAttachment| matches!(a, ErrorAttachment::SqlLocation(_));
+    let is_hint = |a: &ErrorAttachment| matches!(a, ErrorAttachment::Hint(_));
+    if let Some(location) = attachments.clone().find(|a| is_location(a)) {
+        location.write_after_message(out);
+    }
+    let mut hints = Vec::new();
+    for hint in attachments.clone().filter(|a| is_hint(a)) {
+        if !hints.contains(&hint) {
+            hint.write_after_message(out);
+            hints.push(hint);
+        }
+    }
+    for attachment in attachments.filter(|a| !is_location(a) && !is_hint(a)) {
+        attachment.write_after_message(out);
     }
 }
 
@@ -302,10 +333,7 @@ impl PolarsError {
 
         error.wrap_msg(|msg| {
             let mut out = msg.to_string();
-            // Innermost first.
-            for attachment in attachments.iter().rev() {
-                attachment.write_after_message(&mut out);
-            }
+            write_attachments(&mut out, attachments.iter().rev().map(|a| a.as_ref()));
             if !context_exprs.is_empty() {
                 let first = context_exprs.first().unwrap();
                 let last = context_exprs.last().unwrap();
@@ -445,6 +473,34 @@ impl PolarsError {
         }
     }
 
+    pub fn with_hint(self, hint: impl Into<Cow<'static, str>>) -> Self {
+        self.with_attachment(ErrorAttachment::Hint(hint.into()))
+    }
+
+    /// The hints, innermost first, without duplicates.
+    pub fn hints(&self) -> Vec<&str> {
+        let mut hints = Vec::new();
+        for attachment in self.attachments().into_iter().rev() {
+            if let ErrorAttachment::Hint(hint) = attachment
+                && !hints.contains(&hint.as_ref())
+            {
+                hints.push(hint.as_ref());
+            }
+        }
+        hints
+    }
+
+    /// The innermost SQL location.
+    pub fn sql_location(&self) -> Option<&SqlLocation> {
+        self.attachments()
+            .into_iter()
+            .rev()
+            .find_map(|attachment| match attachment {
+                ErrorAttachment::SqlLocation(location) => Some(location),
+                _ => None,
+            })
+    }
+
     /// The attachments, outermost first.
     pub fn attachments(&self) -> Vec<&ErrorAttachment> {
         use PolarsError::*;
@@ -491,17 +547,15 @@ impl PolarsError {
 
     /// Writes the attachments into the innermost message.
     pub fn inline_attachments(self) -> Self {
-        use PolarsError::*;
-        match self {
-            Attached { error, attachment } => error.inline_attachments().wrap_msg(|msg| {
-                let mut out = msg.to_string();
-                attachment.write_after_message(&mut out);
-                out
-            }),
-            Context { error, msg } => error.inline_attachments().context(msg),
-            ExprContext { error, expr } => error.inline_attachments().with_expr_context(expr),
-            error => error,
+        let attachments: Vec<ErrorAttachment> = self.attachments().into_iter().cloned().collect();
+        if attachments.is_empty() {
+            return self;
         }
+        self.retain_attachments(|_| false).wrap_msg(|msg| {
+            let mut out = msg.to_string();
+            write_attachments(&mut out, attachments.iter().rev());
+            out
+        })
     }
 }
 
@@ -551,11 +605,6 @@ macro_rules! polars_err {
     ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
-        )
-    };
-    ($variant:ident: $fmt:literal $(, $arg:expr)*, hint = $hint:literal) => {
-        $crate::__private::must_use(
-            $crate::PolarsError::$variant(format!(concat_str!($fmt, "\n\nHint: ", $hint), $($arg),*).into())
         )
     };
     ($variant:ident: $err:expr $(,)?) => {

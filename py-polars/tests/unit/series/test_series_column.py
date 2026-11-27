@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import re
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -10,7 +11,10 @@ import polars as pl
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
+
+    from polars._typing import PolarsDataType
 
 
 def test_column_kind_plain_series() -> None:
@@ -20,8 +24,8 @@ def test_column_kind_plain_series() -> None:
 
 
 def test_length_one_series_keeps_flags_and_sortedness() -> None:
-    # A length-1 Series reports itself as ascending; it must stay a `Column::Series` (not
-    # become a `Column::Scalar`) through the operations that return a new Series.
+    # A length-1 Series reports itself as ascending; it must stay a `Column::Series`
+    # (not become a `Column::Scalar`) through the operations that return a new Series.
     s = pl.Series("a", [1])
     assert s.flags == {"SORTED_ASC": True, "SORTED_DESC": False}
     assert s.is_sorted()
@@ -86,9 +90,9 @@ LONG = [
 def coded_df(tmp_path: Path) -> pl.DataFrame:
     """A frame whose `k` column is a `Column::Dictionary`.
 
-    Long strings, dictionary-encoded in a parquet file, are read as dictionary codes by the
-    streaming engine's `collect_batches` (`collect` and `read_parquet` give plain Series
-    columns); `POLARS_DICT_CODES=0` turns that off.
+    Long strings, dictionary-encoded in a parquet file, are read as dictionary codes
+    by the streaming engine's `collect_batches` (`collect` and `read_parquet` give plain
+    Series columns); `POLARS_DICT_CODES=0` turns that off.
     """
     n = 20_000
     idx = pl.int_range(n, eager=True)
@@ -191,21 +195,32 @@ def test_in_place_mutation_of_non_series_column(coded_df: pl.DataFrame) -> None:
     assert c.to_list() == [7, 7, 7, 8]
 
 
-# --- Methods that run on the column, not on the materialised Series ----------------------
+# --- Methods that run on the column, not on the materialised Series -------------------
 
 
-def _scalar_column(n: int = 9, value: object = 7, dtype: pl.DataType = pl.Int64) -> pl.Series:
+def _scalar_column(
+    n: int = 9, value: object = 7, dtype: PolarsDataType = pl.Int64
+) -> pl.Series:
     df = pl.DataFrame({"x": list(range(n))}).with_columns(
         pl.lit(value, dtype=dtype).alias("c")
     )
     return df["c"]
 
 
-@pytest.fixture(params=["dictionary", "scalar", "scalar_str", "scalar_null", "scalar_f64", "scalar_bool"])
+@pytest.fixture(
+    params=[
+        "dictionary",
+        "scalar",
+        "scalar_str",
+        "scalar_null",
+        "scalar_f64",
+        "scalar_bool",
+    ]
+)
 def column(request: pytest.FixtureRequest, tmp_path: Path) -> pl.Series:
     kind = request.param
     if kind == "dictionary":
-        s = request.getfixturevalue("coded_df")["k"]
+        s: pl.Series = request.getfixturevalue("coded_df")["k"]
     elif kind == "scalar":
         s = _scalar_column(10)
     elif kind == "scalar_str":
@@ -221,8 +236,11 @@ def column(request: pytest.FixtureRequest, tmp_path: Path) -> pl.Series:
 
 
 def _materialised(s: pl.Series) -> pl.Series:
-    """The Series path's version of `s`: a plain `Column::Series` with the same chunking
-    and flags (a scalar column is one value broadcast, a coded column keeps its chunks)."""
+    """The Series path's version of `s`.
+
+    A plain `Column::Series` with the same chunking and flags (a scalar column is one
+    value broadcast, a coded column keeps its chunks).
+    """
     if s._s._column_kind() == "scalar":
         m = pl.Series(s.name, [s[0] if len(s) else None], dtype=s.dtype)
         m = m._from_pyseries(m._s.new_from_index(0, len(s)))
@@ -253,6 +271,7 @@ def test_m3_head_tail_slice(column: pl.Series) -> None:
     m = _materialised(column)
     k = _kind(column)
     n = column.len()
+    f: Callable[..., Any]
     for f in (
         lambda x: x.head(3),
         lambda x: x.head(0),
@@ -276,7 +295,11 @@ def test_m3_filter(column: pl.Series) -> None:
     _same(column.filter(mask), m.filter(mask), k)
     _same(column.filter(pl.Series([True])), m.filter(pl.Series([True])), k)
     _same(column.filter(pl.Series([False])), m.filter(pl.Series([False])), k)
-    _same(column.filter(pl.Series([None], dtype=pl.Boolean)), m.filter(pl.Series([None], dtype=pl.Boolean)), k)
+    _same(
+        column.filter(pl.Series([None], dtype=pl.Boolean)),
+        m.filter(pl.Series([None], dtype=pl.Boolean)),
+        k,
+    )
     nulls = pl.Series([True, None, False, True] * column.len()).head(column.len())
     _same(column.filter(nulls), m.filter(nulls), k)
     _same(column.filter(mask & False), m.filter(mask & False), k)
@@ -342,8 +365,14 @@ def test_m3_clear_new_from_index(column: pl.Series) -> None:
     _same(column.clear(), m.clear(), k)
     _same(column.clear(0), m.clear(0), k)
     for i, n in ((0, 5), (3, 1), (3, 0), (2, 20_000)):
-        _same(column._from_pyseries(column._s.new_from_index(i, n)), m._from_pyseries(m._s.new_from_index(i, n)), None)
-        assert _kind(column._from_pyseries(column._s.new_from_index(i, n))) == ("scalar" if n > 0 else "series")
+        _same(
+            column._from_pyseries(column._s.new_from_index(i, n)),
+            m._from_pyseries(m._s.new_from_index(i, n)),
+            None,
+        )
+        assert _kind(column._from_pyseries(column._s.new_from_index(i, n))) == (
+            "scalar" if n > 0 else "series"
+        )
     with pytest.raises(ValueError, match="out of bounds"):
         column._s.new_from_index(column.len(), 2)
 
@@ -372,10 +401,9 @@ def test_m3_cast(column: pl.Series) -> None:
         for kwargs in ({"strict": True}, {"strict": False}, {"wrap_numerical": True}):
             try:
                 expected = m.cast(dtype, **kwargs)  # type: ignore[arg-type]
-            except Exception as e:  # noqa: BLE001
-                with pytest.raises(type(e)) as e_col:
+            except Exception as e:
+                with pytest.raises(type(e), match=rf"^{re.escape(str(e))}\Z"):
                     column.cast(dtype, **kwargs)  # type: ignore[arg-type]
-                assert str(e_col.value) == str(e)
                 continue
             _same(column.cast(dtype, **kwargs), expected, None)  # type: ignore[arg-type]
     # Only a dictionary cast to its own dtype stays a column.
@@ -389,6 +417,7 @@ def test_m3_zero_length_results_and_list_scalar() -> None:
     )["c"]
     assert lst._s._column_kind() == "scalar"
     m = _materialised(lst)
+    f: Callable[..., Any]
     for f in (
         lambda x: x.tail(0),
         lambda x: x.head(0),
@@ -425,7 +454,9 @@ def test_m3_append_extend(column: pl.Series) -> None:
                 other = a
                 other_m = m
             elif other_kind == "plain":
-                other = pl.Series(column.name, column.head(3).to_list(), dtype=column.dtype)
+                other = pl.Series(
+                    column.name, column.head(3).to_list(), dtype=column.dtype
+                )
                 other_m = other
             elif other_kind == "same_scalar":
                 other = column.head(2)
@@ -475,7 +506,9 @@ def test_shrink_to_fit_rechunks_dictionary(coded_df: pl.DataFrame) -> None:
     assert s.to_list() == coded_df["k"].to_list()
 
 
-def test_row_loop_over_compressed_columns_is_not_quadratic(coded_df: pl.DataFrame) -> None:
+def test_row_loop_over_compressed_columns_is_not_quadratic(
+    coded_df: pl.DataFrame,
+) -> None:
     import time
 
     wide = pl.DataFrame({"x": pl.int_range(3_000_000, eager=True)}).with_columns(
@@ -486,7 +519,8 @@ def test_row_loop_over_compressed_columns_is_not_quadratic(coded_df: pl.DataFram
         t = time.perf_counter()
         for i in range(200):
             assert df[col][i] == df[col].item(i)
-        # 400 accesses of a 3M-row column that materialised each time would take seconds.
+        # 400 accesses of a 3M-row column that materialised each time would take
+        # seconds.
         assert time.perf_counter() - t < 1.0
 
 
@@ -518,7 +552,7 @@ def test_empty_results_do_not_materialise_scalar_column() -> None:
     assert c._s._column_kind() == "scalar"
 
 
-# --- M4: comparisons, arithmetic, reductions ---------------------------------------------
+# --- M4: comparisons, arithmetic, reductions ------------------------------------------
 
 import operator  # noqa: E402
 
@@ -542,14 +576,18 @@ def _constants(s: pl.Series) -> list[object]:
     return [7, 3, 8, 1.5, None, "x"]
 
 
-def _outcome(f, *args):  # type: ignore[no-untyped-def]
+def _outcome(f: Callable[..., Any], *args: Any) -> tuple[Any, ...]:
     try:
         return ("ok", f(*args))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return ("err", type(e), str(e))
 
 
-def _assert_same_outcome(got, expected, kinds=("series",)) -> None:  # type: ignore[no-untyped-def]
+def _assert_same_outcome(
+    got: tuple[Any, ...],
+    expected: tuple[Any, ...],
+    kinds: tuple[str, ...] = ("series",),
+) -> None:
     assert got[0] == expected[0]
     if got[0] == "err":
         assert got[1:] == expected[1:]
@@ -565,7 +603,8 @@ def test_m4_compare_with_constant(column: pl.Series) -> None:
     k = _kind(column)
     for op in CMP_OPS:
         for c in _constants(column):
-            # `bool_series == True` is answered by the Python method (a clone, or its negation).
+            # `bool_series == True` is answered by the Python method (a clone, or its
+            # negation).
             kinds = ("series", k) if isinstance(c, bool) else ("series",)
             _assert_same_outcome(_outcome(op, column, c), _outcome(op, m, c), kinds)
     assert _kind(column) == k
@@ -580,7 +619,7 @@ def test_m4_compare_with_series(column: pl.Series) -> None:
     for c in consts:
         try:
             others.append(pl.Series("o", [c]))
-        except Exception:  # noqa: BLE001, S112
+        except Exception:
             continue
     others.append(pl.Series("o", [None], dtype=column.dtype))
     others.append(pl.Series("o", column.head(1).to_list(), dtype=column.dtype))
@@ -591,12 +630,17 @@ def test_m4_compare_with_series(column: pl.Series) -> None:
     others.append(_scalar_column(1, 7))
     others.append(_scalar_column(n, "zz", pl.String))
     others.append(_scalar_column(n, 1.5, pl.Float64))
-    others.append(_scalar_column(n, None, column.dtype if column.dtype != pl.Null else pl.Int64))
+    others.append(
+        _scalar_column(n, None, column.dtype if column.dtype != pl.Null else pl.Int64)
+    )
     others.append(_scalar_column(n, column[0], column.dtype))
     for op in CMP_OPS:
         for o in others:
             try:
-                _assert_same_outcome(_outcome(op, column, o), _outcome(op, m, _materialised(o) if _kind(o) != "series" else o))
+                _assert_same_outcome(
+                    _outcome(op, column, o),
+                    _outcome(op, m, _materialised(o) if _kind(o) != "series" else o),
+                )
             except AssertionError as e:
                 msg = f"{op.__name__} rhs {o.dtype} len={len(o)} kind={_kind(o)} chunks={o.n_chunks()}"
                 raise AssertionError(msg) from e
@@ -651,8 +695,8 @@ def test_m4_arithmetic_with_constant(column: pl.Series) -> None:
     for i, op in enumerate(ARITH_OPS):
         for c in _arith_constants(column):
             if isinstance(c, str) and i >= 6:
-                # `"x" + s` runs the expression engine (not changed here; its Scalar results
-                # report flags that the base build's Series do not).
+                # `"x" + s` runs the expression engine (not changed here; its Scalar
+                # results report flags that the base build's Series do not).
                 continue
             try:
                 kinds = ("series", "scalar") if i == 4 else ("series",)
@@ -671,19 +715,28 @@ def test_m4_scalar_arithmetic_and_comparison_lengths(n: int) -> None:
             for c in _arith_constants(column):
                 if isinstance(c, str) and i >= 6:
                     continue
-                # `//` runs the expression engine, whose length-1 result is a scalar column.
+                # `//` runs the expression engine, whose length-1 result is a scalar
+                # column.
                 kinds = ("series", "scalar") if i == 4 else ("series",)
                 _assert_same_outcome(_outcome(op, column, c), _outcome(op, m, c), kinds)
         for op in CMP_OPS:
             for c in _constants(column):
                 kinds = ("series", "scalar") if isinstance(c, bool) else ("series",)
                 _assert_same_outcome(_outcome(op, column, c), _outcome(op, m, c), kinds)
-        for other in _scalar_cases(n) + _scalar_cases(1) + [pl.Series("o", [3]), pl.Series("o", [None], dtype=pl.Int64)]:
+        for other in (
+            _scalar_cases(n)
+            + _scalar_cases(1)
+            + [pl.Series("o", [3]), pl.Series("o", [None], dtype=pl.Int64)]
+        ):
             om = _materialised(other) if _kind(other) != "series" else other
             for op in [*ARITH_OPS[:5], *CMP_OPS]:
                 try:
-                    kinds = ("series", "scalar") if op is operator.floordiv else ("series",)
-                    _assert_same_outcome(_outcome(op, column, other), _outcome(op, m, om), kinds)
+                    kinds = (
+                        ("series", "scalar") if op is operator.floordiv else ("series",)
+                    )
+                    _assert_same_outcome(
+                        _outcome(op, column, other), _outcome(op, m, om), kinds
+                    )
                 except AssertionError as e:
                     msg = f"{op} {column.dtype} {column[0]!r} rhs {other.dtype} {other.to_list()[:2]} {_kind(other)}"
                     raise AssertionError(msg) from e
@@ -721,7 +774,9 @@ def _eq_value(a: object, b: object) -> bool:
     return a == b and type(a) is type(b)
 
 
-def _same_value_outcome(f, a, b, flags: bool = True) -> None:  # type: ignore[no-untyped-def]
+def _same_value_outcome(
+    f: Callable[..., Any], a: pl.Series, b: pl.Series, flags: bool = True
+) -> None:
     ra = _outcome(f, a)
     rb = _outcome(f, b)
     assert ra[0] == rb[0]
@@ -813,18 +868,24 @@ def test_m4_unique_and_value_counts(column: pl.Series, coded_df: pl.DataFrame) -
     k = _kind(column)
     u, mu = column.unique(), m.unique()
     if k == "dictionary":
-        _same(column.unique(maintain_order=True), m.unique(maintain_order=True), "series")
+        _same(
+            column.unique(maintain_order=True), m.unique(maintain_order=True), "series"
+        )
         assert u.flags == mu.flags
         assert u.n_chunks() == mu.n_chunks() == 1
         assert _kind(u) == "series"
     else:
-        # The expression engine's (not changed here: its scalar results report other flags).
-        assert_series_equal(column.unique(maintain_order=True), m.unique(maintain_order=True))
+        # The expression engine's (not changed here: its scalar results report other
+        # flags).
+        assert_series_equal(
+            column.unique(maintain_order=True), m.unique(maintain_order=True)
+        )
     assert u.dtype == mu.dtype
     assert u.name == mu.name
     assert sorted(u.to_list(), key=lambda x: (x is not None, str(x))) == sorted(
         mu.to_list(), key=lambda x: (x is not None, str(x))
     )
+    kwargs: dict[str, Any]
     for kwargs in (
         {},
         {"sort": True},
@@ -832,25 +893,28 @@ def test_m4_unique_and_value_counts(column: pl.Series, coded_df: pl.DataFrame) -
         {"name": "n", "sort": True, "normalize": True},
         {"parallel": True},
     ):
-        a, b = column.value_counts(**kwargs), m.value_counts(**kwargs), 
+        a, b = (
+            column.value_counts(**kwargs),
+            m.value_counts(**kwargs),
+        )
         assert a.schema == b.schema
         assert _sorted_rows(a) == _sorted_rows(b)
         if kwargs.get("sort"):
-            name = kwargs.get("name", "count")
+            name = str(kwargs.get("name", "count"))
             assert a[name].to_list() == b[name].to_list()
     with pytest.raises(Exception, match="duplicate column names") as e1:
         column.value_counts(name=column.name)
     with pytest.raises(Exception, match="duplicate column names") as e2:
         m.value_counts(name=column.name)
     assert type(e1.value) is type(e2.value)
-    assert _same_value_outcome(lambda s: s.n_unique(), column, m) is None
+    _same_value_outcome(lambda s: s.n_unique(), column, m)
     assert _kind(column) == k
 
 
 def test_m4_dictionary_with_repeated_values(coded_df: pl.DataFrame) -> None:
     k = coded_df["k"]
     both = k.clone()
-    both.append(k.reverse() if False else k.head(5000))
+    both.append(k.head(5000))
     both.append(k.tail(3000))
     if both._s._column_kind() != "dictionary":
         pytest.skip("append did not keep the dictionary")
@@ -859,19 +923,21 @@ def test_m4_dictionary_with_repeated_values(coded_df: pl.DataFrame) -> None:
     assert both.min() == m.min()
     assert both.max() == m.max()
     _same(both.unique(maintain_order=True), m.unique(maintain_order=True), None)
-    assert sorted(both.unique().to_list(), key=str) == sorted(m.unique().to_list(), key=str)
+    assert sorted(both.unique().to_list(), key=str) == sorted(
+        m.unique().to_list(), key=str
+    )
     a, b = both.value_counts(), m.value_counts()
     assert _sorted_rows(a) == _sorted_rows(b)
 
 
 def test_m4_is_in(column: pl.Series) -> None:
     m = _materialised(column)
-    # `is_in` and `is_null` run in the expression engine, which already evaluates them once
-    # per dictionary value (as a single chunk, and a scalar column's result reports other
-    # flags): values only.
+    # `is_in` and `is_null` run in the expression engine, which already evaluates them
+    # once per dictionary value (as a single chunk, and a scalar column's result reports
+    # other flags): values only.
     exact = False
     vals = column.head(3).to_list()
-    haystacks: list[object] = [
+    haystacks: list[Any] = [
         [vals],
         [[None]],
         [[]],
@@ -885,16 +951,29 @@ def test_m4_is_in(column: pl.Series) -> None:
         warnings.simplefilter("ignore")
         for h in haystacks:
             for nulls_equal in (False, True):
-                hs = pl.Series("h", h, dtype=pl.List(pl.String) if column.dtype == pl.String else None)
-                _same_value_outcome(lambda s: s.is_in(hs, nulls_equal=nulls_equal), column, m, exact)  # noqa: B023
+                hs = pl.Series(
+                    "h",
+                    h,
+                    dtype=pl.List(pl.String) if column.dtype == pl.String else None,
+                )
+                _same_value_outcome(
+                    lambda s, hs=hs, nulls_equal=nulls_equal: s.is_in(
+                        hs, nulls_equal=nulls_equal
+                    ),
+                    column,
+                    m,
+                    exact,
+                )
         for coll in (vals, [None], [], ["x", "zz"]):
-            _same_value_outcome(lambda s: s.is_in(coll), column, m, exact)  # noqa: B023
+            _same_value_outcome(lambda s, coll=coll: s.is_in(coll), column, m, exact)
         _same_value_outcome(lambda s: s.is_null(), column, m, exact)
         _same_value_outcome(lambda s: s.is_not_null(), column, m, exact)
 
 
-def _scalar_series(value: object, dtype: pl.DataType, n: int = 4) -> pl.Series:
-    df = pl.DataFrame({"x": range(n)}).with_columns(pl.lit(value, dtype=dtype).alias("c"))
+def _scalar_series(value: object, dtype: PolarsDataType, n: int = 4) -> pl.Series:
+    df = pl.DataFrame({"x": range(n)}).with_columns(
+        pl.lit(value, dtype=dtype).alias("c")
+    )
     s = df["c"]
     assert _kind(s) == "scalar"
     return s
@@ -910,7 +989,13 @@ def _plain(s: pl.Series) -> pl.Series:
 def test_m4_fix_categorical_scalar_comparison_flags() -> None:
     s = _scalar_series("a", pl.Categorical)
     m = _plain(s)
-    for f in (lambda x: x == "a", lambda x: x != "a", lambda x: x < "b", lambda x: x == x):
+    f: Callable[..., Any]
+    for f in (
+        lambda x: x == "a",
+        lambda x: x != "a",
+        lambda x: x < "b",
+        lambda x: x == x,
+    ):
         _same(f(s), f(m), "series")
 
 
@@ -939,13 +1024,13 @@ def test_m4_fix_dictionary_vs_full_categorical_scalar(coded_df: pl.DataFrame) ->
     )["c"]
     lit_s = pl.DataFrame({"x": range(n)}).with_columns(pl.lit("a").alias("c"))["c"]
     for r in (lit, lit_s):
-        _same_value_outcome(lambda x: x == r, s, m, True)  # noqa: B023
+        _same_value_outcome(lambda x, r=r: x == r, s, m, True)
 
 
 def test_m4_expression_dispatch_materialises_scalar() -> None:
     from decimal import Decimal
 
-    cases: list[tuple[object, pl.DataType]] = [
+    cases: list[tuple[object, PolarsDataType]] = [
         (Decimal("1.25"), pl.Decimal(10, 2)),
         (1, pl.Int64),
         ("a", pl.String),
@@ -957,11 +1042,11 @@ def test_m4_expression_dispatch_materialises_scalar() -> None:
         for n in (2, 5):
             s = _scalar_series(value, dtype, n)
             m = _plain(s)
-            fs = [
+            fs: list[Callable[..., Any]] = [
                 lambda x: x.is_null(),
                 lambda x: x.unique(maintain_order=True),
-                lambda x: x.is_in([value]),
-                lambda x: x.eq_missing(value),
+                lambda x, value=value: x.is_in([value]),
+                lambda x, value=value: x.eq_missing(value),
             ]
             if dtype in (pl.Int64, pl.Decimal(10, 2)):
                 fs += [
@@ -991,7 +1076,7 @@ def test_m4_expression_dispatch_decimal_and_duration() -> None:
         _same_value_outcome(f, d, dm, True)
 
 
-def _dtype_cases() -> list[tuple[object, pl.DataType]]:
+def _dtype_cases() -> list[tuple[object, PolarsDataType]]:
     from datetime import timedelta
     from decimal import Decimal
 
@@ -1010,14 +1095,14 @@ def test_m4_scalar_series_enters_frames_and_literals_materialised() -> None:
         for n in (2, 4):
             s = _scalar_series(value, dtype, n)
             m = _plain(s)
-            frames = [
+            frames: list[Callable[..., pl.DataFrame]] = [
                 lambda x: x.to_frame(),
                 lambda x: pl.DataFrame([x]),
                 lambda x: pl.DataFrame({"c": x}),
-                lambda x: pl.DataFrame({"x": range(n)}).with_columns(x),
-                lambda x: pl.DataFrame({"x": range(n)}).hstack([x]),
-                lambda x: pl.DataFrame({"x": range(n)}).insert_column(1, x),
-                lambda x: pl.DataFrame({"x": range(n)}).select(pl.lit(x)),
+                lambda x, n=n: pl.DataFrame({"x": range(n)}).with_columns(x),
+                lambda x, n=n: pl.DataFrame({"x": range(n)}).hstack([x]),
+                lambda x, n=n: pl.DataFrame({"x": range(n)}).insert_column(1, x),
+                lambda x, n=n: pl.DataFrame({"x": range(n)}).select(pl.lit(x)),
             ]
             for mk in frames:
                 a, b = mk(s), mk(m)
@@ -1044,4 +1129,4 @@ def test_m4_scalar_series_expression_flags_match_plain() -> None:
         s = _scalar_series(value, dtype)
         m = _plain(s)
         other = _scalar_series(value, dtype)
-        _same_value_outcome(lambda x: x.eq_missing(other), s, m, True)  # noqa: B023
+        _same_value_outcome(lambda x, other=other: x.eq_missing(other), s, m, True)

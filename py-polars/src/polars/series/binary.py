@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.unstable import unstable
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
@@ -49,6 +50,91 @@ class BinaryNameSpace:
             false
             true
             true
+        ]
+        """
+
+    @unstable()
+    def find(self, literal: IntoExpr) -> Series:
+        r"""
+        Return the byte offset of the first occurrence of a binary substring.
+
+        If the substring is not found, returns None.
+
+        .. warning::
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        literal
+            The binary substring to look for.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`.
+
+        Examples
+        --------
+        >>> s = pl.Series("colors", [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"])
+        >>> s.bin.find(b"\xff")
+        shape: (3,)
+        Series: 'colors' [u32]
+        [
+            null
+            0
+            2
+        ]
+        """
+
+    @unstable()
+    def find_many(
+        self,
+        patterns: IntoExpr,
+        *,
+        ascii_case_insensitive: bool = False,
+        overlapping: bool = False,
+        leftmost: bool = False,
+    ) -> Series:
+        r"""
+        Use the Aho-Corasick algorithm to find many matches.
+
+        Returns the byte offset of the start of each match.
+
+        .. warning::
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        patterns
+            Binary patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case-insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+        overlapping
+            Whether matches may overlap.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`List` with inner data type :class:`UInt32`.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [b"discontent", b"rhapsody"])
+        >>> s.bin.find_many([b"disco", b"onte", b"ody"])
+        shape: (2,)
+        Series: 'values' [list[u32]]
+        [
+            [0]
+            [5]
         ]
         """
 

@@ -7,11 +7,13 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import deltalake
 import pyarrow as pa
 import pytest
 from deltalake import DeltaTable, write_deltalake
 
 import polars as pl
+from polars._utils.various import parse_version
 from polars._utils.wrap import wrap_ldf
 from polars.exceptions import ComputeError, SchemaError
 from polars.io.delta._sink import (
@@ -31,6 +33,11 @@ pytestmark = pytest.mark.write_disk
 
 def _sink(lf: pl.LazyFrame, path: Path | str, mode: Any) -> None:
     DeltaSinkState.new(str(path), mode=mode).attach_sink(lf).collect()
+
+
+# deltalake 1.7 writes timestamps without a time zone in maps and commits to tables
+# with domainMetadata or vacuumProtocolCheck. Older versions reject both.
+_DELTALAKE_REJECTS = parse_version(deltalake.__version__) < (1, 7)
 
 
 def _read(path: Path, *sort: str) -> pl.DataFrame:
@@ -79,12 +86,12 @@ def test_delta_sink_append_round_trip(tmp_path: Path) -> None:
 
     table = DeltaTable(str(tmp_path))
     assert table.version() == 1
-    history = table.history()
+    history = list(table.history())
     assert history[0]["operation"] == "WRITE"
     assert history[1]["operation"] == "CREATE TABLE"
     assert_frame_equal(_read(tmp_path, "a", "s"), pl.concat([df, df]).sort("a", "s"))
     # Readable by delta-rs, not only Polars.
-    assert table.to_pyarrow_table().num_rows == 6
+    assert table.to_pyarrow_dataset().to_table().num_rows == 6
 
 
 def test_delta_sink_append_existing_table(tmp_path: Path) -> None:
@@ -107,7 +114,7 @@ def test_delta_sink_overwrite(tmp_path: Path) -> None:
 
     table = DeltaTable(str(tmp_path))
     assert table.version() == 1
-    assert table.history()[0]["operationParameters"]["mode"] == "Overwrite"
+    assert next(iter(table.history()))["operationParameters"]["mode"] == "Overwrite"
     assert _read(tmp_path, "a")["a"].to_list() == [10, 20]
 
 
@@ -175,7 +182,7 @@ def test_delta_sink_partitioned(tmp_path: Path) -> None:
     # delta-rs resolves the paths to the written files.
     uris = table.file_uris()
     assert len(uris) == 5
-    assert table.to_pyarrow_table().num_rows == 6
+    assert table.to_pyarrow_dataset().to_table().num_rows == 6
 
 
 def test_delta_sink_partitioned_types(tmp_path: Path) -> None:
@@ -359,6 +366,24 @@ def test_delta_sink_commit_twice_one_version(tmp_path: Path) -> None:
     assert second.to_dict(as_series=False) == {"version": [1]}
     assert DeltaTable(str(tmp_path)).version() == 1
     assert _read(tmp_path, "a")["a"].to_list() == [1, 2, 3]
+
+
+def test_delta_sink_commit_history_error_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = DeltaSinkState.new(str(tmp_path), mode="append")
+    files = _resolve_and_write(state, pl.LazyFrame({"a": [1]}))
+    state.commit(files)
+
+    def fail(self: DeltaTable, *args: Any, **kwargs: Any) -> None:
+        msg = "history read failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(DeltaTable, "history", fail)
+
+    # The retry finds the commit, but not its version.
+    with pytest.raises(RuntimeError, match="history read failed"):
+        state.commit(files)
 
 
 def test_delta_sink_commit_version_concurrent(
@@ -1158,7 +1183,10 @@ def test_delta_write_file_uri_percent_encoded(tmp_path: Path, write: Any) -> Non
     assert _native_commit(table, 1)
     # deltalake decodes the URI, so the data files must go to `my table` too.
     assert [p.name for p in tmp_path.iterdir()] == ["my table"]
-    assert sorted(DeltaTable(uri).to_pyarrow_table()["a"].to_pylist()) == [1, 2]
+    assert sorted(DeltaTable(uri).to_pyarrow_dataset().to_table()["a"].to_pylist()) == [
+        1,
+        2,
+    ]
 
 
 @_public_writers
@@ -1174,16 +1202,23 @@ def test_delta_write_delta_table_target(tmp_path: Path, write: Any) -> None:
     assert [p.name for p in tmp_path.iterdir()] == ["my table"]
     # Like `write_deltalake`, the write leaves the object at the new version.
     assert dt.version() == 1
-    assert sorted(dt.to_pyarrow_table()["a"].to_pylist()) == [1, 2]
+    assert sorted(dt.to_pyarrow_dataset().to_table()["a"].to_pylist()) == [1, 2]
 
 
 @_public_writers
 def test_delta_write_new_table_ntz_in_map(tmp_path: Path, write: Any) -> None:
     from deltalake.exceptions import DeltaError
 
+    df = _ntz_map_frame()
+    if not _DELTALAKE_REJECTS:
+        write(df, tmp_path)
+        assert not _native_commit(tmp_path, 0)
+        assert_frame_equal(_read(tmp_path), df)
+        return
+
     # deltalake rejects the data before writing anything.
     with pytest.raises(DeltaError):
-        write(_ntz_map_frame(), tmp_path)
+        write(df, tmp_path)
 
     assert list(tmp_path.iterdir()) == []
 
@@ -1257,7 +1292,7 @@ def _before_commit(monkeypatch: pytest.MonkeyPatch, fn: Any) -> None:
 
 
 @_public_writers
-def test_delta_write_append_no_log_reads(
+def test_delta_write_append_one_log_read(
     tmp_path: Path, write: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_deltalake(str(tmp_path), pa.table({"a": [1]}))
@@ -1266,11 +1301,13 @@ def test_delta_write_append_no_log_reads(
     # Counted up to the commit: resolving the plan again afterwards (as the
     # schema check of the tests does) reads the log to find the commit.
     at_commit: dict[str, int] = {}
+    committed: list[pl.DataFrame] = []
     commit = DeltaSinkState.commit
 
     def commit_and_count(self: DeltaSinkState, files: Any) -> Any:
         out = commit(self, files)
         at_commit.update(counts)
+        committed.append(out)
         return out
 
     monkeypatch.setattr(DeltaSinkState, "commit", commit_and_count)
@@ -1278,11 +1315,13 @@ def test_delta_write_append_no_log_reads(
     write(pl.DataFrame({"a": [2]}), tmp_path, mode="append")
 
     assert _native_commit(tmp_path, 1)
+    # The one log read finds the version of the commit.
     assert at_commit == {
-        "update_incremental": 0,
+        "update_incremental": 1,
         "transaction_version": 0,
         "history": 0,
     }
+    assert [df.to_dict(as_series=False) for df in committed] == [{"version": [1]}]
 
 
 @_public_writers
@@ -1389,6 +1428,14 @@ def test_delta_write_feature_deltalake_rejects(
     write_deltalake(str(tmp_path), pa.table({"a": [1]}))
     _add_writer_feature(tmp_path, feature)
     files = _data_files(tmp_path)
+
+    if not _DELTALAKE_REJECTS:
+        write(pl.DataFrame({"a": [2]}), tmp_path, mode="append")
+        version = DeltaTable(str(tmp_path)).version()
+        assert not _native_commit(tmp_path, version)
+        assert len(_adds(tmp_path, version)) == 1
+        assert len(_data_files(tmp_path)) == len(files) + 1
+        return
 
     # deltalake writes the table and fails before writing any file.
     with pytest.raises(CommitFailedError, match="Unsupported table features"):

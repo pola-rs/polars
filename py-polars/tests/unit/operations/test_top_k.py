@@ -9,7 +9,7 @@ from hypothesis.strategies import booleans
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ArgumentRemovedError, ComputeError
+from polars.exceptions import ArgumentRemovedError, ComputeError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
@@ -89,7 +89,7 @@ def test_top_k() -> None:
             pl.col("bool_val").top_k(pl.lit(None)),
         )
 
-    with pytest.raises(ComputeError):
+    with pytest.raises(ShapeError, match="'k' must be a scalar value"):
         df.select(pl.col("test").top_k(pl.lit(pl.Series("s", [1, 2]))))
 
     # dataframe

@@ -125,7 +125,7 @@ pub struct Filter {
     predicate: PyExprIR,
 }
 
-#[pyclass(frozen, skip_from_py_object)]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyFileOptions {
     inner: UnifiedScanArgs,

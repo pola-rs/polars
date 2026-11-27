@@ -48,9 +48,10 @@ The version of the package is the same in `project.version` of
 `py-polars/polars-database/Cargo.toml`, and in the `version` of this crate's `Cargo.toml` (the
 module's `__version__`). Releases are tagged `polars-database-<version>` in the Polars repository.
 
-1. Bump the version in those three files and push a tag `polars-database-<version>` for the commit.
-2. Run Polars' `release-polars-database` workflow with that tag. It builds the sdist and abi3 wheels
-   (one per target) from that commit and publishes them to PyPI.
+1. Bump the version in those three files and merge.
+2. Run Polars' `release-polars-database` workflow, with the commit to release (default: the latest
+   commit of the branch it runs on). It builds the sdist and abi3 wheels (one per target) from that
+   commit, publishes them to PyPI and tags the commit `polars-database-<version>`.
 3. To make Polars require the release, update the
    `polars-database >= <version>, < <next major version>` requirement in the `database` extra of
    Polars' `py-polars/pyproject.toml`.

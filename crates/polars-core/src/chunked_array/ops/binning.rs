@@ -51,12 +51,7 @@ pub struct Fractions(Vec<f64>);
 
 impl Fractions {
     pub fn new(fractions: Vec<f64>) -> PolarsResult<Self> {
-        for x in &fractions {
-            polars_ensure!(
-                (0.0..=1.0).contains(x),
-                ComputeError: "fractions must be between 0.0 and 1.0, got {}", x
-            );
-        }
+        check_quantiles(fractions.iter().copied())?;
         polars_ensure!(
             fractions.is_sorted(),
             ComputeError: "fractions must be non-decreasing"

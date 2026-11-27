@@ -107,13 +107,17 @@ def test_macro_depth(ctx: pl.SQLContext[pl.DataFrame]) -> None:
 
     for i in range(5):
         body = f"n{i + 1}(a)" if i < 4 else "a"
-        ctx.execute(f"CREATE MACRO n{i}(a) AS {'abs(' * 15}{body}{')' * 15}")
+        ctx.execute(f"CREATE MACRO n{i}(a) AS {'abs(' * 30}{body}{')' * 30}")
     assert rows(ctx, "SELECT n3(-1)") == [(1,)]
     with pytest.raises(SQLInterfaceError, match="nested too deeply"):
         ctx.execute("SELECT n0(-1)")
 
     for i in range(30):
-        body = f"SELECT * FROM q{i + 1}()" if i < 29 else "SELECT 1 AS a"
+        body = (
+            f"SELECT * FROM (SELECT * FROM (SELECT * FROM q{i + 1}()))"
+            if i < 29
+            else "SELECT 1 AS a"
+        )
         ctx.execute(f"CREATE MACRO q{i}() AS TABLE {body}")
     assert rows(ctx, "SELECT * FROM q20()") == [(1,)]
     with pytest.raises(SQLInterfaceError, match="nested too deeply"):
@@ -123,9 +127,15 @@ def test_macro_depth(ctx: pl.SQLContext[pl.DataFrame]) -> None:
     ctx.execute("CREATE MACRO inc(a) AS 1 + a")
     assert rows(ctx, "SELECT " + "inc(" * 10 + "0" + ")" * 10) == [(10,)]
     with pytest.raises(SQLInterfaceError, match="nested too deeply"):
-        ctx.execute("SELECT " + "inc(" * 24 + "0" + ")" * 24)
+        ctx.execute("SELECT " + "inc(" * 64 + "0" + ")" * 64)
     ctx.execute("CREATE MACRO identity(a) AS a")
     assert rows(ctx, "SELECT 1" + "::INT" * 48 + ", identity(0)") == [(1, 0)]
+
+    nested_case = "CASE WHEN a > 0 THEN " * 70 + "a" + " ELSE 0 END" * 70
+    ctx.execute(f"CREATE MACRO deep_case(a) AS {nested_case}")
+    assert rows(ctx, "SELECT deep_case(1)") == [(1,)]
+    with pytest.raises(SQLInterfaceError, match="nested too deeply"):
+        ctx.execute("SELECT deep_case(deep_case(1))")
 
 
 def test_macro_arguments(ctx: pl.SQLContext[pl.DataFrame]) -> None:

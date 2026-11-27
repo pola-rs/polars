@@ -66,14 +66,17 @@ pub fn materialize_left_join_from_series(
     );
     let chunks_match_key = |df: &DataFrame, s: &Series| {
         // Dictionary columns are ignored by the frame's chunk-alignment checks, but their
-        // materialized chunks must also match the key before gathering by chunk-local ids.
+        // code chunks must also match the key before gathering by chunk-local ids (the codes are
+        // what gets gathered, so comparing them avoids materializing the values).
         df.columns()
             .iter()
             .filter(|c| c.as_scalar_column().is_none())
-            .all(|c| {
-                c.as_materialized_series()
+            .all(|c| match c.as_dictionary_column() {
+                Some(d) => d.codes().chunk_lengths().eq(s.chunk_lengths()),
+                None => c
+                    .as_materialized_series()
                     .chunk_lengths()
-                    .eq(s.chunk_lengths())
+                    .eq(s.chunk_lengths()),
             })
     };
 

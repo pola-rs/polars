@@ -4,6 +4,8 @@ use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary
 use polars_core::prelude::{BinaryChunked, ChunkFullNull, DataType, Int64Chunked, UInt64Chunked};
 use polars_error::{PolarsResult, polars_ensure};
 
+use crate::chunked_array::saturating_usize;
+
 fn head_binary(opt_bytes: Option<&[u8]>, opt_n: Option<i64>) -> Option<&[u8]> {
     if let (Some(bytes), Some(n)) = (opt_bytes, opt_n) {
         let end_idx = head_binary_values(bytes, n);
@@ -18,11 +20,13 @@ fn head_binary_values(bytes: &[u8], n: i64) -> usize {
         Ordering::Equal => 0,
         Ordering::Greater => {
             // Take first n bytes
-            std::cmp::min(n as usize, bytes.len())
+            std::cmp::min(saturating_usize(n.unsigned_abs()), bytes.len())
         },
         Ordering::Less => {
             // End n bytes from the end
-            bytes.len().saturating_sub((-n) as usize)
+            bytes
+                .len()
+                .saturating_sub(saturating_usize(n.unsigned_abs()))
         },
     }
 }
@@ -43,11 +47,11 @@ fn tail_binary_values(bytes: &[u8], n: i64) -> usize {
         Ordering::Equal => max_len,
         Ordering::Greater => {
             // Start from nth byte from the end
-            max_len.saturating_sub(n as usize)
+            max_len.saturating_sub(saturating_usize(n.unsigned_abs()))
         },
         Ordering::Less => {
             // Start after the nth byte
-            std::cmp::min((-n) as usize, max_len)
+            std::cmp::min(saturating_usize(n.unsigned_abs()), max_len)
         },
     }
 }
@@ -73,21 +77,21 @@ pub fn slice_ternary_offsets_value(bytes: &[u8], offset: i64, length: u64) -> (u
     }
 
     let start_byte_offset = if offset >= 0 {
-        std::cmp::min(offset as usize, bytes.len())
+        std::cmp::min(saturating_usize(offset.unsigned_abs()), bytes.len())
     } else {
         // If `offset` is negative, it counts from the end
-        let abs_offset = (-offset) as usize;
-        if abs_offset > bytes.len() {
+        let abs_offset = offset.unsigned_abs();
+        let len = bytes.len() as u64;
+        if abs_offset > len {
             // Offset is before the start - handle length reduction
-            let length_reduction = abs_offset - bytes.len();
-            let adjusted_length = (length as usize).saturating_sub(length_reduction);
-            return (0, std::cmp::min(adjusted_length, bytes.len()));
+            let adjusted_length = length.saturating_sub(abs_offset - len);
+            return (0, std::cmp::min(adjusted_length, len) as usize);
         }
-        bytes.len() - abs_offset
+        bytes.len() - abs_offset as usize
     };
 
     let remaining = bytes.len() - start_byte_offset;
-    let end_byte_offset = start_byte_offset + std::cmp::min(length as usize, remaining);
+    let end_byte_offset = start_byte_offset + std::cmp::min(length, remaining as u64) as usize;
 
     (start_byte_offset, end_byte_offset)
 }

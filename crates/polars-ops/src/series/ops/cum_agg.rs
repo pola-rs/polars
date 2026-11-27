@@ -11,45 +11,45 @@ use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 
-fn det_max<T>(state: &mut T, v: Option<T>) -> Option<T>
+fn det_max<T>(state: &mut T, v: T) -> T
 where
     T: Copy + MinMax,
 {
-    *state = MinMax::max_ignore_nan(*state, v?);
-    Some(*state)
+    *state = MinMax::max_ignore_nan(*state, v);
+    *state
 }
 
-fn det_min<T>(state: &mut T, v: Option<T>) -> Option<T>
+fn det_min<T>(state: &mut T, v: T) -> T
 where
     T: Copy + MinMax,
 {
-    *state = MinMax::min_ignore_nan(*state, v?);
-    Some(*state)
+    *state = MinMax::min_ignore_nan(*state, v);
+    *state
 }
 
-fn det_sum<T>(state: &mut T, v: Option<T>) -> Option<T>
+fn det_sum<T>(state: &mut T, v: T) -> T
 where
     T: Copy + AddAssign,
 {
-    *state += v?;
-    Some(*state)
+    *state += v;
+    *state
 }
 
-fn det_sum_to_f64<T>(state: &mut f64, v: Option<T>) -> Option<T>
+fn det_sum_to_f64<T>(state: &mut f64, v: T) -> T
 where
     T: Copy + AddAssign + Copy + 'static,
     f64: AsPrimitive<T> + From<T>,
 {
-    *state += <T as Into<f64>>::into(v?);
-    Some(<f64 as AsPrimitive<T>>::as_(*state))
+    *state += <T as Into<f64>>::into(v);
+    <f64 as AsPrimitive<T>>::as_(*state)
 }
 
-fn det_prod<T>(state: &mut T, v: Option<T>) -> Option<T>
+fn det_prod<T>(state: &mut T, v: T) -> T
 where
     T: Copy + Mul<Output = T>,
 {
-    *state = *state * v?;
-    Some(*state)
+    *state = *state * v;
+    *state
 }
 
 fn cum_scan_numeric<T, S, F>(
@@ -61,16 +61,25 @@ fn cum_scan_numeric<T, S, F>(
 where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
-    F: Fn(&mut S, Option<T::Native>) -> Option<T::Native>,
+    F: Fn(&mut S, T::Native) -> T::Native,
 {
     let mut state = init;
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().map(|v| update(&mut state, v)).collect_trusted(),
-        true => ca
-            .iter()
-            .rev()
-            .map(|v| update(&mut state, v))
-            .collect_reversed(),
+    let out: ChunkedArray<T> = if !ca.has_nulls() {
+        let values = ca.into_no_null_iter();
+        let out: NoNull<ChunkedArray<T>> = match reverse {
+            false => values.map(|v| update(&mut state, v)).collect_trusted(),
+            true => values
+                .rev()
+                .map(|v| update(&mut state, v))
+                .collect_reversed(),
+        };
+        out.into_inner()
+    } else {
+        let update = |v: Option<T::Native>| Some(update(&mut state, v?));
+        match reverse {
+            false => ca.iter().map(update).collect_trusted(),
+            true => ca.iter().rev().map(update).collect_reversed(),
+        }
     };
     out.with_name(ca.name().clone())
 }

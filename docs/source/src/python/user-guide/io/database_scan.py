@@ -60,16 +60,6 @@ pl.scan_database("orders", uri, driver="sqlite3")
 pl.scan_database("orders", f"sqlite+pysqlite:///{path}")  # the SQLAlchemy form
 # --8<-- [end:scan_driver]
 
-# --8<-- [start:scan_partitions]
-pl.scan_database(
-    "orders",
-    uri,
-    partition_on="id",
-    partition_num=16,
-    max_connections=4,
-).collect()
-# --8<-- [end:scan_partitions]
-
 # --8<-- [start:scan_query]
 pl.scan_database(
     "SELECT o.*, c.region FROM orders o JOIN customers c USING (customer_id)",

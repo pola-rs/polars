@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import os
 import random
 import re
+import subprocess
+import sys
+import textwrap
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
@@ -18,6 +22,7 @@ from polars.exceptions import (
     ArgumentRemovedError,
     ComputeError,
     InvalidOperationError,
+    SchemaError,
 )
 from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -1834,6 +1839,23 @@ def test_rolling_quantile_nearest_23392() -> None:
         assert_series_equal(out, expected)
 
 
+@pytest.mark.parametrize(
+    ("quantile", "error", "match"),
+    [
+        *[(q, ComputeError, r"between 0\.0 and 1\.0") for q in [1.5, -0.5, nan, None]],
+        *[(q, SchemaError, "dtype 'numeric'") for q in [True, [0.5], "0.5"]],
+    ],
+)
+def test_rolling_quantile_invalid_fraction(
+    quantile: Any, error: type[Exception], match: str
+) -> None:
+    s = pl.Series("a", [1.0, 2.0, 3.0])
+    with pytest.raises(error, match=match):
+        s.rolling_quantile(quantile, window_size=2)
+    with pytest.raises(error, match=match):
+        pl.col("a").rolling_quantile_by("a", "2i", quantile=quantile)
+
+
 def test_rolling_quantile_temporals() -> None:
     tz = ZoneInfo("Asia/Tokyo")
     dt = pl.Datetime("ms", "Asia/Tokyo")
@@ -3029,3 +3051,116 @@ def test_rolling_slice_per_window_offset_values_30432() -> None:
     assert out["first"].to_list() == [1, 2, 1, 3, 3]
     assert out["window"].to_list() == [[1], [2], [1, 2], [3, 4], [3, 4]]
     assert not out["first"].flags["SORTED_ASC"]
+
+
+def _windows_frame(n: int) -> pl.DataFrame:
+    i = pl.int_range(0, n, eager=True)
+    # Magnitudes far apart expose the summation order.
+    v = (i.cast(pl.Float64) * 0.618).sin() * (10.0 ** ((i % 7) * 3).cast(pl.Float64))
+    return pl.DataFrame({"k": i % 2, "t": i // 2, "i": i, "v": v, "w": (i * 7) % 11})
+
+
+def _window_aggs() -> list[pl.Expr]:
+    v = pl.col.v
+    return [
+        v.sum().alias("sum"),
+        v.min().alias("min"),
+        v.max().alias("max"),
+        v.mean().alias("mean"),
+        v.var().alias("var"),
+        v.std().alias("std"),
+        v.median().alias("median"),
+        v.quantile(0.3).alias("quantile"),
+        v.arg_min().alias("arg_min"),
+        v.arg_max().alias("arg_max"),
+        v.nan_min().alias("nan_min"),
+        v.nan_max().alias("nan_max"),
+        v.min_by("w").alias("min_by"),
+        pl.col.i.sum().alias("int_sum"),
+        pl.col.i.mean().alias("int_mean"),
+        pl.col.i.std().alias("int_std"),
+    ]
+
+
+def test_rolling_expr_chunked_input_28597() -> None:
+    # A chunked frame gives exactly the results of one chunk.
+    df = _windows_frame(1200)
+    chunked = pl.concat([df[:400], df[400:800], df[800:]], rechunk=False)
+    assert chunked["v"].n_chunks() == 3
+    exprs = [e.rolling(index_column="i", period="50i") for e in _window_aggs()]
+    assert_frame_equal(
+        chunked.lazy().select(exprs).collect(engine="in-memory"),
+        df.lazy().select(exprs).collect(engine="in-memory"),
+        check_exact=True,
+    )
+
+
+def test_rolling_by_keys_matches_each_key_28597() -> None:
+    # More threads than columns leave keyed windows chunked. Every key must still
+    # get the results of its own frame. A fresh process fixes the pool size.
+    script = textwrap.dedent(
+        """
+        import polars as pl
+        from polars.testing import assert_frame_equal
+
+        assert pl.thread_pool_size() == 8
+        i = pl.int_range(0, 4000, eager=True)
+        df = pl.DataFrame({"k": i % 2, "t": i // 2})
+        t = pl.col.t + pl.col.k
+        v = (t.cast(pl.Float64) * 0.618).sin() * (
+            10.0 ** ((t % 7) * 3).cast(pl.Float64)
+        )
+        aggs = [
+            v.sum().alias("sum"),
+            v.min().alias("min"),
+            v.max().alias("max"),
+            v.mean().alias("mean"),
+            v.var().alias("var"),
+            v.std().alias("std"),
+            v.median().alias("median"),
+            v.quantile(0.3).alias("quantile"),
+            v.arg_min().alias("arg_min"),
+            v.arg_max().alias("arg_max"),
+            v.nan_min().alias("nan_min"),
+            v.nan_max().alias("nan_max"),
+            v.min_by((t * 7) % 11).alias("min_by"),
+            t.sum().alias("int_sum"),
+            t.mean().alias("int_mean"),
+            t.std().alias("int_std"),
+        ]
+        for dynamic in (False, True):
+
+            def windows(lf, **kw):
+                if dynamic:
+                    return lf.group_by_dynamic("t", every="1i", period="50i", **kw)
+                return lf.rolling("t", period="50i", **kw)
+
+            out = windows(df.lazy(), group_by="k").agg(aggs).sort("k", "t")
+            expected = pl.concat(
+                windows(part.lazy())
+                .agg(aggs)
+                .select(pl.lit(key, dtype=pl.Int64).alias("k"), pl.all())
+                for (key,), part in df.partition_by("k", as_dict=True).items()
+            ).sort("k", "t")
+            assert_frame_equal(
+                out.collect(engine="in-memory"),
+                expected.collect(engine="in-memory"),
+                check_exact=True,
+            )
+        """
+    )
+    env = {**os.environ, "POLARS_MAX_THREADS": "8"}
+    subprocess.run([sys.executable, "-c", script], env=env, check=True)
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.lit(5), pl.Series("literal", [5, 5, 5], dtype=pl.Int32)),
+        (pl.len(), pl.Series("len", [3, 3, 3], dtype=get_index_type())),
+    ],
+)
+def test_rolling_literal_index_31006(expr: pl.Expr, expected: pl.Series) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    out = lf.select(expr.rolling(pl.lit(1).cast(pl.Int64), period="1i")).collect()
+    assert_frame_equal(out, expected.to_frame())

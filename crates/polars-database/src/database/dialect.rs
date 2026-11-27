@@ -37,6 +37,153 @@ impl fmt::Display for DialectName {
     }
 }
 
+/// How a Trino type holds a time or timestamp of more than 6 fractional digits.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TrinoWide {
+    /// `timestamp(p) with time zone`
+    Instant,
+    /// `timestamp(p)`, `time(p)`, `time(p) with time zone`
+    Plain,
+}
+
+/// Whether a (lower-case) Trino type is a `timestamp(p)` / `time(p)` with `p > 6`.
+pub(crate) fn trino_wide_temporal(t: &str) -> Option<TrinoWide> {
+    let digits = t
+        .strip_prefix("timestamp(")
+        .or_else(|| t.strip_prefix("time("))?
+        .split_once(')')?
+        .0;
+    if !digits.trim().parse::<u32>().is_ok_and(|p| p > 6) {
+        return None;
+    }
+    Some(
+        if t.starts_with("timestamp(") && t.ends_with("with time zone") {
+            TrinoWide::Instant
+        } else {
+            TrinoWide::Plain
+        },
+    )
+}
+
+/// The `name` and the type of a `row(..)` field (`x timestamp(3)`, `"a b" integer`, `"a""b"
+/// integer`, or an unnamed `timestamp(3)`).
+fn split_row_field(field: &str) -> (&str, &str) {
+    let end = if field.starts_with('"') {
+        // past the closing quote, a doubled one being part of the name
+        let mut i = 1;
+        loop {
+            match field[i..].find('"') {
+                Some(j) if field[i + j + 1..].starts_with('"') => i += j + 2,
+                Some(j) => break i + j + 1,
+                None => break field.len(),
+            }
+        }
+    } else {
+        field.find([' ', '(']).unwrap_or(field.len())
+    };
+    // an unnamed field is a type (`timestamp(3) ..`, `integer`) on its own
+    if field[end..].starts_with('(') || end == field.len() {
+        ("", field)
+    } else {
+        (&field[..end], field[end..].trim_start())
+    }
+}
+
+/// `expr` of Trino type `ty` with every `timestamp(p) with time zone` it holds as the same
+/// instant in UTC, and the resulting type. `None` if it holds none. A value of that type holds
+/// its zone's name: a named zone's repeated hour reads an hour off in the drivers, and the same
+/// instant in UTC doesn't.
+fn trino_utc_inside(ty: &str, expr: &str, depth: usize) -> Option<(String, String)> {
+    let ty = ty.trim();
+    let lower = ty.to_ascii_lowercase();
+    let inner = |prefix: &str| {
+        lower
+            .starts_with(prefix)
+            .then(|| ty.strip_suffix(')'))
+            .flatten()
+            .map(|t| &t[prefix.len()..])
+    };
+    if lower.starts_with("timestamp(") && lower.ends_with("with time zone") {
+        return Some((format!("{expr} AT TIME ZONE 'UTC'"), ty.to_string()));
+    }
+    if let Some(element) = inner("array(") {
+        let var = format!("pl_x{depth}");
+        let (sql, t) = trino_utc_inside(element, &var, depth + 1)?;
+        return Some((
+            format!("transform({expr}, {var} -> {sql})"),
+            format!("array({t})"),
+        ));
+    }
+    if let Some(kv) = inner("map(") {
+        let [key, value] = super::planner::split_top_level(kv)[..] else {
+            return None;
+        };
+        let (k, v) = (format!("pl_k{depth}"), format!("pl_v{depth}"));
+        let new_value = trino_utc_inside(value, &v, depth + 1);
+        let new_key = trino_utc_inside(key, &k, depth + 1);
+        if new_value.is_none() && new_key.is_none() {
+            return None;
+        }
+        let (mut sql, mut key_type, mut value_type) =
+            (expr.to_string(), key.to_string(), value.to_string());
+        if let Some((e, t)) = new_value {
+            sql = format!("transform_values({sql}, ({k}, {v}) -> {e})");
+            value_type = t;
+        }
+        if let Some((e, t)) = new_key {
+            sql = format!("transform_keys({sql}, ({k}, {v}) -> {e})");
+            key_type = t;
+        }
+        return Some((sql, format!("map({key_type}, {value_type})")));
+    }
+    if let Some(fields) = inner("row(") {
+        let mut found = false;
+        let (mut values, mut types) = (vec![], vec![]);
+        for (i, field) in super::planner::split_top_level(fields)
+            .into_iter()
+            .enumerate()
+        {
+            let (name, field_type) = split_row_field(field);
+            let item = format!("({expr})[{}]", i + 1);
+            let (sql, t) = match trino_utc_inside(field_type, &item, depth + 1) {
+                Some(done) => {
+                    found = true;
+                    done
+                },
+                None => (item, field_type.to_string()),
+            };
+            values.push(sql);
+            types.push(if name.is_empty() {
+                t
+            } else {
+                format!("{name} {t}")
+            });
+        }
+        if !found {
+            return None;
+        }
+        let new_type = format!("row({})", types.join(", "));
+        return Some((
+            format!(
+                "CASE WHEN {expr} IS NULL THEN NULL ELSE CAST(ROW({}) AS {new_type}) END",
+                values.join(", ")
+            ),
+            new_type,
+        ));
+    }
+    None
+}
+
+/// A Trino array, map or row (`db_type`) of `column` with the `timestamp(p) with time zone`
+/// values in it as UTC instants, or `None` if it holds none (see [`trino_utc_inside`]).
+pub(crate) fn trino_nested_utc(db_type: &str, column: &str) -> Option<String> {
+    let lower = db_type.trim().to_ascii_lowercase();
+    if !(lower.starts_with("array(") || lower.starts_with("map(") || lower.starts_with("row(")) {
+        return None;
+    }
+    trino_utc_inside(db_type, column, 0).map(|(sql, _)| sql)
+}
+
 /// How string comparisons behave in the database, relative to Polars' byte-wise comparison.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StringSemantics {
@@ -167,7 +314,9 @@ impl DialectName {
             "adbc_driver_flightsql" => Self::Flightsql,
             "pyexasol" => Self::Exasol,
             "teradatasql" => Self::Teradata,
-            _ if m.starts_with("google.cloud.bigquery") => Self::Bigquery,
+            _ if m == "google.cloud.bigquery" || m.starts_with("google.cloud.bigquery.") => {
+                Self::Bigquery
+            },
             _ => Self::Generic,
         }
     }
@@ -217,8 +366,9 @@ impl DialectName {
     }
 
     /// Whether float comparisons agree with Polars. Polars uses a total order (NaN equals NaN
-    /// and sorts above all numbers). Postgres and DuckDB do the same; MySQL, SQL Server, Oracle
-    /// `NUMBER` and SQLite can't store NaN. Other dialects are not verified, so float
+    /// and sorts above all numbers). Postgres and DuckDB do the same; MySQL, Oracle
+    /// `NUMBER` and SQLite can't store NaN. SQL Server isn't: it parses float literals inexactly
+    /// (`x = 1.877474430782875e+16` misses the stored value). Other dialects are not verified, so float
     /// predicates are not pushed there.
     pub fn float_comparisons_exact(self) -> bool {
         matches!(
@@ -227,7 +377,6 @@ impl DialectName {
                 | Self::Redshift
                 | Self::Duckdb
                 | Self::Mysql
-                | Self::Mssql
                 | Self::Oracle
                 | Self::Sqlite
         )
@@ -247,6 +396,21 @@ impl DialectName {
             Self::Clickhouse => (-25_567, 120_529),
             Self::Mysql | Self::Singlestore => (-354_285, 2_932_896),
             _ => (-719_162, 2_932_896),
+        }
+    }
+
+    /// Days since the epoch that a `Date` literal may fall in. ClickHouse prunes parts and key
+    /// ranges of a `Date` column (and of a `Date32` one under `toMonday`, `toStartOfMonth`,
+    /// ...) by converting the constant to `Date`, which starts in 1970 and ends in 2149-06-06
+    /// and wraps silently outside: a row is lost to the pruning. The partition function is
+    /// applied to the constant too: `toMonday` of 1970-01-01 is before the epoch and
+    /// `toLastDayOfMonth` of 2149-06-06 after the end, so the range keeps a week at its start
+    /// (1970-01-08) and over a month at its end (2149-05-02). A `DateTime` column has no such
+    /// wrap. Elsewhere as [`Self::temporal_literal_days`].
+    pub fn date_literal_days(self) -> (i64, i64) {
+        match self {
+            Self::Clickhouse => (7, 65_500),
+            _ => self.temporal_literal_days(),
         }
     }
 
@@ -310,6 +474,16 @@ impl DialectName {
             // (Map, Tuple, IPv4, FixedString, 128/256-bit integers, …): ConnectorX returns
             // wrong values and even wrong row counts for some of them.
             Self::Clickhouse if !clickhouse_native_type(t) => Some(format!("toString({column})")),
+            // `timestamp(7..12)` and `time(7..12)`: the `trino` driver rounds them to
+            // microseconds and ADBC panics outside 1677-2262 (as nanoseconds): their exact
+            // text.
+            Self::Trino => trino_wide_temporal(t).map(|wide| match wide {
+                TrinoWide::Instant => format!("CAST({column} AT TIME ZONE 'UTC' AS VARCHAR)"),
+                TrinoWide::Plain => format!("CAST({column} AS VARCHAR)"),
+            }),
+            // ConnectorX panics on it, pyodbc can't read it: its value as exact text, whatever
+            // the base type and the session's language (see `mssql_sql_variant_text`)
+            Self::Mssql if t == "sql_variant" => Some(mssql_sql_variant_text(column)),
             Self::Oracle if t == "json" => Some(format!("JSON_SERIALIZE({column} RETURNING CLOB)")),
             Self::Oracle if t == "rowid" || t == "urowid" => Some(format!("ROWIDTOCHAR({column})")),
             // `INTERVAL … TO …`: Arrow's month-day-nano intervals have no Polars dtype
@@ -447,6 +621,18 @@ impl DialectName {
             Self::Sqlite => 400,
             Self::Mssql | Self::Oracle | Self::Generic | Self::Flightsql => 256,
             _ => 1000,
+        }
+    }
+
+    /// The longest string literal the database takes, if it has a limit: in bytes, or compared
+    /// with a column of a national character type (`national`) in UTF-16 units. Oracle (without
+    /// `MAX_STRING_SIZE=EXTENDED`): ORA-01704 at 4000 bytes, ORA-01401 against an `NVARCHAR2` /
+    /// `NCHAR` column at 4000 bytes of UTF-16.
+    pub fn max_string_literal(self, national: bool) -> Option<usize> {
+        match (self, national) {
+            (Self::Oracle, false) => Some(4000),
+            (Self::Oracle, true) => Some(2000),
+            _ => None,
         }
     }
 
@@ -733,6 +919,36 @@ fn postgres_native_type(t: &str) -> bool {
     )
 }
 
+/// A SQL Server `sql_variant` as exact text, by its base type: the plain `CAST` to text rounds
+/// floats to 6 digits and money to 2 decimals, and writes dates, times and binary in forms that
+/// lose digits (`Jan  2 2020  3:04AM`) or follow `SET LANGUAGE`. Floats are written with 17
+/// significant digits (style 3), money with 4 decimals (style 2), temporal values in ISO form
+/// with every fractional digit (style 121; a `date` style 23), binary as `0x…` hex (style 1);
+/// the rest as the base type writes them, which depends on no setting.
+fn mssql_sql_variant_text(column: &str) -> String {
+    let conv =
+        |ty: &str, style: u8| format!("CONVERT(NVARCHAR(MAX), CAST({column} AS {ty}), {style})");
+    format!(
+        "CASE CAST(SQL_VARIANT_PROPERTY({column}, 'BaseType') AS NVARCHAR(128)) \
+        WHEN 'float' THEN {float} WHEN 'real' THEN {real} \
+        WHEN 'money' THEN {money} WHEN 'smallmoney' THEN {money} \
+        WHEN 'datetime' THEN {datetime} WHEN 'smalldatetime' THEN {datetime} \
+        WHEN 'datetime2' THEN {datetime2} WHEN 'datetimeoffset' THEN {datetimeoffset} \
+        WHEN 'date' THEN {date} WHEN 'time' THEN {time} \
+        WHEN 'binary' THEN {binary} WHEN 'varbinary' THEN {binary} \
+        ELSE CAST({column} AS NVARCHAR(MAX)) END",
+        float = conv("FLOAT", 3),
+        real = conv("REAL", 3),
+        money = conv("MONEY", 2),
+        datetime = conv("DATETIME", 121),
+        datetime2 = conv("DATETIME2(7)", 121),
+        datetimeoffset = conv("DATETIMEOFFSET(7)", 121),
+        date = conv("DATE", 23),
+        time = conv("TIME(7)", 121),
+        binary = conv("VARBINARY(MAX)", 1),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -813,6 +1029,26 @@ mod tests {
     }
 
     #[test]
+    fn mssql_sql_variant_is_written_by_base_type_in_exact_styles() {
+        let sql = DialectName::Mssql
+            .text_conversion("sql_variant", "[v]")
+            .unwrap();
+        // floats at 17 digits, money at 4 decimals, ISO dates and times, hex binary: none
+        // of which follows the session's language
+        for want in [
+            "CAST([v] AS FLOAT), 3)",
+            "CAST([v] AS MONEY), 2)",
+            "CAST([v] AS DATETIME2(7)), 121)",
+            "CAST([v] AS DATETIMEOFFSET(7)), 121)",
+            "CAST([v] AS TIME(7)), 121)",
+            "CAST([v] AS VARBINARY(MAX)), 1)",
+        ] {
+            assert!(sql.contains(want), "{want} in {sql}");
+        }
+        assert!(sql.contains("SQL_VARIANT_PROPERTY([v], 'BaseType')"));
+    }
+
+    #[test]
     fn quoting() {
         assert_eq!(DialectName::Mysql.quote_str("a'b\\c"), "'a''b\\\\c'");
         assert_eq!(DialectName::Postgresql.quote_str("a'b"), "'a''b'");
@@ -839,5 +1075,27 @@ mod tests {
             .sql;
         assert!(sql.contains("'NO_BACKSLASH_ESCAPES'"));
         assert!(sql.contains("'PAD_CHAR_TO_FULL_LENGTH'"));
+    }
+
+    #[test]
+    fn trino_nested_time_zones_are_read_as_utc_instants() {
+        use super::trino_nested_utc as f;
+        assert_eq!(f("array(integer)", "\"c\""), None);
+        assert_eq!(f("timestamp(3) with time zone", "\"c\""), None);
+        assert_eq!(
+            f("array(timestamp(3) with time zone)", "\"c\"").unwrap(),
+            "transform(\"c\", pl_x0 -> pl_x0 AT TIME ZONE 'UTC')"
+        );
+        assert_eq!(
+            f("map(varchar, timestamp(6) with time zone)", "c").unwrap(),
+            "transform_values(c, (pl_k0, pl_v0) -> pl_v0 AT TIME ZONE 'UTC')"
+        );
+        let row = f("row(a integer, \"B b\" timestamp(3) with time zone)", "c").unwrap();
+        assert!(row.contains("CAST(ROW((c)[1], (c)[2] AT TIME ZONE 'UTC') AS row(a integer, \"B b\" timestamp(3) with time zone))"), "{row}");
+        let row = f("row(\"a\"\"b\" timestamp(3) with time zone)", "c").unwrap();
+        assert!(
+            row.contains("AS row(\"a\"\"b\" timestamp(3) with time zone)"),
+            "{row}"
+        );
     }
 }

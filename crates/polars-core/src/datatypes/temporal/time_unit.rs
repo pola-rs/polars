@@ -2,16 +2,18 @@
 use chrono::NaiveDateTime;
 #[cfg(feature = "temporal")]
 use polars_arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt, timestamp_us_to_datetime_opt,
 };
+use polars_error::{PolarsError, polars_err};
 
 #[cfg(feature = "temporal")]
 use crate::chunked_array::temporal::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
 };
-use crate::prelude::ArrowTimeUnit;
+use crate::prelude::{ArrowTimeUnit, DataType};
 
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
+/// Note: variants are ordered from finest to coarsest (`Nanoseconds < Milliseconds`).
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(
     any(feature = "serde-lazy", feature = "serde"),
     derive(serde::Serialize, serde::Deserialize)
@@ -69,6 +71,16 @@ impl TimeUnit {
         }
     }
 
+    /// The number of nanoseconds in one tick of this unit.
+    #[inline(always)]
+    pub const fn nanoseconds(self) -> i64 {
+        match self {
+            TimeUnit::Nanoseconds => 1,
+            TimeUnit::Microseconds => 1_000,
+            TimeUnit::Milliseconds => 1_000_000,
+        }
+    }
+
     /// `ns` nanoseconds expressed in this unit, truncated towards zero.
     #[inline(always)]
     pub const fn from_nsecs(self, ns: i64) -> i64 {
@@ -107,24 +119,24 @@ pub enum TimeUnitRescale {
 }
 
 impl TimeUnitRescale {
-    /// Rescales a datetime timestamp, rounding down.
+    /// Rescales a datetime timestamp, rounding down; `None` on overflow.
     #[inline]
-    pub fn datetime_value(self, v: i64) -> i64 {
+    pub fn datetime_value(self, v: i64) -> Option<i64> {
         use polars_utils::floor_divmod::FloorDivMod;
         match self {
-            TimeUnitRescale::Unchanged => v,
-            TimeUnitRescale::Multiply(k) => v.wrapping_mul(k),
-            TimeUnitRescale::Divide(k) => v.wrapping_floor_div_mod(k).0,
+            TimeUnitRescale::Unchanged => Some(v),
+            TimeUnitRescale::Multiply(k) => v.checked_mul(k),
+            TimeUnitRescale::Divide(k) => Some(v.wrapping_floor_div_mod(k).0),
         }
     }
 
-    /// Rescales a duration, rounding towards zero.
+    /// Rescales a duration, rounding towards zero; `None` on overflow.
     #[inline]
-    pub fn duration_value(self, v: i64) -> i64 {
+    pub fn duration_value(self, v: i64) -> Option<i64> {
         match self {
-            TimeUnitRescale::Unchanged => v,
-            TimeUnitRescale::Multiply(k) => v.wrapping_mul(k),
-            TimeUnitRescale::Divide(k) => v.wrapping_div(k),
+            TimeUnitRescale::Unchanged => Some(v),
+            TimeUnitRescale::Multiply(k) => v.checked_mul(k),
+            TimeUnitRescale::Divide(k) => Some(v.wrapping_div(k)),
         }
     }
 }
@@ -134,10 +146,18 @@ impl TimeUnit {
     /// The naive UTC datetime of the timestamp `t` in this unit.
     #[inline]
     pub fn timestamp_to_datetime(self, t: i64) -> NaiveDateTime {
+        self.timestamp_to_datetime_opt(t)
+            .expect("invalid or out-of-range datetime")
+    }
+
+    /// The naive UTC datetime of the timestamp `t` in this unit, if within chrono's range
+    /// (about ±262,000 years).
+    #[inline]
+    pub fn timestamp_to_datetime_opt(self, t: i64) -> Option<NaiveDateTime> {
         match self {
-            TimeUnit::Nanoseconds => timestamp_ns_to_datetime(t),
-            TimeUnit::Microseconds => timestamp_us_to_datetime(t),
-            TimeUnit::Milliseconds => timestamp_ms_to_datetime(t),
+            TimeUnit::Nanoseconds => timestamp_ns_to_datetime_opt(t),
+            TimeUnit::Microseconds => timestamp_us_to_datetime_opt(t),
+            TimeUnit::Milliseconds => timestamp_ms_to_datetime_opt(t),
         }
     }
 
@@ -169,4 +189,13 @@ where
         (Milliseconds, Nanoseconds) => v * T::from(1_000_000).unwrap(),
         _ => v,
     }
+}
+
+/// Error for a temporal value that can't be represented in another time unit.
+pub fn time_unit_conversion_error(
+    from: impl std::fmt::Display,
+    to: &DataType,
+    value: impl std::fmt::Display,
+) -> PolarsError {
+    polars_err!(InvalidOperation: "conversion from `{from}` to `{to}` failed for value: {value}")
 }

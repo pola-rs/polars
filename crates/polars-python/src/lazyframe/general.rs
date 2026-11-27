@@ -32,6 +32,7 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
+use crate::interop::arrow::to_py::frame_to_struct_arrays;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 #[cfg(feature = "json")]
 use crate::io::cloud_options::OptPyCloudOptions;
@@ -95,7 +96,7 @@ impl PyLazyFrame {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         source, sources, infer_schema_length, schema, schema_overrides, batch_size, n_rows, low_memory, rechunk,
-        row_index, ignore_errors, include_file_paths, cloud_options, credential_provider
+        row_index, ignore_errors, include_file_paths, cloud_options, credential_provider, extra_columns
     ))]
     fn new_from_ndjson(
         source: Option<Py<PyAny>>,
@@ -112,6 +113,7 @@ impl PyLazyFrame {
         include_file_paths: Option<String>,
         cloud_options: OptPyCloudOptions,
         credential_provider: Option<Py<PyAny>>,
+        extra_columns: Option<Wrap<ExtraColumnsPolicy>>,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
@@ -148,6 +150,7 @@ impl PyLazyFrame {
             .with_row_index(row_index)
             .with_ignore_errors(ignore_errors)
             .with_include_file_paths(include_file_paths.map(|x| x.into()))
+            .with_extra_columns_policy(extra_columns.map(|x| x.0))
             .finish()
             .map_err(PyPolarsErr::from)?;
 
@@ -1775,13 +1778,16 @@ impl PyCollectBatches {
 pub struct ArrowStreamIterator {
     inner: Arc<Mutex<CollectBatches>>,
     dtype: ArrowDataType,
+    /// The arrays of the frame collected last.
+    arrays: Option<Box<dyn Iterator<Item = PolarsResult<ArrayRef>> + Send>>,
 }
 
 impl ArrowStreamIterator {
-    fn new(inner: Arc<Mutex<CollectBatches>>, schema: ArrowDataType) -> Self {
+    fn new(inner: Arc<Mutex<CollectBatches>>, dtype: ArrowDataType) -> Self {
         Self {
             inner,
-            dtype: schema,
+            dtype,
+            arrays: None,
         }
     }
 }
@@ -1790,20 +1796,26 @@ impl Iterator for ArrowStreamIterator {
     type Item = PolarsResult<ArrayRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.inner.lock().next();
-        match next {
-            None => None,
-            Some(Err(err)) => Some(Err(err)),
-            Some(Ok(df)) => {
-                let height = df.height();
-                let arrays = df.rechunk_into_arrow(CompatLevel::newest());
-                Some(Ok(Box::new(polars_arrow::array::StructArray::new(
-                    self.dtype.clone(),
-                    height,
-                    arrays,
-                    None,
-                ))))
-            },
+        loop {
+            if let Some(array) = self.arrays.as_mut().and_then(|arrays| arrays.next()) {
+                return Some(array);
+            }
+            // Release the exhausted frame before waiting on the next one.
+            self.arrays = None;
+            let next = self.inner.lock().next();
+            match next? {
+                Err(err) => return Some(Err(err)),
+                Ok(mut df) => {
+                    // Object columns need the GIL, so they can't be exported on other threads.
+                    let parallel = !df.columns().iter().any(|c| c.dtype().contains_objects());
+                    if parallel {
+                        df.rechunk_mut_par();
+                    } else {
+                        df.rechunk_mut();
+                    }
+                    self.arrays = Some(frame_to_struct_arrays(df, self.dtype.clone(), parallel));
+                },
+            }
         }
     }
 }

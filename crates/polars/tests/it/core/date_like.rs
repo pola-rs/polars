@@ -174,3 +174,75 @@ fn test_duration_date_arithmetic() -> PolarsResult<()> {
 fn assert_series_eq(s1: &Series, s2: &Series) {
     assert!(s1.equals(s2))
 }
+
+#[test]
+#[cfg(all(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-duration",
+    feature = "dtype-time"
+))]
+fn test_any_value_temporal_casts() {
+    use TimeUnit::*;
+
+    // datetimes round down (1969-12-31 12:00:00), durations round towards zero
+    let dt = AnyValue::Datetime(-43_200_000_000, Microseconds, None);
+    assert_eq!(dt.strict_cast(&DataType::Date), Some(AnyValue::Date(-1)));
+    assert_eq!(
+        dt.strict_cast(&DataType::Time),
+        Some(AnyValue::Time(43_200_000_000_000))
+    );
+    assert_eq!(
+        AnyValue::Datetime(-1, Nanoseconds, None)
+            .strict_cast(&DataType::Datetime(Microseconds, None)),
+        Some(AnyValue::Datetime(-1, Microseconds, None))
+    );
+    assert_eq!(
+        AnyValue::Duration(-1, Nanoseconds).strict_cast(&DataType::Duration(Microseconds)),
+        Some(AnyValue::Duration(0, Microseconds))
+    );
+
+    // values that overflow the target time unit cannot be cast
+    let too_big = i64::MAX / 1_000 + 1;
+    let ns = DataType::Datetime(Nanoseconds, None);
+    assert_eq!(
+        AnyValue::Datetime(too_big, Microseconds, None).strict_cast(&ns),
+        None
+    );
+    assert_eq!(AnyValue::Date(i32::MAX).strict_cast(&ns), None);
+    assert_eq!(
+        AnyValue::Duration(too_big, Microseconds).strict_cast(&DataType::Duration(Nanoseconds)),
+        None
+    );
+}
+
+#[test]
+#[cfg(all(feature = "dtype-datetime", feature = "dtype-map"))]
+fn test_series_from_any_values_finest_map_time_units() -> PolarsResult<()> {
+    use TimeUnit::*;
+
+    let map = |tu: TimeUnit, value: i64| -> PolarsResult<AnyValue<'static>> {
+        let keys = Series::new("key".into(), ["a"]);
+        let values = Series::new("value".into(), [value]).cast(&DataType::Datetime(tu, None))?;
+        Ok(AnyValue::Map(pack_map_entries(&keys, &values)))
+    };
+    let dtype = DataType::Map(
+        Box::new(DataType::String),
+        Box::new(DataType::Datetime(Nanoseconds, None)),
+    );
+    let expected = Series::from_any_values_and_dtype(
+        "x".into(),
+        &[map(Nanoseconds, 1_000_000)?, map(Nanoseconds, 1)?],
+        &dtype,
+        true,
+    )?;
+
+    // as for lists, mixed-unit map values adopt the finest time unit
+    for strict in [true, false] {
+        let values = [map(Milliseconds, 1)?, map(Nanoseconds, 1)?];
+        let s = Series::from_any_values("x".into(), &values, strict)?;
+        assert_eq!(s.dtype(), &dtype);
+        assert_series_eq(&s, &expected);
+    }
+    Ok(())
+}

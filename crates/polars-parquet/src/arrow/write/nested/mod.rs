@@ -81,6 +81,17 @@ fn max_rep_level(nested: &[Nested]) -> usize {
         .sum()
 }
 
+/// The per-entry level budget for repeated columns.
+pub(super) fn level_bytes_per_value(nested: &[Nested]) -> usize {
+    let rep = max_rep_level(nested);
+    if rep == 0 {
+        return 0;
+    }
+
+    let bytes = |max: usize| ((usize::BITS - max.leading_zeros()) as usize).div_ceil(8);
+    bytes(rep) + bytes(max_def_level(nested))
+}
+
 /// Write `repetition_levels` and `definition_levels` to buffer.
 ///
 /// Returns the byte lengths of the repetition and definition levels and the number of values.

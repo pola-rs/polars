@@ -9,7 +9,7 @@ use std::sync::{Arc, RwLock};
 use polars_core::prelude::{PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    AccessExpr, CastKind, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr,
+    CastKind, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr,
     FunctionArgumentList, FunctionArguments, Ident, ObjectName, OrderByExpr, Query, Select,
     SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
     Visit, VisitMut, Visitor, VisitorMut,
@@ -23,9 +23,9 @@ use crate::context::{
     RelationName, join_keeps_inputs, kept_factors, match_qualifier, relation_name,
 };
 use crate::dyn_visit;
-use crate::lambda::{lambda_arg, shift_lambda_elements};
+use crate::lambda::{field_access, lambda_arg, shift_lambda_elements};
 use crate::params::first_param;
-use crate::sql_expr::{parser_of, to_sql_interface_err};
+use crate::sql_expr::{hit_recursion_limit, parser_of, to_sql_interface_err, tokenize};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::strip_nested;
 
@@ -163,11 +163,16 @@ impl Macros {
         if expander.expanded {
             // The expanded SQL may not be nested deeper than the parser accepts.
             let sql = node.to_string();
-            let reparsed = Parser::new(&GenericDialect)
-                .try_with_sql(&sql)
-                .and_then(|mut parser| T::reparse(&mut parser));
+            let too_deep = tokenize(&sql).is_ok_and(|(tokens, _)| {
+                let reparse = |parser: &mut Parser| {
+                    T::reparse(parser)?;
+                    parser.expect_token(&Token::EOF)
+                };
+                reparse(&mut parser_of(tokens.clone()))
+                    .is_err_and(|err| hit_recursion_limit(&err, tokens, reparse))
+            });
             polars_ensure!(
-                !matches!(reparsed, Err(ParserError::RecursionLimitExceeded)),
+                !too_deep,
                 SQLInterface: "the query is nested too deeply after expanding its macros"
             );
         }
@@ -1262,13 +1267,7 @@ impl ParamReplacer<'_> {
             SQLExpr::CompoundIdentifier(idents) => {
                 if let Some(value) = self.value(&idents[0].value)? {
                     // The fields of the value, also when it names a column like a table.
-                    *expr = SQLExpr::CompoundFieldAccess {
-                        root: Box::new(SQLExpr::Nested(Box::new(value))),
-                        access_chain: idents[1..]
-                            .iter()
-                            .map(|ident| AccessExpr::Dot(SQLExpr::Identifier(ident.clone())))
-                            .collect(),
-                    };
+                    *expr = field_access(SQLExpr::Nested(Box::new(value)), &idents[1..]);
                 }
             },
             _ => unparenthesize_operands(expr, self.macros),

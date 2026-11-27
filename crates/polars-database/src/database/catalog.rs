@@ -6,7 +6,7 @@
 
 use polars_core::prelude::*;
 use polars_error::PolarsResult;
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{PlHashMap, PlHashSet};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::backend::DatabaseSession;
@@ -46,6 +46,10 @@ pub struct CatalogInfo {
     /// (Databricks: `DESCRIBE QUERY` reports `char(5)` as `string`, while Spark pads the
     /// literal compared with the column): string semantics are unknown.
     pub padding_unknown: bool,
+    /// Columns the login reads masked (SQL Server dynamic data masking, no `UNMASK` on them): the
+    /// database compares their real values and returns masked ones, so no filter on them is
+    /// pushed, and none is a key.
+    pub masked: PlHashSet<PlSmallStr>,
     pub stats: TableStats,
 }
 
@@ -137,6 +141,9 @@ impl CatalogInfo {
         column: &str,
         dtype: &DataType,
     ) -> bool {
+        if self.masked.contains(column) {
+            return false;
+        }
         let t = self.comparison_type(column);
         match dtype {
             // A non-text type read as text (`uuid`, enums, SQLite NUMERIC affinity): the
@@ -312,6 +319,7 @@ pub fn table_info(
     session: &mut dyn DatabaseSession,
     dialect: DialectName,
     parts: &[PlSmallStr],
+    own_connection: bool,
 ) -> CatalogInfo {
     let verbose = polars_core::config::verbose();
     let mut info = CatalogInfo::default();
@@ -320,12 +328,17 @@ pub fn table_info(
     } else {
         vec![]
     };
-    let Some(queries) = CatalogQueries::new(dialect, parts, &search) else {
+    let Some(queries) = CatalogQueries::new(dialect, parts, &search, own_connection) else {
         return info;
     };
 
+    // The fresh types of a Databricks view with schema evolution couldn't be read.
+    let mut evolving_types_failed = false;
     // A lookup may fail on its own (a missing view, permissions): the others still run.
     let mut failed: Vec<&'static str> = vec![];
+    // `DESCRIBE TABLE EXTENDED` was refused and the plain `DESCRIBE TABLE` answered: it has no
+    // `View Schema Mode` row, so a view of schema evolution can't be told from a table.
+    let fell_back = std::cell::Cell::new(false);
     let mut run = |what: &'static str, sql: &str| -> Option<DataFrame> {
         match session.catalog_query(sql) {
             Ok(df) => Some(df),
@@ -338,6 +351,7 @@ pub fn table_info(
                 if let Some(rest) = sql.strip_prefix("DESCRIBE TABLE EXTENDED ")
                     && let Ok(df) = session.catalog_query(&format!("DESCRIBE TABLE {rest}"))
                 {
+                    fell_back.set(true);
                     return Some(df);
                 }
                 failed.push(what);
@@ -390,6 +404,43 @@ pub fn table_info(
             }
         }
         if dialect == DialectName::Databricks {
+            // a view created WITH SCHEMA [TYPE] EVOLUTION stores a schema that goes stale when its
+            // base column changes (a collation, say) until something reads it, while the server
+            // compares by the current one: take the types from `DESCRIBE QUERY`. (Without the row,
+            // the mode is unknown: the types are read from the query too.)
+            let evolving = fell_back.get()
+                || (0..df.height()).any(|row| {
+                    cell_str(&df, 0, row).is_some_and(|k| k.trim() == "View Schema Mode")
+                        && cell_str(&df, 1, row).is_some_and(|v| {
+                            let v = v.trim().to_ascii_uppercase();
+                            v == "EVOLUTION" || v == "TYPE EVOLUTION"
+                        })
+                });
+            if evolving {
+                let from = sql
+                    .strip_prefix("DESCRIBE TABLE EXTENDED ")
+                    .unwrap_or_default();
+                let fresh = run(
+                    "column types",
+                    &format!("DESCRIBE QUERY SELECT * FROM {from}"),
+                )
+                .map(|q| {
+                    (0..q.height())
+                        .filter_map(|r| Some((cell_str(&q, 0, r)?.into(), cell_str(&q, 1, r)?)))
+                        .collect::<Vec<(PlSmallStr, String)>>()
+                })
+                .filter(|t| !t.is_empty());
+                match fresh {
+                    Some(t) => info.types = t,
+                    // the stored types may be stale: the driver's are read instead
+                    None => {
+                        evolving_types_failed = true;
+                        info.types.clear();
+                    },
+                }
+                // `DESCRIBE QUERY` shows a `char(n)` column as `string`
+                info.padding_unknown = true;
+            }
             databricks_collations(&mut info);
         }
     }
@@ -429,13 +480,30 @@ pub fn table_info(
             },
         };
     }
+    if dialect == DialectName::Mssql {
+        let qualified = parts
+            .iter()
+            .map(|p| dialect.quote_ident(p))
+            .collect::<Vec<_>>()
+            .join(".");
+        if let Some(df) = run("masked columns", &mssql_masked_columns_sql(&qualified)) {
+            for row in 0..df.height() {
+                if let Some(name) = cell_str(&df, 0, row) {
+                    info.masked.insert(name.into());
+                }
+            }
+        }
+        // a view's columns are read masked where their base columns are
+        mssql_query_masked_columns(session, &mut info, &qualified);
+    }
     // Without these, a column's comparison semantics would be assumed, not known: a
     // case-insensitive or blank-padded column could be compared as exact.
-    info.incomplete = not_found
+    info.incomplete |= not_found
+        || evolving_types_failed
         || failed.iter().any(|w| {
             matches!(
                 *w,
-                "column types" | "comparison types" | "the table definition"
+                "column types" | "comparison types" | "the table definition" | "masked columns"
             )
         });
     // Collations only decide string semantics (e.g. Oracle before 12.2 has none to show).
@@ -460,6 +528,82 @@ fn databricks_collations(info: &mut CatalogInfo) {
         .iter()
         .map(|(n, t)| (n.clone(), Some(t.clone())))
         .collect();
+}
+
+/// The static types (`typeof`) of a Trino query's output columns by position, for one that
+/// can't be wrapped (it names two columns alike): an alias list renames them, and the query
+/// itself never runs. `None` if the lookup fails.
+pub fn trino_positional_types(
+    session: &mut dyn DatabaseSession,
+    query: &str,
+    columns: usize,
+) -> Option<Vec<String>> {
+    if columns == 0 {
+        return None;
+    }
+    let sql = format!(
+        "SELECT {} FROM (SELECT 1) pl_d LEFT JOIN ({}) pl_q({}) ON false",
+        (0..columns)
+            .map(|i| format!("typeof(pl_q.\"c{i}\") AS t{i}"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        super::planner::wrappable(query),
+        (0..columns)
+            .map(|i| format!("\"c{i}\""))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let df = match session.query(&sql) {
+        Ok(df) => df,
+        Err(e) => {
+            if polars_core::config::verbose() {
+                eprintln!("[scan_database]: lookup of the query's types failed: {e}");
+            }
+            return None;
+        },
+    };
+    (0..columns).map(|i| cell_str(&df, i, 0)).collect()
+}
+
+/// The output columns of a SQL Server query, if one has no name (`SELECT count(*)`: a derived
+/// table over it is an error, and drivers name it `''`, `column_1` or nothing): every column
+/// as the server describes it, an unnamed one `column_<position from 0>` (the name
+/// ConnectorX gives it), made unique. `None` if all are named, or the query can't be described
+/// (its columns are then read as the server names them).
+pub fn mssql_unnamed_columns(
+    session: &mut dyn DatabaseSession,
+    sql: &str,
+) -> Option<Vec<PlSmallStr>> {
+    let df = session
+        .catalog_query(&format!(
+            "SELECT name FROM sys.dm_exec_describe_first_result_set(N{}, NULL, 0) \
+            WHERE is_hidden = 0 ORDER BY column_ordinal",
+            DialectName::Mssql.quote_str(sql)
+        ))
+        .ok()?;
+    let names: Vec<Option<String>> = (0..df.height())
+        .map(|i| cell_str(&df, 0, i).filter(|n| !n.is_empty()))
+        .collect();
+    if names.iter().all(Option::is_some) {
+        return None;
+    }
+    let mut out: Vec<String> = vec![];
+    for (i, name) in names.iter().enumerate() {
+        out.push(name.clone().unwrap_or_else(|| format!("column_{i}")));
+    }
+    // a generated name that is a real one too gets a `_`
+    for i in 0..out.len() {
+        if names[i].is_none() {
+            while out
+                .iter()
+                .enumerate()
+                .any(|(j, o)| j != i && o.eq_ignore_ascii_case(&out[i]))
+            {
+                out[i].push('_');
+            }
+        }
+    }
+    Some(out.into_iter().map(Into::into).collect())
 }
 
 /// Looks up the result types of a query source, which decide how the database compares its
@@ -518,11 +662,17 @@ pub fn query_info(
         _ => None,
     };
     if let Some(sql) = by_rows {
-        if let Some(df) = run(session, "types", &sql) {
+        // (SQL Server's describe reports an error as a row, which `is_hidden = 0` leaves out)
+        let described = run(session, "types", &sql)
+            .filter(|df| dialect != DialectName::Mssql || df.height() > 0);
+        if let Some(df) = described {
             for row in 0..df.height() {
                 if let (Some(name), Some(t)) = (cell_str(&df, 0, row), cell_str(&df, 1, row)) {
                     info.compare_types.insert(name.into(), t);
                 }
+            }
+            if dialect == DialectName::Mssql {
+                mssql_query_masked_columns(session, &mut info, from);
             }
             if dialect == DialectName::Databricks {
                 // `DESCRIBE QUERY` shows a `char(n)` column as `string`; which relations the
@@ -558,6 +708,9 @@ pub fn query_info(
                     }
                 }
             }
+        } else if dialect == DialectName::Mssql {
+            // the masked columns can't be looked up either: any may be read masked
+            info.incomplete = true;
         }
     } else if dialect == DialectName::Mysql && temp_tables {
         // A temporary table of the query's columns: `LIMIT 0` plans the query without
@@ -619,6 +772,18 @@ pub fn query_info(
                 }
             }
         }
+    } else if dialect == DialectName::Trino && !columns.is_empty() {
+        // `typeof` is the static type, so one row of NULLs joined to the query tells it
+        // without running the query.
+        let all = columns.iter().collect::<Vec<_>>();
+        let sql = pg_select(&|c| format!("typeof({c})"), &all);
+        if let Some(df) = run(session, "types", &sql) {
+            for (i, c) in columns.iter().enumerate() {
+                if let Some(t) = cell_str(&df, i, 0) {
+                    info.compare_types.insert(c.clone(), t);
+                }
+            }
+        }
     } else if dialect == DialectName::Postgresql && !columns.is_empty() {
         let all = columns.iter().collect::<Vec<_>>();
         let sql = pg_select(
@@ -645,9 +810,17 @@ pub fn query_info(
             // (byte order is code point order only in UTF-8, see the table's lookup)
             let sql = pg_select(
                 &|c| {
+                    // Identity, not the printed name: a user's collation named `"C"` first on the
+                    // search_path prints as the built-in one. `to_regcollation` resolves the
+                    // printed name as the server did; only a deterministic `pg_catalog` collation
+                    // is reported, or any deterministic one outside UTF-8 (anything else is
+                    // empty: unknown).
                     format!(
-                        "CASE WHEN current_setting('server_encoding') = 'UTF8' \
-                        THEN pg_collation_for({c}) ELSE 'default' END"
+                        "COALESCE((SELECT CASE WHEN NOT co.collisdeterministic THEN '' \
+                        WHEN current_setting('server_encoding') <> 'UTF8' THEN 'default' \
+                        WHEN co.collnamespace = 'pg_catalog'::regnamespace \
+                        THEN co.collname::text ELSE '' END FROM pg_collation co \
+                        WHERE co.oid = to_regcollation(pg_collation_for({c}))), '')"
                     )
                 },
                 &text,
@@ -726,6 +899,106 @@ fn oracle_type_name(code: &str, precision: &str, scale: &str) -> Option<String> 
     )
 }
 
+/// SQL Server: the object id a table name reads. A synonym has no columns of its own, so its
+/// base object's are the ones read (`sys.synonyms`). A base in another database or server
+/// isn't looked up (object ids are per database): the synonym's own id finds no columns,
+/// and they stay unknown. `qualified`: the quoted name.
+fn mssql_object_id(qualified: &str) -> String {
+    let named = format!("OBJECT_ID(N{})", DialectName::Mssql.quote_str(qualified));
+    format!(
+        "COALESCE((SELECT OBJECT_ID(sy.base_object_name) FROM sys.synonyms sy \
+        WHERE sy.object_id = {named} AND PARSENAME(sy.base_object_name, 4) IS NULL \
+        AND COALESCE(PARSENAME(sy.base_object_name, 3), DB_NAME()) = DB_NAME()), {named})"
+    )
+}
+
+/// SQL Server: the columns of a query (`from`, the wrapped query) that the login reads masked.
+/// The browse information of the query's description names the table column each result
+/// column is read from; where it can't be described that way (a `UNION`, say), every column
+/// may be masked. A column read from another database may be masked there (its masks aren't
+/// looked up). Where the database has masked columns the login can't unmask, a result column
+/// with no source column (`n + 0`, `email + ''`) may be computed from masked values (the
+/// tables the query reads aren't known here), and so is read masked too.
+fn mssql_query_masked_columns(
+    session: &mut dyn DatabaseSession,
+    info: &mut CatalogInfo,
+    from: &str,
+) {
+    let verbose = polars_core::config::verbose();
+    let unmask = |schema: &str, table: &str, column: &str| {
+        format!(
+            "COALESCE(HAS_PERMS_BY_NAME(QUOTENAME({schema}) + '.' + QUOTENAME({table}), \
+            'OBJECT', 'UNMASK', {column}, 'COLUMN'), 0) = 0"
+        )
+    };
+    let any_masked = unmask(
+        "OBJECT_SCHEMA_NAME(mc.object_id)",
+        "OBJECT_NAME(mc.object_id)",
+        "mc.name",
+    );
+    let sql = format!(
+        "SELECT d.name, CASE WHEN d.source_database IS NOT NULL \
+        AND d.source_database <> DB_NAME() \
+        OR d.source_column IS NULL AND EXISTS (SELECT 1 FROM sys.masked_columns mc \
+        WHERE mc.is_masked = 1 AND {any_masked}) \
+        OR EXISTS (SELECT 1 FROM sys.masked_columns mc \
+        WHERE mc.is_masked = 1 AND mc.name = d.source_column AND mc.object_id = \
+        OBJECT_ID(QUOTENAME(d.source_schema) + '.' + QUOTENAME(d.source_table)) \
+        AND {source_masked}) \
+        THEN 1 ELSE 0 END AS is_masked \
+        FROM sys.dm_exec_describe_first_result_set(N{query}, NULL, 1) d WHERE d.is_hidden = 0",
+        source_masked = unmask("d.source_schema", "d.source_table", "mc.name"),
+        query = DialectName::Mssql.quote_str(&format!("SELECT * FROM {from}"))
+    );
+    // (an error is reported as a row, which `is_hidden = 0` leaves out: no row)
+    match session.query(&sql).and_then(|df| {
+        polars_ensure!(df.height() > 0, ComputeError: "the query couldn't be described");
+        Ok(df)
+    }) {
+        Ok(df) => {
+            for row in 0..df.height() {
+                if let Some(name) = cell_str(&df, 0, row)
+                    && cell_u64(&df, 1, row).is_some_and(|m| m != 0)
+                {
+                    info.masked.insert(name.into());
+                }
+            }
+        },
+        Err(e) => {
+            if verbose {
+                eprintln!("[scan_database]: lookup of the query's masked columns failed: {e}");
+            }
+            let any = session.query(&format!(
+                "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.masked_columns mc \
+                WHERE mc.is_masked = 1 AND {any_masked}) THEN 1 ELSE 0 END AS m"
+            ));
+            match any.as_ref().map(|df| cell_u64(df, 0, 0)) {
+                Ok(Some(0)) => return,
+                Ok(_) => {},
+                Err(_) => {
+                    info.incomplete = true;
+                    return;
+                },
+            }
+            info.masked.extend(info.compare_types.keys().cloned());
+            info.masked
+                .extend(info.types.iter().map(|(name, _)| name.clone()));
+        },
+    }
+}
+
+/// SQL Server: the columns of a table that the login reads masked: the permission is looked
+/// at per column, as `UNMASK` can be granted or denied at the database, schema, table and
+/// column (a database-wide grant with a column `DENY` still reads that column masked).
+fn mssql_masked_columns_sql(qualified: &str) -> String {
+    format!(
+        "SELECT c.name FROM sys.masked_columns c WHERE c.object_id = {} AND c.is_masked = 1 \
+        AND COALESCE(HAS_PERMS_BY_NAME(QUOTENAME(OBJECT_SCHEMA_NAME(c.object_id)) + '.' + \
+        QUOTENAME(OBJECT_NAME(c.object_id)), 'OBJECT', 'UNMASK', c.name, 'COLUMN'), 0) = 0",
+        mssql_object_id(qualified)
+    )
+}
+
 /// The fixed per-dialect catalog SQL for one table. These don't go through the renderer.
 struct CatalogQueries {
     /// One row per key column: `name`.
@@ -748,6 +1021,7 @@ impl CatalogQueries {
         dialect: DialectName,
         parts: &[PlSmallStr],
         search: &[(String, String)],
+        own_connection: bool,
     ) -> Option<Self> {
         let name = parts.last()?.as_str();
         let schema = (parts.len() >= 2).then(|| parts[parts.len() - 2].as_str());
@@ -769,11 +1043,15 @@ impl CatalogQueries {
                     // A non-deterministic (e.g. case-insensitive ICU) collation has no name
                     // we can classify: it is reported as empty, which reads as `UNKNOWN`.
                     // A byte-wise collation orders by code point only in UTF-8: in another
-                    // server encoding it reads as the (deterministic) default.
+                    // server encoding it reads as the (deterministic) default. Only a `pg_catalog`
+                    // collation is known by its name: a user's `"C"` in another schema may be an
+                    // ICU one, so it reads as `user.C`.
                     collations: Some(if dialect == DialectName::Postgresql {
                         format!(
                             "SELECT a.attname, CASE WHEN NOT co.collisdeterministic THEN '' \
                             WHEN current_setting('server_encoding') <> 'UTF8' THEN 'default' \
+                            WHEN co.collnamespace <> 'pg_catalog'::regnamespace \
+                            THEN 'user.' || co.collname \
                             ELSE co.collname END FROM pg_attribute a \
                             JOIN pg_collation co ON co.oid = a.attcollation \
                             WHERE a.attrelid = {oid} AND a.attnum > 0 AND NOT a.attisdropped"
@@ -838,7 +1116,7 @@ impl CatalogQueries {
                 }
             },
             DialectName::Mssql => {
-                let object = format!("OBJECT_ID(N{})", s(&qualified));
+                let object = mssql_object_id(&qualified);
                 Self {
                     key: Some(format!(
                         "SELECT c.name FROM sys.indexes i \
@@ -849,10 +1127,13 @@ impl CatalogQueries {
                     collations: Some(format!(
                         "SELECT name, collation_name FROM sys.columns WHERE object_id = {object}"
                     )),
-                    // An alias type is named by its base type.
+                    // An alias type is named by its base type. The fractional second digits
+                    // of `datetime2`, `time` and `datetimeoffset` decide how a literal compares.
                     types: Some(format!(
                         "SELECT c.name, CASE WHEN b.name IN ('decimal', 'numeric') \
-                        THEN CONCAT(b.name, '(', c.precision, ',', c.scale, ')') ELSE b.name END \
+                        THEN CONCAT(b.name, '(', c.precision, ',', c.scale, ')') \
+                        WHEN b.name IN ('datetime2', 'time', 'datetimeoffset') \
+                        THEN CONCAT(b.name, '(', c.scale, ')') ELSE b.name END AS type_name \
                         FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id \
                         CROSS APPLY (SELECT CASE WHEN t.is_user_defined = 1 \
                         AND t.is_assembly_type = 0 AND t.is_table_type = 0 \
@@ -862,7 +1143,8 @@ impl CatalogQueries {
                     compare_types: None,
                     declared_sql: None,
                     stats: Some(format!(
-                        "SELECT SUM(row_count), SUM(used_page_count) * 8192 \
+                        "SELECT SUM(row_count) AS row_count, \
+                        SUM(used_page_count) * 8192 AS size_bytes \
                         FROM sys.dm_db_partition_stats WHERE object_id = {object} AND index_id IN (0, 1)"
                     )),
                 }
@@ -949,15 +1231,23 @@ impl CatalogQueries {
                     types: None,
                     // Only the affinity matters: SQLite reads values as stored.
                     compare_types: Some(format!(
-                        "SELECT name, type FROM pragma_table_info({}, {schema})",
+                        "SELECT name, type FROM pragma_table_xinfo({}, {schema})",
                         s(name),
                     )),
                     // `BINARY` compares the bytes of the database's encoding: code point
                     // order only in UTF-8, so a UTF-16 database reads as collated.
+                    // A connection the plugin didn't open (a live object, a factory's) may have
+                    // replaced `BINARY` or any collation (`create_collation`), in a way no probe
+                    // can rule out (a natural or shortlex order passes a byte-order one): its
+                    // collations are unknown.
                     declared_sql: Some(format!(
-                        "SELECT sql || CASE WHEN (SELECT encoding FROM pragma_encoding) \
-                        <> 'UTF-8' THEN ' COLLATE' ELSE '' END \
+                        "SELECT sql || CASE WHEN {} <> 'UTF-8' THEN ' COLLATE' ELSE '' END \
                         FROM ({master}) WHERE type = 'table' AND name = {}",
+                        if own_connection {
+                            "(SELECT encoding FROM pragma_encoding)"
+                        } else {
+                            "'unknown'"
+                        },
                         s(name)
                     )),
                     stats: None,
@@ -987,14 +1277,19 @@ impl CatalogQueries {
                 // DuckDB resolves names case-insensitively, where `duckdb_name_rank` says.
                 let rank = duckdb_name_rank(parts, &[], search);
                 let n = s(name);
+                let (tbl, view, db, sc, name_lc) = (
+                    duckdb_ascii_lower("table_name"),
+                    duckdb_ascii_lower("view_name"),
+                    duckdb_ascii_lower("database_name"),
+                    duckdb_ascii_lower("schema_name"),
+                    duckdb_ascii_lower(&n),
+                );
                 let duck_filter = format!(
-                    "system.main.lower(table_name) = system.main.lower({n}) \
-                    AND [system.main.lower(database_name), system.main.lower(schema_name)] = (\
-                    SELECT [system.main.lower(database_name), system.main.lower(schema_name)] FROM (\
+                    "{tbl} = {name_lc} AND [{db}, {sc}] = (SELECT [{db}, {sc}] FROM (\
                     SELECT database_name, schema_name, {rank} AS r FROM duckdb_tables() \
-                    WHERE system.main.lower(table_name) = system.main.lower({n}) \
+                    WHERE {tbl} = {name_lc} \
                     UNION ALL SELECT database_name, schema_name, {rank} FROM duckdb_views() \
-                    WHERE NOT internal AND system.main.lower(view_name) = system.main.lower({n})) \
+                    WHERE NOT internal AND {view} = {name_lc}) \
                     WHERE r IS NOT NULL ORDER BY r LIMIT 1)"
                 );
                 Self {
@@ -1032,9 +1327,28 @@ impl CatalogQueries {
                 declared_sql: None,
                 stats: None,
             },
+            // Trino has no `information_schema` we can rely on across connectors; `SHOW COLUMNS`
+            // lists a table's or view's columns with their types (`timestamp(9)`, `char(3)`).
+            DialectName::Trino => Self {
+                key: None,
+                collations: None,
+                types: Some(format!("SHOW COLUMNS FROM {qualified}")),
+                compare_types: None,
+                declared_sql: None,
+                stats: None,
+            },
             _ => return None,
         })
     }
+}
+
+/// `expr` with ASCII letters lower-cased, as DuckDB folds identifiers (not `lower()`), as bytes:
+/// compared without the session's `default_collation` (`noaccent` would make `café` `cafe`).
+fn duckdb_ascii_lower(expr: &str) -> String {
+    format!(
+        "system.main.encode(system.main.translate({expr}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', \
+        'abcdefghijklmnopqrstuvwxyz'))"
+    )
 }
 
 /// The places (lower-cased database and schema, as SQL) where DuckDB looks for the
@@ -1045,12 +1359,12 @@ impl CatalogQueries {
 /// database and schema of the view naming it, where its own names resolve instead of the
 /// current ones.
 fn duckdb_places(parts: &[PlSmallStr], context: &[PlSmallStr]) -> Vec<(String, String)> {
-    let s = |v: &str| format!("system.main.lower({})", DialectName::Duckdb.quote_str(v));
+    let s = |v: &str| duckdb_ascii_lower(&DialectName::Duckdb.quote_str(v));
     let (current_db, current_schema) = match context {
         [db, sc] => (s(db), s(sc)),
         _ => (
-            "system.main.lower(system.main.current_database())".to_string(),
-            "system.main.lower(system.main.current_schema())".to_string(),
+            duckdb_ascii_lower("system.main.current_database()"),
+            duckdb_ascii_lower("system.main.current_schema()"),
         ),
     };
     match parts {
@@ -1091,7 +1405,7 @@ fn duckdb_name_rank(
 /// user's macro can replace (a list comprehension is one) runs in it. If the read fails,
 /// the current schema and `main` after `temp`.
 fn duckdb_search_places(session: &mut dyn DatabaseSession) -> Vec<(String, String)> {
-    let s = |v: &str| format!("system.main.lower({})", DialectName::Duckdb.quote_str(v));
+    let s = |v: &str| duckdb_ascii_lower(&DialectName::Duckdb.quote_str(v));
     let read = session.catalog_query(
         "SELECT system.main.current_setting('search_path'), system.main.current_database(), \
         system.main.current_schema()",
@@ -1109,8 +1423,8 @@ fn duckdb_search_places(session: &mut dyn DatabaseSession) -> Vec<(String, Strin
     let (db, schema) = match (state.1, state.2) {
         (Some(db), Some(schema)) => (s(&db), s(&schema)),
         _ => (
-            "system.main.lower(system.main.current_database())".to_string(),
-            "system.main.lower(system.main.current_schema())".to_string(),
+            duckdb_ascii_lower("system.main.current_database()"),
+            duckdb_ascii_lower("system.main.current_schema()"),
         ),
     };
     for entry in state
@@ -1203,7 +1517,11 @@ fn duckdb_rank(places: &[(String, String)]) -> String {
         .iter()
         .enumerate()
         .map(|(i, (db, sc))| {
-            format!("WHEN system.main.lower(database_name) = {db} AND system.main.lower(schema_name) = {sc} THEN {i}")
+            let (d, s) = (
+                duckdb_ascii_lower("database_name"),
+                duckdb_ascii_lower("schema_name"),
+            );
+            format!("WHEN {d} = {db} AND {s} = {sc} THEN {i}")
         })
         .collect::<Vec<_>>()
         .join(" ");
@@ -1222,10 +1540,15 @@ pub enum ViewLookup {
     /// hides it: MySQL without `SHOW VIEW`), and where it was found: the qualifier its
     /// own unqualified names are resolved in (SQLite's schema; DuckDB's database and
     /// schema), or empty.
+    /// `redacted`: it has an enabled Oracle Data Redaction policy (see `Redacted`).
     View {
         sql: String,
         qualifier: Vec<PlSmallStr>,
+        redacted: bool,
     },
+    /// A table with an enabled Oracle Data Redaction policy: its values are read redacted but
+    /// compared as stored, so no filter on it is pushed.
+    Redacted,
     /// The dialect has no lookup.
     Unknown,
     /// The lookup failed: it may be a view.
@@ -1325,17 +1648,24 @@ pub fn view_definition(
             s(name)
         ),
         // The first place the name resolves in (`duckdb_name_rank`): a temporary view hides
-        // a table of its name.
+        // a table of its name. Names compare with ASCII letters folded (`duckdb_ascii_lower`); two
+        // relations of the same rank are none found.
         DialectName::Duckdb => {
             let rank = duckdb_name_rank(parts, context, &search);
             format!(
                 "SELECT is_view, sql, database_name, schema_name FROM (\
                 SELECT {rank} AS r, 0 AS o, true AS is_view, sql, database_name, schema_name \
-                FROM duckdb_views() WHERE NOT internal AND system.main.lower(view_name) = system.main.lower({n}) \
+                FROM duckdb_views() WHERE NOT internal AND {view_lc} = {n_lc} \
                 UNION ALL SELECT {rank}, 1, false, NULL, database_name, schema_name \
-                FROM duckdb_tables() WHERE system.main.lower(table_name) = system.main.lower({n})) \
-                WHERE r IS NOT NULL ORDER BY r, o LIMIT 1",
-                n = s(name)
+                FROM duckdb_tables() WHERE {table_lc} = {n_lc} \
+                AND database_name IN (SELECT database_name FROM duckdb_databases() \
+                WHERE type = 'duckdb')) \
+                WHERE r IS NOT NULL \
+                QUALIFY row_number() OVER (ORDER BY r, o) = 1 \
+                AND count(*) OVER (PARTITION BY r, o) = 1",
+                view_lc = duckdb_ascii_lower("view_name"),
+                table_lc = duckdb_ascii_lower("table_name"),
+                n_lc = duckdb_ascii_lower(&s(name)),
             )
         },
         DialectName::Clickhouse => format!(
@@ -1345,24 +1675,57 @@ pub fn view_definition(
             s(name)
         ),
         // through a synonym (the user's, or public); `TEXT_VC` holds the first 4000
-        // characters, the `LONG` `TEXT` all of them
+        // characters, the `LONG` `TEXT` all of them. A view's own unqualified names resolve
+        // in its owner's schema.
         DialectName::Oracle => {
-            let owner =
-                schema.map_or_else(|| "SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')".to_string(), s);
+            let owner = schema
+                .or_else(|| context.last().map(|c| c.as_str()))
+                .map_or_else(|| "SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')".to_string(), s);
             let n = s(name);
-            let found = format!(
-                "(v.owner, v.view_name) IN (SELECT {owner}, {n} FROM dual \
+            // the name, and every object a chain of synonyms from it names (a public synonym
+            // only for an unqualified name)
+            let owners = if schema.is_some() {
+                owner.clone()
+            } else {
+                format!("{owner}, 'PUBLIC'")
+            };
+            let named = format!(
+                "(SELECT {owner}, {n} FROM dual \
                 UNION ALL SELECT table_owner, table_name FROM all_synonyms \
-                WHERE owner IN ({owner}, 'PUBLIC') AND synonym_name = {n})"
+                START WITH owner IN ({owners}) AND synonym_name = {n} \
+                CONNECT BY NOCYCLE owner = PRIOR table_owner \
+                AND synonym_name = PRIOR table_name)"
             );
             let Some(df) = run(&format!(
                 "SELECT 1, CASE WHEN v.text_length <= 4000 THEN v.text_vc END, \
-                v.owner, v.view_name FROM all_views v WHERE {found}"
+                v.owner, v.view_name FROM all_views v WHERE (v.owner, v.view_name) IN {named}"
             )) else {
                 return ViewLookup::Failed;
             };
+            // Data Redaction: the values are read redacted and compared as stored. Only a
+            // login granted `REDACTION_POLICIES` can see the policies; for any other the
+            // lookup fails and none is found. A view may read tables the login can't see
+            // (through a view it can't list): any policy may apply to it.
+            let named_only = if df.height() == 0 {
+                format!("AND (p.object_owner, p.object_name) IN {named}")
+            } else {
+                String::new()
+            };
+            let redacted = run(&format!(
+                "SELECT COUNT(*) FROM redaction_policies p WHERE p.enable = 'YES' {named_only}"
+            ))
+            .is_some_and(|df| cell_u64(&df, 0, 0).is_some_and(|n| n > 0));
             if df.height() == 0 {
-                return ViewLookup::NotAView;
+                return if redacted {
+                    ViewLookup::Redacted
+                } else {
+                    ViewLookup::NotAView
+                };
+            }
+            // (a view of the name and one a synonym of it names: which one is read isn't
+            // looked up)
+            if df.height() > 1 {
+                return ViewLookup::Failed;
             }
             let sql = cell_str(&df, 1, 0).or_else(|| {
                 let (owner, view) = (cell_str(&df, 2, 0)?, cell_str(&df, 3, 0)?);
@@ -1375,14 +1738,19 @@ pub fn view_definition(
             });
             return ViewLookup::View {
                 sql: sql.unwrap_or_default(),
-                qualifier: vec![],
+                qualifier: cell_str(&df, 2, 0)
+                    .map(|o| vec![o.into()])
+                    .unwrap_or_default(),
+                redacted,
             };
         },
         DialectName::Mssql => format!(
-            "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
-            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
+            "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END AS is_view, \
+            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END AS definition, \
             CASE WHEN o.type = 'SN' THEN (SELECT s.base_object_name FROM sys.synonyms s \
-            WHERE s.object_id = o.object_id) END \
+            WHERE s.object_id = o.object_id) END AS base_object, \
+            CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
+            AS definition_bytes \
             FROM sys.objects o WHERE o.object_id = OBJECT_ID({})",
             dialect.quote_nstr(&qualified)
         ),
@@ -1412,10 +1780,12 @@ pub fn view_definition(
             )
         });
         let Some(found) = run(&format!(
-            "SELECT TOP 2 CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
-            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
+            "SELECT TOP 2 CASE WHEN o.type = 'V' THEN 1 ELSE 0 END AS is_view, \
+            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END AS definition, \
             CASE WHEN o.type = 'SN' THEN (SELECT s.base_object_name FROM sys.synonyms s \
-            WHERE s.object_id = o.object_id) END \
+            WHERE s.object_id = o.object_id) END AS base_object, \
+            CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
+            AS definition_bytes \
             FROM sys.objects o WHERE LOWER(o.name) = LOWER({}){in_schema}",
             dialect.quote_nstr(name)
         )) else {
@@ -1437,9 +1807,11 @@ pub fn view_definition(
             return ViewLookup::Failed;
         }
         let Some(target) = run(&format!(
-            "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
-            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
-            CASE WHEN o.type = 'SN' THEN o.name END \
+            "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END AS is_view, \
+            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END AS definition, \
+            CASE WHEN o.type = 'SN' THEN o.name END AS base_object, \
+            CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
+            AS definition_bytes \
             FROM sys.objects o WHERE o.object_id = OBJECT_ID({})",
             dialect.quote_nstr(&base)
         )) else {
@@ -1457,12 +1829,134 @@ pub fn view_definition(
     if !is_view {
         return ViewLookup::NotAView;
     }
-    let qualifier = (2..df.width())
+    // A session's `SET TEXTSIZE` cuts the definition as it is read: a view whose volatile
+    // part was cut off would be taken for a harmless one.
+    if dialect == DialectName::Mssql && !mssql_text_intact(&df, 1, 3, 0) {
+        return ViewLookup::Failed;
+    }
+    // (SQL Server's extra columns, a synonym's base and the definition's length, are no
+    // qualifier)
+    let qualifier_end = if dialect == DialectName::Mssql {
+        2
+    } else {
+        df.width()
+    };
+    let qualifier = (2..qualifier_end)
         .filter_map(|c| cell_str(&df, c, 0).map(PlSmallStr::from))
         .collect();
     ViewLookup::View {
         sql: cell_str(&df, 1, 0).unwrap_or_default(),
         qualifier,
+        redacted: false,
+    }
+}
+
+/// Whether a SQL Server `nvarchar(max)` cell was read whole: its UTF-16 length is the bytes the
+/// server says it holds (`DATALENGTH`, in column `bytes`). A session's `SET TEXTSIZE` cuts such
+/// text as it is sent, silently, and a NULL cell has nothing to cut.
+fn mssql_text_intact(df: &DataFrame, text: usize, bytes: usize, row: usize) -> bool {
+    match cell_str(df, text, row) {
+        None => cell_u64(df, bytes, row).is_none(),
+        Some(t) => cell_u64(df, bytes, row) == Some(2 * t.encode_utf16().count() as u64),
+    }
+}
+
+/// Whether MySQL / MariaDB / SingleStore resolve `qualified` to a temporary table: `SHOW
+/// CREATE TABLE` of one starts with `CREATE TEMPORARY TABLE` (an error: no such table, or a
+/// view).
+fn mysql_temporary_table(session: &mut dyn DatabaseSession, qualified: &str) -> bool {
+    session
+        .catalog_query(&format!("SHOW CREATE TABLE {qualified}"))
+        .ok()
+        .and_then(|df| cell_str(&df, 1, 0))
+        .is_some_and(|t| {
+            t.trim_start()
+                .to_ascii_uppercase()
+                .starts_with("CREATE TEMPORARY")
+        })
+}
+
+/// Whether `dialect` has a [`resolution_fingerprint`]: the dialects where a session's own state
+/// (Postgres' `search_path` and temporary tables, MySQL's default database and temporary tables)
+/// changes which relation a name resolves to.
+pub fn has_resolution_fingerprint(dialect: DialectName) -> bool {
+    matches!(
+        dialect,
+        DialectName::Postgresql | DialectName::Mysql | DialectName::Singlestore
+    )
+}
+
+/// How each of `names` resolves on this session, as text that is equal for two sessions that
+/// resolve a name to the same relation, or to a temporary table of their own. For Postgres:
+/// `temp-children:a,b ` first when the session has temporary tables of its own (`a`, `b`, quoted
+/// where needed) inheriting from the relation (permanent children are global DDL, not session
+/// state: a partition added later must not change the fingerprint), then the relation as
+/// `perm:schema.name:relkind` or `temp:relkind`, and `@database`. For MySQL / MariaDB /
+/// SingleStore: `temp:` or `perm:` and the database. A fingerprint of a temporary relation, or of
+/// one with temporary children, starts with `temp`. Session-specific ids (a temporary table's
+/// `pg_temp_N` schema, OIDs) are left out (and the temporary tables of other sessions, which
+/// `pg_class` lists too). One catalog statement on Postgres; MySQL has none that lists temporary
+/// tables, so one per name. `None`: the dialect has none, or the lookup failed.
+pub fn resolution_fingerprint(
+    session: &mut dyn DatabaseSession,
+    dialect: DialectName,
+    names: &[Vec<PlSmallStr>],
+) -> Option<Vec<String>> {
+    if names.is_empty() {
+        return None;
+    }
+    let qualified = |parts: &[PlSmallStr]| {
+        parts
+            .iter()
+            .map(|p| dialect.quote_ident(p))
+            .collect::<Vec<_>>()
+            .join(".")
+    };
+    match dialect {
+        DialectName::Postgresql => {
+            let cols = names
+                .iter()
+                .enumerate()
+                .map(|(i, parts)| {
+                    // the temporary children of its own this session has under the relation
+                    // (permanent children are DDL, the same for every session), and the root
+                    // relation the name resolves to (the session-dependent part)
+                    format!(
+                        "(WITH RECURSIVE d(oid, depth) AS (SELECT to_regclass({})::oid, 0 UNION ALL \
+                        SELECT i.inhrelid, d.depth + 1 FROM pg_inherits i JOIN d ON i.inhparent = d.oid) \
+                        SELECT COALESCE((SELECT 'temp-children:' || string_agg(quote_ident(c.relname), \
+                        ',' ORDER BY c.relname::text) || ' ' FROM d JOIN pg_class c ON c.oid = d.oid \
+                        WHERE d.depth > 0 AND c.relpersistence = 't' \
+                        AND c.relnamespace = pg_my_temp_schema()), '') || \
+                        COALESCE((SELECT CASE WHEN c.relpersistence = 't' THEN 'temp:' || \
+                        c.relkind::text ELSE 'perm:' || n.nspname || '.' || c.relname || ':' || \
+                        c.relkind::text END FROM d JOIN pg_class c ON c.oid = d.oid \
+                        JOIN pg_namespace n ON n.oid = c.relnamespace WHERE d.depth = 0 \
+                        AND (c.relpersistence <> 't' OR c.relnamespace = pg_my_temp_schema())), \
+                        'none') || '@' || current_database())::text AS r{i}",
+                        dialect.quote_str(&qualified(parts))
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let df = session.catalog_query(&format!("SELECT {cols}")).ok()?;
+            (0..names.len()).map(|i| cell_str(&df, i, 0)).collect()
+        },
+        DialectName::Mysql | DialectName::Singlestore => {
+            let df = session.catalog_query("SELECT DATABASE()").ok()?;
+            let default_db = cell_str(&df, 0, 0).unwrap_or_default();
+            let mut out = Vec::with_capacity(names.len());
+            for parts in names {
+                let db = match parts.as_slice() {
+                    [db, _] => db.to_string(),
+                    _ => default_db.clone(),
+                };
+                let temporary = mysql_temporary_table(session, &qualified(parts));
+                out.push(format!("{}:{db}", if temporary { "temp" } else { "perm" }));
+            }
+            Some(out)
+        },
+        _ => None,
     }
 }
 
@@ -1521,7 +2015,9 @@ fn databricks_view(
             continue;
         };
         if !in_details {
-            in_details = k == "# Detailed Table Information";
+            // (the heading row has no type: a column of the name has one)
+            in_details = k == "# Detailed Table Information"
+                && v.as_deref().is_none_or(|t| t.trim().is_empty());
             // the columns end at a blank line or a heading (a column may be named `#x`)
             in_columns &=
                 !(k.is_empty() || (k.starts_with('#') && v.as_deref().is_none_or(str::is_empty)));
@@ -1567,7 +2063,11 @@ fn databricks_view(
             .join(", ");
         sql = format!("CREATE VIEW v ({list}) AS {sql}");
     }
-    ViewLookup::View { sql, qualifier }
+    ViewLookup::View {
+        sql,
+        qualifier,
+        redacted: false,
+    }
 }
 
 /// The parts of a Databricks `catalog.namespace` (`test.polars_scan_database`), where a part
@@ -1773,7 +2273,7 @@ fn cell(df: &DataFrame, col: usize, row: usize) -> Option<AnyValue<'_>> {
     (row < c.len()).then(|| c.get(row).ok()).flatten()
 }
 
-fn cell_str(df: &DataFrame, col: usize, row: usize) -> Option<String> {
+pub(super) fn cell_str(df: &DataFrame, col: usize, row: usize) -> Option<String> {
     match cell(df, col, row)? {
         AnyValue::Null => None,
         AnyValue::String(s) => Some(s.to_string()),
@@ -1862,12 +2362,17 @@ mod tests {
         let flags = views.iter().map(|&v| i32::from(v)).collect::<Vec<_>>();
         DataFrame::new(
             views.len(),
-            vec![Column::new("a".into(), flags), Column::new("b".into(), def)],
+            vec![
+                Column::new("a".into(), flags),
+                Column::new("b".into(), def),
+                Column::new("c".into(), vec![None::<&str>; views.len()]),
+                Column::new("d".into(), definition_bytes(views.iter().copied())),
+            ],
         )
         .unwrap()
     }
 
-    /// `(is_view, definition, synonym base)` rows.
+    /// `(is_view, definition, synonym base, definition bytes)` rows.
     fn syn_rows(rows: &[(bool, Option<&str>)]) -> DataFrame {
         let flags = rows.iter().map(|r| i32::from(r.0)).collect::<Vec<_>>();
         let def = rows
@@ -1881,9 +2386,34 @@ mod tests {
                 Column::new("a".into(), flags),
                 Column::new("b".into(), def),
                 Column::new("c".into(), base),
+                Column::new("d".into(), definition_bytes(rows.iter().map(|r| r.0))),
             ],
         )
         .unwrap()
+    }
+
+    /// The `DATALENGTH` of the fake definition `SELECT 1` (UTF-16: two bytes a character).
+    fn definition_bytes(views: impl Iterator<Item = bool>) -> Vec<Option<i64>> {
+        views.map(|v| v.then_some(16)).collect()
+    }
+
+    #[test]
+    fn mssql_view_definition_cut_by_textsize_is_not_proven() {
+        let ms = DialectName::Mssql;
+        let parts = ["dbo".into(), "v".into()];
+        let cut = |bytes: i64| {
+            let mut df = rows(&[true]);
+            df.replace("d", Column::new("d".into(), vec![bytes]))
+                .unwrap();
+            let mut s = Recorder {
+                log: vec![],
+                answer: move |_: &str| df.clone(),
+            };
+            view_definition(&mut s, ms, &parts, &[])
+        };
+        assert!(matches!(cut(16), ViewLookup::View { .. }));
+        // the server holds more than was read
+        assert_eq!(cut(40), ViewLookup::Failed);
     }
 
     #[test]
@@ -1909,6 +2439,7 @@ mod tests {
         let view = ViewLookup::View {
             sql: "SELECT 1".into(),
             qualifier: vec![],
+            redacted: false,
         };
         let (out, log) = lookup("[dbo].[v]", syn_rows(&[(true, None)]));
         assert_eq!(out, view);
@@ -2007,7 +2538,8 @@ mod tests {
             lookup,
             ViewLookup::View {
                 sql: "SELECT 1".into(),
-                qualifier: vec![]
+                qualifier: vec![],
+                redacted: false,
             }
         );
         // a table of the name in another case is a table
@@ -2068,42 +2600,28 @@ mod tests {
 
     #[test]
     fn duckdb_places_follow_its_name_resolution() {
+        let lc = duckdb_ascii_lower;
         let places = |parts: &[&str], context: &[&str]| {
             let parts = parts.iter().map(|p| (*p).into()).collect::<Vec<_>>();
             let context = context.iter().map(|p| (*p).into()).collect::<Vec<_>>();
             duckdb_places(&parts, &context)
         };
         let current = (
-            "system.main.lower(system.main.current_database())".to_string(),
-            "system.main.lower(system.main.current_schema())".to_string(),
+            lc("system.main.current_database()"),
+            lc("system.main.current_schema()"),
         );
         let main = "'main'".to_string();
         assert_eq!(places(&["t"], &[]), std::slice::from_ref(&current));
         // `a.t`: the schema `a`, else the (attached) database `a`
         assert_eq!(
             places(&["a", "t"], &[]),
-            [
-                (current.0.clone(), "system.main.lower('a')".to_string()),
-                ("system.main.lower('a')".to_string(), main.clone())
-            ]
+            [(current.0.clone(), lc("'a'")), (lc("'a'"), main.clone())]
         );
-        assert_eq!(
-            places(&["d", "s", "t"], &[]),
-            [(
-                "system.main.lower('d')".to_string(),
-                "system.main.lower('s')".to_string()
-            )]
-        );
+        assert_eq!(places(&["d", "s", "t"], &[]), [(lc("'d'"), lc("'s'"))]);
         // a view's own names, where it is, then `main`
         assert_eq!(
             places(&["t"], &["d", "s"]),
-            [
-                (
-                    "system.main.lower('d')".to_string(),
-                    "system.main.lower('s')".to_string()
-                ),
-                ("system.main.lower('d')".to_string(), main.clone())
-            ]
+            [(lc("'d'"), lc("'s'")), (lc("'d'"), main.clone())]
         );
         // an unqualified name: `temp` first, then the whole search path
         let search = vec![
@@ -2116,7 +2634,7 @@ mod tests {
         assert!(!rank.contains("'s1'"), "{rank}");
         let rank = duckdb_rank(&places(&["a", "t"], &[]));
         assert!(
-            rank.starts_with("CASE WHEN system.main.lower(database_name) = "),
+            rank.starts_with(&format!("CASE WHEN {} = ", lc("database_name"))),
             "{rank}"
         );
         assert!(rank.ends_with("THEN 1 END"), "{rank}");
@@ -2152,6 +2670,7 @@ mod tests {
             },
             pg,
             &parts,
+            true,
         );
         assert!(!info.incomplete && info.unknown_collations);
         // types unknown: nothing about comparisons is known
@@ -2161,19 +2680,21 @@ mod tests {
                     fail: "format_type"
                 },
                 pg,
-                &parts
+                &parts,
+                true,
             )
             .incomplete
         );
         // statistics or the key only steer partitioning
-        assert!(!table_info(&mut Fake { fail: "reltuples" }, pg, &parts).incomplete);
+        assert!(!table_info(&mut Fake { fail: "reltuples" }, pg, &parts, true).incomplete);
         assert!(
             !table_info(
                 &mut Fake {
                     fail: "indisprimary"
                 },
                 pg,
-                &parts
+                &parts,
+                true,
             )
             .incomplete
         );
@@ -2292,6 +2813,57 @@ mod tests {
     }
 
     #[test]
+    fn databricks_evolving_view_takes_types_from_describe_query() {
+        // the stored schema of a WITH SCHEMA EVOLUTION view may be stale
+        let stale = [
+            ("id", "int"),
+            ("s", "string"),
+            ("", ""),
+            ("# Detailed Table Information", ""),
+            ("Type", "VIEW"),
+            ("View Schema Mode", "EVOLUTION"),
+        ];
+        let fresh = [("id", "int"), ("s", "string collate UTF8_LCASE")];
+        for mode in ["EVOLUTION", "TYPE EVOLUTION", "COMPENSATION"] {
+            let mut s = Recorder {
+                log: vec![],
+                answer: |sql: &str| {
+                    if sql.starts_with("DESCRIBE QUERY") {
+                        describe(&fresh)
+                    } else {
+                        let mut r = stale.to_vec();
+                        r[5].1 = mode;
+                        describe(&r)
+                    }
+                },
+            };
+            let info = table_info(&mut s, DialectName::Databricks, &["v".into()], true);
+            if mode == "COMPENSATION" {
+                assert_eq!(s.log.len(), 1, "{:?}", s.log);
+                assert_eq!(info.declared_type("s"), Some("string"));
+            } else {
+                assert_eq!(s.log.len(), 2, "{:?}", s.log);
+                assert!(s.log[1].starts_with("DESCRIBE QUERY SELECT * FROM `v`"));
+                assert_eq!(info.declared_type("s"), Some("string collate UTF8_LCASE"));
+                assert!(!info.incomplete);
+            }
+        }
+        // `DESCRIBE QUERY` answers nothing: the stale types aren't used either
+        let mut s = Recorder {
+            log: vec![],
+            answer: |sql: &str| {
+                if sql.starts_with("DESCRIBE QUERY") {
+                    describe(&[])
+                } else {
+                    describe(&stale)
+                }
+            },
+        };
+        let info = table_info(&mut s, DialectName::Databricks, &["v".into()], true);
+        assert!(info.incomplete && info.types.is_empty());
+    }
+
+    #[test]
     fn databricks_views_are_looked_up_by_describe() {
         let d = DialectName::Databricks;
         let view = [
@@ -2311,6 +2883,7 @@ mod tests {
         let view = ViewLookup::View {
             sql: "CREATE VIEW v (`id`) AS SELECT id FROM t".into(),
             qualifier: vec!["test".into(), "sc".into()],
+            redacted: false,
         };
         assert_eq!(found, view);
         // a name inside a view's text resolves where the view was created
@@ -2409,7 +2982,7 @@ mod tests {
                 ])
             },
         };
-        let info = table_info(&mut s, d, &["t".into()]);
+        let info = table_info(&mut s, d, &["t".into()], true);
         let names = info.types.iter().map(|t| t.0.as_str()).collect::<Vec<_>>();
         assert_eq!(names, ["#x", "s"]);
         assert!(compares_as_text(d, "string"));
@@ -2439,7 +3012,7 @@ mod tests {
             log: vec![],
             answer: |_: &str| describe(&[("ch", "char(5)"), ("s", "string")]),
         };
-        let info = table_info(&mut t, d, &["t".into()]);
+        let info = table_info(&mut t, d, &["t".into()], true);
         assert!(!info.string_semantics(d, "ch").equality_exact);
         assert!(info.string_semantics(d, "s").equality_exact);
     }
@@ -2471,7 +3044,7 @@ mod tests {
             },
         });
         let mut s = with_describe_cache(session, d);
-        let info = table_info(s.as_mut(), d, &["t".into()]);
+        let info = table_info(s.as_mut(), d, &["t".into()], true);
         assert_eq!(info.types.len(), 1);
         assert_eq!(
             view_definition(s.as_mut(), d, &["t".into()], &[]),
@@ -2525,10 +3098,20 @@ mod tests {
             }
         }
         let mut s = Fails(vec![]);
-        let info = table_info(&mut s, d, &["t".into()]);
+        let info = table_info(&mut s, d, &["t".into()], true);
         assert_eq!(info.types.len(), 1);
         assert!(!info.incomplete);
-        assert_eq!(s.0, ["DESCRIBE TABLE EXTENDED `t`", "DESCRIBE TABLE `t`"]);
+        // no `View Schema Mode` row to tell a view of schema evolution: the types are read from the
+        // query too, and char padding is unknown
+        assert_eq!(
+            s.0,
+            [
+                "DESCRIBE TABLE EXTENDED `t`",
+                "DESCRIBE TABLE `t`",
+                "DESCRIBE QUERY SELECT * FROM `t`"
+            ]
+        );
+        assert!(info.padding_unknown);
         // the view lookup still fails as before
         assert_eq!(
             view_definition(&mut s, d, &["t".into()], &[]),

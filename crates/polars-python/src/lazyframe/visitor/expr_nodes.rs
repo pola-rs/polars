@@ -55,7 +55,7 @@ pub struct Literal {
     dtype: Py<PyAny>,
 }
 
-#[pyclass(name = "Operator", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "Operator", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyOperator {
     Eq,
@@ -138,7 +138,7 @@ impl<'py> IntoPyObject<'py> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "StringFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStringFunction {
     ConcatHorizontal,
@@ -200,7 +200,7 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "BooleanFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyBooleanFunction {
     Any,
@@ -233,7 +233,7 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "TemporalFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyTemporalFunction {
     Millennium,
@@ -291,7 +291,7 @@ impl PyTemporalFunction {
     }
 }
 
-#[pyclass(name = "StructFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "StructFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStructFunction {
     FieldByName,
@@ -311,7 +311,7 @@ impl PyStructFunction {
     }
 }
 
-#[pyclass(name = "ListFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "ListFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyListFunction {
     Concat,
@@ -349,7 +349,7 @@ impl PyListFunction {
     }
 }
 
-#[pyclass(name = "ArrayFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "ArrayFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyArrayFunction {
     Length,
@@ -383,7 +383,7 @@ impl PyArrayFunction {
     }
 }
 
-#[pyclass(name = "RollingFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "RollingFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyRollingFunction {
     Min,
@@ -406,7 +406,7 @@ impl PyRollingFunction {
     }
 }
 
-#[pyclass(name = "EwmFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "EwmFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyEwmFunction {
     Mean,
@@ -424,7 +424,7 @@ impl PyEwmFunction {
     }
 }
 
-#[pyclass(name = "RollingFunctionBy", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "RollingFunctionBy", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyRollingFunctionBy {
     MinBy,
@@ -444,7 +444,7 @@ impl PyRollingFunctionBy {
     }
 }
 
-#[pyclass(name = "BitwiseFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "BitwiseFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyBitwiseFunction {
     CountOnes,
@@ -465,7 +465,7 @@ impl PyBitwiseFunction {
     }
 }
 
-#[pyclass(name = "RangeFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "RangeFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyRangeFunction {
     IntRange,

@@ -9,7 +9,6 @@ from typing import (
     NoReturn,
     overload,
 )
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from polars._utils.constants import (
     EPOCH,
@@ -95,7 +94,7 @@ def datetime_to_int(dt: datetime, time_unit: TimeUnit) -> int:
 
     td = dt - EPOCH_UTC
     seconds = td.days * SECONDS_PER_DAY + td.seconds
-    microseconds = dt.microsecond
+    microseconds = td.microseconds
 
     if time_unit == "us":
         return seconds * US_PER_SECOND + microseconds
@@ -165,6 +164,8 @@ def to_py_datetime(
 
 
 def _localize_datetime(dt: datetime, time_zone: str) -> datetime:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
     # zone info installation should already be checked
     tz: ZoneInfo | tzinfo
     try:

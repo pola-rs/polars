@@ -11,7 +11,7 @@ use polars_core::config::verbose;
 use polars_core::runtime::ASYNC;
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::dynamic_boundary_dtype;
-use polars_error::{ErrorAttachment, feature_gated};
+use polars_error::{ErrorAttachment, SqlLocation, feature_gated};
 use polars_io::ExternalCompression;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
@@ -133,7 +133,6 @@ async fn fetch_metadata(
     encryption_sharing: &mut polars_io::parquet::encryption::EncryptionSharing,
     verbose: bool,
 ) -> PolarsResult<()> {
-    use futures::stream::StreamExt;
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
         (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
@@ -200,7 +199,10 @@ async fn fetch_metadata(
         .map(|_| ());
     if out.is_err() {
         drop(futures);
-        while resolver_futures.next().await.is_some() {}
+        // bounded: a plugin call that never returns must not hang the error
+        if crate::utils::drain_bounded(&mut resolver_futures).await && verbose {
+            eprintln!("fetch_metadata: gave up waiting for resolvers still running after an error");
+        }
     }
     out
 }
@@ -967,7 +969,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt.lp_arena,
                 ctxt.expr_arena,
             )?;
-            return to_alp_impl(resolved, ctxt);
+            // Only the statement is known here.
+            return to_alp_impl(resolved, ctxt).map_err(|e| match e.sql_location() {
+                Some(_) => e,
+                None => {
+                    e.with_attachment(ErrorAttachment::SqlLocation(SqlLocation::statement(&query)))
+                },
+            });
         },
         DslPlan::PipeWithSchema { input, callback } => {
             // Derive the schema from the input
@@ -1179,7 +1187,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     ctxt.conversion_optimizer
                         .fill_scratch(&temp_expr_irs, ctxt.expr_arena);
 
-                    let input_with_exprs = ctxt.lp_arena.add(IR::HStack {
+                    let lp = IR::HStack {
                         input,
                         exprs: temp_expr_irs,
                         schema,
@@ -1189,7 +1197,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             should_broadcast: true,
                             maintain_dataframe_height: false,
                         },
-                    });
+                    };
+                    let input_with_exprs = run_conversion(lp, ctxt, "unique")?;
                     (
                         input_with_exprs,
                         Some(subset_colnames.into_iter().collect()),
@@ -1333,6 +1342,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                 dt.is_primitive_numeric()
                                     || dt.is_temporal()
                                     || dt == &DataType::Boolean
+                                    || dt.is_decimal()
                             },
                             |name| col(name.clone()).median(),
                             &input_schema,

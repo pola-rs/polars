@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use polars_core::prelude::SchemaRef;
+use polars_core::prelude::{DataType, SchemaRef};
 use polars_core::scalar::Scalar;
 use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
@@ -244,7 +244,7 @@ impl DatabaseScanOptions {
         if let Some(overrides) = &self.schema_overrides {
             for (name, dtype) in overrides.iter() {
                 name.hash(&mut h);
-                dtype.hash(&mut h);
+                hash_dtype(dtype, &mut h);
             }
         }
         h.finish()
@@ -253,9 +253,94 @@ impl DatabaseScanOptions {
 
 use std::hash::BuildHasher;
 
+/// Hashes the whole dtype, parameters included (`DataType`'s own `Hash` covers only the variant, so
+/// two decimal scales, time zones, units or Enum categories would collide).
+pub fn hash_dtype<H: Hasher>(dtype: &DataType, h: &mut H) {
+    std::mem::discriminant(dtype).hash(h);
+    match dtype {
+        DataType::Decimal(p, s) => (p, s).hash(h),
+        DataType::Datetime(unit, tz) => {
+            unit.hash(h);
+            tz.as_ref().map(|t| t.as_str()).hash(h);
+        },
+        DataType::Duration(unit) => unit.hash(h),
+        DataType::List(inner) => hash_dtype(inner, h),
+        DataType::Array(inner, width) => {
+            hash_dtype(inner, h);
+            width.hash(h);
+        },
+        DataType::Struct(fields) => {
+            fields.len().hash(h);
+            for f in fields {
+                f.name().hash(h);
+                hash_dtype(f.dtype(), h);
+            }
+        },
+        DataType::Map(k, v) => {
+            hash_dtype(k, h);
+            hash_dtype(v, h);
+        },
+        DataType::Enum(cats, _) => {
+            for c in cats.categories().values_iter() {
+                c.hash(h);
+            }
+        },
+        // Anything else: its debug form carries its parameters.
+        other => format!("{other:?}").hash(h),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use polars_core::prelude::{Field, TimeUnit, TimeZone};
+
     use super::*;
+
+    fn dtype_hash(d: &DataType) -> u64 {
+        let mut h = polars_utils::aliases::PlFixedStateQuality::default().build_hasher();
+        hash_dtype(d, &mut h);
+        h.finish()
+    }
+
+    #[test]
+    fn dtype_hash_covers_parameters() {
+        let struct_of = DataType::Struct;
+        let int = |name: &str| Field::new(name.into(), DataType::Int64);
+        let pairs = [
+            (DataType::Decimal(10, 2), DataType::Decimal(10, 4)),
+            (
+                DataType::Datetime(TimeUnit::Microseconds, None),
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
+            ),
+            (
+                DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC)),
+                DataType::Datetime(TimeUnit::Microseconds, None),
+            ),
+            (
+                DataType::Duration(TimeUnit::Milliseconds),
+                DataType::Duration(TimeUnit::Microseconds),
+            ),
+            (
+                DataType::List(Box::new(DataType::Decimal(10, 2))),
+                DataType::List(Box::new(DataType::Decimal(10, 3))),
+            ),
+            // `{a: {b}, c}` and `{a: {b, c}}`
+            (
+                struct_of(vec![
+                    Field::new("a".into(), struct_of(vec![int("b")])),
+                    Field::new("c".into(), DataType::String),
+                ]),
+                struct_of(vec![Field::new(
+                    "a".into(),
+                    struct_of(vec![int("b"), Field::new("c".into(), DataType::String)]),
+                )]),
+            ),
+        ];
+        for (a, b) in pairs {
+            assert_ne!(dtype_hash(&a), dtype_hash(&b), "{a:?} vs {b:?}");
+            assert_eq!(dtype_hash(&a), dtype_hash(&a.clone()));
+        }
+    }
 
     /// A table relation; a part is quoted if it starts with `"`.
     fn table(parts: &[&str]) -> DatabaseRelation {

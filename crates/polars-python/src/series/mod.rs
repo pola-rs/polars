@@ -98,11 +98,45 @@ impl PySeries {
     /// sorted as its materialised Series is. The materialised Series of any other column.
     pub(crate) fn repeat_invariant_series(&self, rows: impl FnOnce(usize) -> usize) -> Series {
         match &*self.column.read() {
-            Column::Scalar(sc) => {
-                sc.as_n_values_series(rows(sc.len()))
-            },
+            Column::Scalar(sc) => sc.as_n_values_series(rows(sc.len())),
             c => c.as_materialized_series().clone(),
         }
+    }
+
+    /// The sorted flag of the materialised Series, read from the column where that is the
+    /// same value without materialising: a `Column::Dictionary` sets its materialised Series'
+    /// flag from its own.
+    pub(crate) fn sorted_flag(&self) -> polars_core::series::IsSorted {
+        let flag = match &*self.column.read() {
+            // (A Series of at most one row reports itself ascending whatever it was set to.)
+            Column::Dictionary(d) if d.len() > 1 => Some(d.is_sorted_flag()),
+            _ => None,
+        };
+        flag.unwrap_or_else(|| self.series().is_sorted_flag())
+    }
+
+    /// The Series `first`/`last` (or the `ignore_nulls` variants) reduce: the one row they pick
+    /// of a `Column::Dictionary`, or an empty one when there is none, so that the codes are not
+    /// gathered. As [`Self::repeat_invariant_series`] for any other column.
+    pub(crate) fn edge_series(&self, ignore_nulls: bool, last: bool) -> Series {
+        let dictionary = match &*self.column.read() {
+            c @ Column::Dictionary(_) => Some(c.clone()),
+            _ => None,
+        };
+        if let Some(c) = dictionary {
+            let at = match (ignore_nulls, last) {
+                (true, false) => c.first_non_null(),
+                (true, true) => c.last_non_null(),
+                (false, false) => (!c.is_empty()).then_some(0),
+                (false, true) => c.len().checked_sub(1),
+            };
+            let row = match at {
+                Some(i) => c.slice((i as i64, 1usize)),
+                None => c.slice((0i64, 0usize)),
+            };
+            return row.as_materialized_series().clone();
+        }
+        self.repeat_invariant_series(|n| n.min(1))
     }
 
     /// Take the column out, to go into a `DataFrame`, as `Series::into_column` did: a
@@ -165,4 +199,14 @@ impl ToPySeries for Vec<Column> {
     fn to_pyseries(self) -> Vec<PySeries> {
         self.into_iter().map(PySeries::from_column).collect()
     }
+}
+
+/// Whether appending this column to, or after, another can leave a sorted flag in the Series
+/// path (`update_sorted_flag_before_append`): it has at most one row, is all null, or is
+/// flagged sorted. When both columns qualify, a `Column::Dictionary` append (which always
+/// drops the flag) must take the Series path; otherwise the flag is dropped there too.
+pub(crate) fn keeps_sorted_flag(c: &Column) -> bool {
+    c.len() <= 1
+        || c.null_count() == c.len()
+        || c.is_sorted_flag() != polars_core::series::IsSorted::Not
 }

@@ -61,9 +61,6 @@ def assert_index_of(
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_float(dtype: pl.DataType) -> None:
     values: list[Any] = [1.5, np.nan, np.inf, 3.0, None, -np.inf, 0.0, -0.0, -np.nan]
-    if dtype == pl.Float32:
-        # Can't pass Python literals to index_of() for Float32
-        values = [(None if v is None else np.float32(v)) for v in values]
 
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
@@ -322,7 +319,7 @@ def test_non_found_correct_type() -> None:
 def test_error_on_multiple_values() -> None:
     with pytest.raises(
         pl.exceptions.ShapeError,
-        match="non-scalar value passed to",
+        match="'element' must be a scalar value in `index_of`",
     ):
         pl.Series("a", [1, 2, 3]).index_of(pl.Series([2, 3]))
 
@@ -470,6 +467,9 @@ def assert_lossy_cast_rejected(
         (pl.Decimal(5, 2), 1, pl.UInt16),
         # Can't fit nanoseconds in milliseconds:
         (pl.Duration("ms"), 1, pl.Duration("ns")),
+        # Naive and time zone aware datetimes:
+        (pl.Datetime("us", "UTC"), datetime(2020, 1, 1), pl.Datetime("us")),
+        (pl.Datetime("us"), datetime(2020, 1, 1), pl.Datetime("us", "UTC")),
         # Arrays that are the wrong length:
         (pl.Array(pl.Int64, 2), [1], pl.Array(pl.Int64, 1)),
         # Struct with wrong number of fields:
@@ -501,6 +501,22 @@ def test_lossy_casts_are_rejected_nested_dtypes() -> None:
         {"key": value},
         pl.Struct({"key": value_dtype}),
     )
+
+
+def test_datetime_time_zones() -> None:
+    naive = pl.Series([datetime(2020, 1, 1, 12), datetime(2020, 1, 1, 13)])
+    amsterdam = naive.dt.replace_time_zone("Europe/Amsterdam")
+    value = pl.lit(datetime(2020, 1, 1, 12))
+
+    assert naive.index_of(value) == 0
+    assert amsterdam.index_of(value.dt.replace_time_zone("Europe/Amsterdam")) == 0
+    # A different zone is matched by instant: 12:00 UTC is 13:00 in Amsterdam.
+    assert amsterdam.index_of(value.dt.replace_time_zone("UTC")) == 1
+
+    with pytest.raises(InvalidOperationError, match="cannot cast losslessly"):
+        amsterdam.index_of(value)
+    with pytest.raises(InvalidOperationError, match="cannot cast losslessly"):
+        naive.index_of(value.dt.replace_time_zone("UTC"))
 
 
 def test_decimal_search_for_int() -> None:

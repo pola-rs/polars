@@ -72,10 +72,10 @@ def test_no_dynamic_predicate_pushdown_28629(engine: EngineType) -> None:
         received.append(predicate)
 
         out = df
-        if predicate is not None:
-            out = out.filter(predicate)
         if n_rows is not None:
             out = out.head(n_rows)
+        if predicate is not None:
+            out = out.filter(predicate)
         if with_columns is not None:
             out = out.select(with_columns)
 

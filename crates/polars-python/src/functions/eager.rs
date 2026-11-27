@@ -1,9 +1,9 @@
 use polars::functions;
-use polars::series::IsSorted;
 use polars_core::prelude::*;
 use pyo3::prelude::*;
 
 use crate::conversion::{get_df, get_series};
+use crate::series::keeps_sorted_flag;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PySeries};
 
@@ -65,10 +65,8 @@ pub fn concat_series(py: Python<'_>, series: &Bound<'_, PyAny>) -> PyResult<PySe
             .map(|item| get_column(&item?))
             .collect::<PyResult<Vec<_>>>()?;
         // `DictionaryColumn::try_append` drops the sorted flag, which a Series append keeps
-        // when both sides are sorted: those take the Series path.
-        // (A Series of at most one row always reports sorted.)
-        let sorted = |c: &Column| c.len() <= 1 || c.is_sorted_flag() != IsSorted::Not;
-        let all_sorted = sorted(&c) && rest.iter().all(sorted);
+        // in some cases (see `keeps_sorted_flag`): those take the Series path.
+        let all_sorted = keeps_sorted_flag(&c) && rest.iter().all(keeps_sorted_flag);
         if !all_sorted {
             return py.enter_polars_column(move || {
                 for item in &rest {

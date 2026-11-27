@@ -281,37 +281,13 @@ def expected_ids(reference: pl.DataFrame, predicate: pl.Expr) -> list[int] | Exc
         return e
 
 
-CORPUS_MODES = ["table", "query", "table-p4", "query-p4"]
+CORPUS_MODES = ["table", "query"]
 
 FULL = bool(os.environ.get("POLARS_TEST_DATABASE_FULL"))
 
 # Predicates a non-base cell runs although it plans them like the base cell: they check
 # that the cell reads rows back, which the SQL comparison can't
-SAMPLE = {"table": 4, "query": 4, "table-p4": 2, "query-p4": 2}
-
-
-def corpus_for_mode(mode: str, *, full: bool = FULL) -> list[pl.Expr]:
-    """The predicates a corpus mode runs: those at `corpus_indices`."""
-    return [PREDICATES[i] for i in corpus_indices(mode, full=full)]
-
-
-def corpus_indices(mode: str, *, full: bool = FULL) -> list[int]:
-    """
-    The positions in `PREDICATES` of the predicates a corpus mode runs.
-
-    `"table"` and `"query"` run all of them: a query has no catalog (no declared types,
-    collations or key), so its filters are classified on other information. The
-    partitioned modes take disjoint shares: partitions only AND a range predicate to the
-    same SQL. With `full`, the two shares cover the corpus (each predicate runs
-    partitioned once); otherwise an eighth each. The split rotates every six
-    predicates, so every operator (`_comparisons` emits six per literal) runs
-    partitioned, in both modes in the full run.
-    """
-    if mode in ("table", "query"):
-        return list(range(len(PREDICATES)))
-    k = CORPUS_MODES.index(mode) - 2
-    n = 2 if full else 8
-    return [i for i in range(len(PREDICATES)) if (i + i // 6) % n == k]
+SAMPLE = {"table": 4, "query": 4}
 
 
 def rendered_sql(lf: pl.LazyFrame, predicate: pl.Expr) -> str:
@@ -374,7 +350,6 @@ def _pushed_exactly(rendered: str) -> bool:
 
 
 def cell_predicates(
-    mode: str,
     plans: CorpusPlans,
     base: CorpusPlans,
     *,
@@ -382,12 +357,11 @@ def cell_predicates(
     offset: int = 0,
 ) -> list[pl.Expr]:
     """
-    The predicates of `corpus_for_mode(mode)` a cell runs, given a base that runs them.
+    The predicates of `PREDICATES` a cell runs, given a base that runs them all.
 
     Those the cell plans like the base (see `CorpusPlans`) return the base's rows: of
     them, `sample` run, spread over the corpus (`offset` numbers the cell, so cells
-    sample different ones). Every other predicate runs. Partitioned modes compare
-    unpartitioned plans: partitions only add a range.
+    sample different ones). Every other predicate runs.
     """
     columns = plans.same_columns(base)
 
@@ -399,7 +373,7 @@ def cell_predicates(
             or set(PREDICATES[i].meta.root_names()) <= columns
         )
 
-    indices = corpus_indices(mode)
+    indices = range(len(PREDICATES))
     flags = [same(i) for i in indices]
     n_same = sum(flags)
     picks = {

@@ -23,6 +23,10 @@ String
      - Fills the `{}` placeholders of a format string, with an optional Python format specification such as `{:.2f}`.
    * - :ref:`INITCAP <initcap>`
      - Converts the first letter of each word to uppercase, and the rest to lowercase.
+   * - :ref:`JSON_EXTRACT_PATH <json_extract_path>`
+     - Returns the value at a path of keys in JSON text or a struct, as `#>` does.
+   * - :ref:`JSON_EXTRACT_PATH_TEXT <json_extract_path>`
+     - Returns the value at a path of keys in JSON text or a struct as text, as `#>>` does.
    * - :ref:`LEFT <left>`
      - Returns the first (leftmost) `n` characters.
    * - :ref:`LENGTH <length>`
@@ -49,6 +53,8 @@ String
      - Returns True if `pattern` matches the value (optional: `options`).
    * - :ref:`REGEXP_REPLACE <regexp_replace>`
      - Replaces the first match of `pattern` with `replacement` (optional: `flags`; 'g' replaces all matches).
+   * - :ref:`REGEXP_SUBSTR <regexp_substr>`
+     - Returns the `n`th match of `pattern`, or its capture group, or NULL if there is none.
    * - :ref:`REPEAT <repeat>`
      - Returns the string repeated `n` times.
    * - :ref:`REPLACE <replace>`
@@ -325,6 +331,36 @@ Converts the first letter of each word to uppercase, and the rest to lowercase.
     # │ HELLO       ┆ Hello       │
     # │ wOrLd       ┆ World       │
     # └─────────────┴─────────────┘
+
+.. _json_extract_path:
+
+JSON_EXTRACT_PATH, JSON_EXTRACT_PATH_TEXT
+-----------------------------------------
+Returns the value at a path of keys, or of array indexes counted from 0, in JSON text or a
+struct: ``JSON_EXTRACT_PATH(j, 'a', 'b')`` is ``j #> '{a,b}'`` and ``JSON_EXTRACT_PATH_TEXT`` is
+``j #>> '{a,b}'``, as in Postgres. The keys are literals. NULL if there is no such value; unlike
+Postgres, ``JSON_EXTRACT_PATH`` of JSON text gives the value's text, as ``#>`` does.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"j": ['{"user": {"name": "Ann", "tags": ["a", "b"]}}', '{"user": {}}']})
+    df.sql("""
+      SELECT
+        JSON_EXTRACT_PATH_TEXT(j, 'user', 'name') AS name,
+        JSON_EXTRACT_PATH_TEXT(j, 'user', 'tags', 1) AS tag
+      FROM self
+    """)
+    # shape: (2, 2)
+    # ┌──────┬──────┐
+    # │ name ┆ tag  │
+    # │ ---  ┆ ---  │
+    # │ str  ┆ str  │
+    # ╞══════╪══════╡
+    # │ Ann  ┆ b    │
+    # │ null ┆ null │
+    # └──────┴──────┘
 
 .. _left:
 
@@ -728,6 +764,34 @@ to the whole match.
     # │ ab-cd   ┆ cd-ab   │
     # │ x       ┆ x       │
     # └─────────┴─────────┘
+
+.. _regexp_substr:
+
+REGEXP_SUBSTR
+-------------
+Returns the substring of the `n`\ th match of `pattern` (optional, default 1), or of its capture
+group `subexpr` (first match only), as in Postgres; NULL if there is no such match. `flags`
+'i' makes the match case-insensitive and 'c' case-sensitive; the `start` position must be 1.
+The pattern is a Rust regex: an alternation takes the first alternative that matches, where
+Postgres takes the longest.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["user=Ann path=/a", "path=/b"]})
+    df.sql(r"""
+      SELECT REGEXP_SUBSTR(s, 'user=(\w+)', 1, 1, 'c', 1) AS user FROM self
+    """)
+    # shape: (2, 1)
+    # ┌──────┐
+    # │ user │
+    # │ ---  │
+    # │ str  │
+    # ╞══════╡
+    # │ Ann  │
+    # │ null │
+    # └──────┘
 
 .. _repeat:
 

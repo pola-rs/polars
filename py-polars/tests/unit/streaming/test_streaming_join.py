@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 from datetime import datetime, timedelta
+from itertools import product
 from typing import TYPE_CHECKING, Any, Literal
 
 import hypothesis.strategies as st
@@ -678,10 +679,16 @@ def test_merge_join_many_partitions(
 
 @pytest.mark.parametrize("key_type", ["list", "array", "struct"])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
-@pytest.mark.parametrize("maintain_order", ["left_right", "right_left"])
-@pytest.mark.parametrize("descending", [False, True])
-@pytest.mark.parametrize("nulls_last", [False, True])
-@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("descending", "maintain_order", "nulls_last", "nulls_equal"),
+    [
+        # Descending nested keys are the regression case. Check both row orders
+        # and all null combinations there, with ascending controls.
+        *product([True], ["left_right", "right_left"], [False, True], [False, True]),
+        (False, "left_right", False, True),
+        (False, "right_left", True, False),
+    ],
+)
 def test_merge_join_nested_key_30871(
     key_type: str,
     how: JoinStrategy,
@@ -1022,6 +1029,7 @@ def test_streaming_merge_join_send_port_done_27547() -> None:
 
 @pytest.mark.parametrize("threads", ["1", "2", "4"])
 @pytest.mark.parametrize("morsel_size", ["1", "4", "100000"])
+@pytest.mark.parametrize("single_table", [True, False])
 @pytest.mark.parametrize(
     ("how", "maintain_order", "swap"),
     [
@@ -1035,12 +1043,17 @@ def test_streaming_join_unmatched_build_order_29362(
     plmonkeypatch: PlMonkeyPatch,
     threads: str,
     morsel_size: str,
+    single_table: bool,
     how: JoinStrategy,
     maintain_order: MaintainOrderJoin,
     swap: bool,
 ) -> None:
     plmonkeypatch.setenv("POLARS_MAX_THREADS", threads)
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", morsel_size)
+    if not single_table:
+        # One table per pipeline, so the unmatched rows are put back in build order
+        # across tables.
+        plmonkeypatch.setenv("POLARS_JOIN_SINGLE_TABLE_MAX_ROWS", "0")
 
     n = 200
     # Interleaved duplicate keys, nulls, and matches so that unmatched rows
@@ -1263,9 +1276,18 @@ def test_streaming_join_string_key_runs(
 
 @pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
-@pytest.mark.parametrize("build", ["unique", "unique_with_null", "repeated"])
-@pytest.mark.parametrize("probe_nulls", [False, True])
-@pytest.mark.parametrize("all_match", [False, True])
+@pytest.mark.parametrize(
+    ("build", "probe_nulls", "all_match"),
+    [
+        pytest.param("unique", False, True, id="all-match"),
+        pytest.param("unique", False, False, id="missing-keys"),
+        pytest.param("unique", True, True, id="nulls-in-probe"),
+        pytest.param("unique_with_null", False, True, id="null-in-build"),
+        pytest.param("unique_with_null", True, True, id="nulls-on-both-sides"),
+        pytest.param("repeated", False, True, id="duplicate-in-build"),
+        pytest.param("repeated", True, True, id="duplicate-and-missing"),
+    ],
+)
 def test_streaming_join_unique_build_keys(
     key_type: str,
     how: JoinStrategy,
@@ -1274,7 +1296,13 @@ def test_streaming_join_unique_build_keys(
     all_match: bool,
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "16")
+    if build == "repeated" and probe_nulls:
+        # In the first 17 probe rows, the null at 5 cancels the extra match at 9.
+        # Equal input and output sizes alone do not make the probe rows reusable.
+        plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
+        plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "17")
+    else:
+        plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "16")
     plmonkeypatch.setenv("POLARS_JOIN_NUM_PARTITIONS", "4")
     i = pl.int_range(200)
     k = (i * 7) % (20 if all_match else 30)
@@ -1296,7 +1324,10 @@ def test_streaming_join_unique_build_keys(
         )
         .lazy()
     )
-    for nulls_equal, coalesce in [(False, True), (True, False), (True, True)]:
+    join_options = [(False, True), (True, False)]
+    if probe_nulls or build == "unique_with_null":
+        join_options.append((True, True))
+    for nulls_equal, coalesce in join_options:
         q = probe.join(
             dim,
             on=list(keys),
@@ -1536,10 +1567,19 @@ _OUT_OF_CORE_MODES = _modes("grace", "hybrid", "one_partition", _SPILLED_MODE)
 
 
 @_OUT_OF_CORE_MODES
-@pytest.mark.parametrize("threads", ["1", None])
-@pytest.mark.parametrize("nulls_equal", [False, True])
-@pytest.mark.parametrize("build_side", ["force_left", "force_right"])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize(
+    ("build_side", "nulls_equal", "threads"),
+    [
+        ("force_left", False, None),
+        ("force_left", True, None),
+        ("force_right", False, None),
+        ("force_right", True, None),
+        # Also cover each join kind and build orientation with one pipeline.
+        ("force_left", False, "1"),
+        ("force_right", True, "1"),
+    ],
+)
 def test_streaming_join_out_of_core(
     join_mode: str,
     how: JoinStrategy,
