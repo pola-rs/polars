@@ -5,7 +5,8 @@ use num_traits::ToPrimitive;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
-const DEFAULT_BIN_COUNT: usize = 10;
+/// The number of bins of a `hist` given neither `bin_count` nor `bins`.
+pub const DEFAULT_HIST_BIN_COUNT: usize = 10;
 
 fn get_breaks<T>(
     ca: &ChunkedArray<T>,
@@ -40,44 +41,30 @@ where
             }
         },
         (bin_count, None) => {
-            // User-supplied bin count, or 10 by default. Compute edges from the data.
-            let bin_count = bin_count.unwrap_or(DEFAULT_BIN_COUNT);
-            let n = ca.len() - ca.null_count();
-            let (offset, width, upper_limit) = if n == 0 {
-                // No non-null items; supply unit interval.
-                (0.0, 1.0 / bin_count as f64, 1.0)
-            } else if n == 1 {
-                // Unit interval around single point
-                let idx = ca.first_non_null().unwrap();
-                // SAFETY: idx is guaranteed to contain an element.
-                let center = unsafe { ca.get_unchecked(idx) }.unwrap().to_f64().unwrap();
-                (center - 0.5, 1.0 / bin_count as f64, center + 0.5)
-            } else {
-                // Determine outer bin edges from the data itself
-                let min_value = ca.min().unwrap().to_f64().unwrap();
-                let max_value = ca.max().unwrap().to_f64().unwrap();
-
-                // All data points are identical--use unit interval.
-                if min_value == max_value {
-                    (min_value - 0.5, 1.0 / bin_count as f64, max_value + 0.5)
-                } else {
-                    (
-                        min_value,
-                        (max_value - min_value) / bin_count as f64,
-                        max_value,
-                    )
-                }
-            };
-            // Manually set the final value to the maximum value to ensure the final value isn't
-            // missed due to floating-point precision.
-            let out = (0..bin_count)
-                .map(|x| (x as f64 * width) + offset)
-                .chain(std::iter::once(upper_limit))
-                .collect::<Vec<f64>>();
-            (out, true)
+            let bounds = ca
+                .min_max()
+                .map(|(min, max)| (min.to_f64().unwrap(), max.to_f64().unwrap()));
+            let bin_count = bin_count.unwrap_or(DEFAULT_HIST_BIN_COUNT);
+            (uniform_breaks(bounds, bin_count), true)
         },
     };
     Ok((bins, uniform))
+}
+
+fn uniform_breaks(bounds: Option<(f64, f64)>, bin_count: usize) -> Vec<f64> {
+    let (offset, width, upper_limit) = match bounds {
+        // No non-null items; supply unit interval.
+        None => (0.0, 1.0 / bin_count as f64, 1.0),
+        // All data points are identical--use unit interval.
+        Some((min, max)) if min == max => (min - 0.5, 1.0 / bin_count as f64, max + 0.5),
+        Some((min, max)) => (min, (max - min) / bin_count as f64, max),
+    };
+    // Manually set the final value to the maximum value to ensure the final value isn't
+    // missed due to floating-point precision.
+    (0..bin_count)
+        .map(|x| (x as f64 * width) + offset)
+        .chain(std::iter::once(upper_limit))
+        .collect()
 }
 
 // O(n) implementation when buckets are fixed-size.
@@ -183,6 +170,21 @@ impl HistBreaks {
             get_breaks(ca, bin_count, bins)?
         });
         Ok(Self { edges, uniform })
+    }
+
+    /// The edges `new` gives for `bin_count` bins over values in `bounds`, `None` if all are null.
+    pub fn from_bounds(bounds: Option<(f64, f64)>, bin_count: usize) -> PolarsResult<Self> {
+        if let Some((min, max)) = bounds {
+            // NaN bounds pass, as `new` gives them for an all-NaN column.
+            polars_ensure!(
+                min <= max || min.is_nan() || max.is_nan(),
+                InvalidOperation: "`hist` bounds must have min <= max, got min={} and max={}", min, max
+            );
+        }
+        Ok(Self {
+            edges: uniform_breaks(bounds, bin_count),
+            uniform: true,
+        })
     }
 
     pub fn edges(&self) -> &[f64] {
