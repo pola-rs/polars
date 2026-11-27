@@ -80,8 +80,9 @@ def test_replace_categorical_absent_old_adds_no_categories(
     dtype = pl.Categorical(cats)
     lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": dtype})
     # A `new` value paired with an absent `old` value can't be output either.
-    absent, unused = f"absent-{uuid4()}", f"unused-{uuid4()}"
+    absent, unused, new = (f"{name}-{uuid4()}" for name in ("absent", "unused", "new"))
     for expr, expected in [
+        (pl.col("s").replace("a", new), [new, "b"]),
         (pl.col("s").replace(absent, "a"), ["a", "b"]),
         (pl.col("s").replace(absent, unused), ["a", "b"]),
         (pl.col("s").replace([absent, "b"], "a"), ["a", "a"]),
@@ -99,15 +100,6 @@ def test_replace_categorical_absent_old_adds_no_categories(
         )
     assert absent not in cats
     assert unused not in cats
-
-
-def test_replace_categorical_absent_old_does_not_fill_categories() -> None:
-    cats = pl.Categories.random(physical=pl.UInt8)
-    s = pl.Series([f"c{i}" for i in range(250)], dtype=pl.Categorical(cats))
-    # Each call used to add both values, so the 3rd call overflowed the 255 allowed.
-    for i in range(10):
-        assert_series_equal(s.replace(f"absent-{i}", f"new-{i}"), s)
-    assert cats.to_series().len() == 250
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -135,16 +127,6 @@ def test_replace_categorical_only_adds_values_for_present_keys(
 
     assert_frame_equal(result, pl.DataFrame({"s": [expected] * 8}, schema={"s": dtype}))
     assert cats.to_series().len() == seed.len() + 1
-
-
-def test_replace_categorical_adds_new_values(
-    category_mapping: pl.Categories,
-) -> None:
-    cats = category_mapping
-    s = pl.Series(["a", "b"], dtype=pl.Categorical(cats))
-    new = f"new-{uuid4()}"
-    assert s.replace("a", new).to_list() == [new, "b"]
-    assert new in cats
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])

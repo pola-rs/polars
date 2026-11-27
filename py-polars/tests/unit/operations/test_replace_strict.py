@@ -177,22 +177,30 @@ def test_replace_strict_join_result_name_collision() -> None:
     )
 
 
+@pytest.mark.parametrize("map_keys", [False, True])
 @pytest.mark.parametrize("with_default", [False, True])
 def test_replace_strict_only_adds_used_output_categories(
-    with_default: bool,
+    map_keys: bool, with_default: bool
 ) -> None:
     cats = pl.Categories.random(physical=pl.UInt8)
-    dtype = pl.Categorical(cats)
-    seed = pl.Series([f"c{i}" for i in range(254)], dtype=dtype)
-    s = pl.Series([1])
-    mapping = {1: "used", 2: "unused"}
+    cat = pl.Categorical(cats)
+    seed = pl.Series([f"c{i}" for i in range(254)], dtype=cat)
+    entries = pl.Series(
+        [[{"key": "used", "value": "v"}], [{"key": "unused", "value": "w"}]]
+    )
+    dtype = pl.Map(cat, pl.String) if map_keys else cat
+    new = pl.lit(entries).implode() if map_keys else ["used", "unused"]
+    kwargs: dict[str, Any] = {"default": None} if with_default else {}
 
-    if with_default:
-        result = s.replace_strict(mapping, default=None, return_dtype=dtype)
-    else:
-        result = s.replace_strict(mapping, return_dtype=dtype)
+    # a call that raises adds nothing either.
+    for values in ["used", ["used", "unused"]]:
+        with pytest.raises(InvalidOperationError, match="incomplete mapping"):
+            pl.Series([1, 3]).replace_strict([1, 2], values, return_dtype=cat)
+    assert cats.to_series().len() == seed.len()
 
-    assert_series_equal(result, pl.Series(["used"], dtype=dtype))
+    result = pl.Series([1]).replace_strict([1, 2], new, return_dtype=dtype, **kwargs)
+    assert result.dtype == dtype
+    assert "used" in cats
     assert "unused" not in cats
     assert cats.to_series().len() == seed.len() + 1
 
@@ -296,43 +304,29 @@ def test_replace_strict_categorical_nested_value_after_key_filter(
 
 @pytest.mark.parametrize("register_keys", [False, True])
 @pytest.mark.parametrize("with_default", [False, True])
-def test_replace_strict_all_null_categorical_resolves_list_dtype(
-    register_keys: bool,
-    with_default: bool,
+def test_replace_strict_all_null_categorical_resolves_dtype(
+    register_keys: bool, with_default: bool
 ) -> None:
     dtype = pl.Categorical(pl.Categories.random())
     s = pl.Series([None, None], dtype=dtype)
     if register_keys:
         pl.Series(["x", "y"], dtype=dtype)
-
-    if with_default:
+    label = pl.Categorical(pl.Categories.random())
+    kwargs: dict[str, Any] = {"default": None} if with_default else {}
+    cases: list[tuple[list[Any], PolarsDataType, PolarsDataType]] = [
+        ([[1], [2]], pl.List, pl.List(pl.Int64)),
+        (
+            [{"xs": [1], "label": "a"}, {"xs": [2], "label": "b"}],
+            pl.Struct({"xs": pl.List, "label": label}),
+            pl.Struct({"xs": pl.List(pl.Int64), "label": label}),
+        ),
+    ]
+    for new, return_dtype, expected in cases:
+        values = pl.lit(pl.Series(new)).implode()
         result = s.replace_strict(
-            {"x": [1], "y": [2]}, default=None, return_dtype=pl.List
+            ["x", "y"], values, return_dtype=return_dtype, **kwargs
         )
-    else:
-        result = s.replace_strict({"x": [1], "y": [2]}, return_dtype=pl.List)
-    assert_series_equal(result, pl.Series([None, None], dtype=pl.List(pl.Int64)))
-
-
-@pytest.mark.parametrize("with_default", [False, True])
-def test_replace_strict_all_null_categorical_resolves_struct_list_dtype(
-    with_default: bool,
-) -> None:
-    s = pl.Series([None], dtype=pl.Categorical(pl.Categories.random()))
-    categories = pl.Categories.random()
-    dtype = pl.Struct({"xs": pl.List, "label": pl.Categorical(categories)})
-    new = pl.Series([{"xs": [1], "label": "a"}, {"xs": [2], "label": "b"}])
-
-    values = pl.lit(new).implode()
-    if with_default:
-        result = s.replace_strict(["x", "y"], values, default=None, return_dtype=dtype)
-    else:
-        result = s.replace_strict(["x", "y"], values, return_dtype=dtype)
-
-    expected_dtype = pl.Struct(
-        {"xs": pl.List(pl.Int64), "label": pl.Categorical(categories)}
-    )
-    assert_series_equal(result, pl.Series([None], dtype=expected_dtype))
+        assert_series_equal(result, pl.Series([None, None], dtype=expected))
 
 
 @pytest.mark.parametrize(
@@ -655,98 +649,57 @@ def test_replace_strict_str_enum_27060() -> None:
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("register_absent", [False, True])
-def test_replace_strict_categorical_validates_all_numeric_replacements(
+def test_replace_strict_validates_unused_replacements(
     engine: EngineType, register_absent: bool
 ) -> None:
     cats = pl.Categories.random()
-    dtype = pl.Categorical(cats)
-    lf = pl.LazyFrame({"s": ["a"]}, schema={"s": dtype})
+    cat = pl.Categorical(cats)
     if register_absent:
-        pl.Series(["absent"], dtype=dtype)
-
-    with pytest.raises(
-        InvalidOperationError, match="conversion from `str` to `u8` failed"
-    ):
-        lf.select(
+        pl.Series(["absent"], dtype=cat)
+    lf = pl.LazyFrame({"s": ["a"], "i": [1]}, schema={"s": cat, "i": pl.Int64})
+    code_n = pl.Struct({"code": cat, "n": pl.UInt8})
+    used, unused = {"code": "used", "n": "1"}, {"code": "unused", "n": "bad"}
+    structs = pl.lit(pl.Series([used, unused])).implode()
+    entries = [[{"key": "x", "value": used}], [{"key": "y", "value": unused}]]
+    arrays = pl.Series(
+        [["x"]], dtype=pl.Array(pl.Categorical(pl.Categories.random()), 1)
+    )
+    u8_error = "conversion from `str` to `u8` failed"
+    for expr, match in [
+        (
             pl.col("s").replace_strict(
                 {"a": "1", "absent": "bad"}, return_dtype=pl.UInt8
-            )
-        ).collect(engine=engine)
-
-
-@pytest.mark.parametrize("register_absent", [False, True])
-def test_replace_strict_categorical_validates_boolean_replacements(
-    register_absent: bool,
-) -> None:
-    dtype = pl.Categorical(pl.Categories.random())
-    s = pl.Series(["a"], dtype=dtype)
-    if register_absent:
-        pl.Series(["absent"], dtype=dtype)
-
-    with pytest.raises(
-        InvalidOperationError, match="casting from Utf8View to Boolean not supported"
-    ):
-        s.replace_strict({"absent": "yes"}, default=False, return_dtype=pl.Boolean)
-
-
-def test_replace_strict_validates_non_categorical_struct_fields() -> None:
-    cats = pl.Categories.random()
-    dtype = pl.Struct({"code": pl.Categorical(cats), "n": pl.UInt8})
-    s = pl.Series(["a"], dtype=pl.Categorical)
-    new = pl.Series([{"code": "used", "n": "1"}, {"code": "unused", "n": "bad"}])
-
-    with pytest.raises(
-        InvalidOperationError, match="conversion from `str` to `u8` failed"
-    ):
-        s.replace_strict(["a", "absent"], new, return_dtype=dtype)
+            ),
+            u8_error,
+        ),
+        (
+            pl.col("s").replace_strict(
+                {"absent": "yes"}, default=False, return_dtype=pl.Boolean
+            ),
+            "casting from Utf8View to Boolean not supported",
+        ),
+        (
+            pl.col("s").replace_strict(["a", "absent"], structs, return_dtype=code_n),
+            u8_error,
+        ),
+        (
+            pl.col("i").replace_strict(
+                [1, 2],
+                pl.lit(pl.Series(entries)).implode(),
+                return_dtype=pl.Map(pl.String, code_n),
+            ),
+            u8_error,
+        ),
+        (
+            pl.col("i").replace_strict(
+                [2],
+                pl.lit(arrays).implode(),
+                default=None,
+                return_dtype=pl.Array(cat, 1),
+            ),
+            "cannot cast Array inner type",
+        ),
+    ]:
+        with pytest.raises(InvalidOperationError, match=match):
+            lf.select(expr).collect(engine=engine)
     assert "used" not in cats
-
-
-def test_replace_strict_validates_non_categorical_map_fields() -> None:
-    dtype = pl.Map(
-        pl.String,
-        pl.Struct({"code": pl.Categorical(pl.Categories.random()), "n": pl.UInt8}),
-    )
-    new = pl.Series(
-        [
-            [{"key": "x", "value": {"code": "used", "n": "1"}}],
-            [{"key": "y", "value": {"code": "unused", "n": "bad"}}],
-        ]
-    )
-
-    with pytest.raises(
-        InvalidOperationError, match="conversion from `str` to `u8` failed"
-    ):
-        pl.Series([1]).replace_strict([1, 2], pl.lit(new).implode(), return_dtype=dtype)
-
-
-def test_replace_strict_only_adds_used_map_key_categories() -> None:
-    cats = pl.Categories.random(physical=pl.UInt8)
-    seed = pl.Series([f"c{i}" for i in range(254)], dtype=pl.Categorical(cats))
-    dtype = pl.Map(pl.Categorical(cats), pl.String)
-    new = pl.Series(
-        [
-            [{"key": "used", "value": "v"}],
-            [{"key": "unused", "value": "w"}],
-        ]
-    )
-
-    result = pl.Series([1]).replace_strict(
-        [1, 2], pl.lit(new).implode(), return_dtype=dtype
-    )
-
-    assert result.dtype == dtype
-    assert "used" in cats
-    assert "unused" not in cats
-    assert cats.to_series().len() == seed.len() + 1
-
-
-def test_replace_strict_validates_array_categorical_cast() -> None:
-    source_dtype = pl.Array(pl.Categorical(pl.Categories.random()), 1)
-    return_dtype = pl.Array(pl.Categorical(pl.Categories.random()), 1)
-    new = pl.Series([["x"]], dtype=source_dtype)
-
-    with pytest.raises(InvalidOperationError, match="cannot cast Array inner type"):
-        pl.Series([1]).replace_strict(
-            [2], pl.lit(new).implode(), default=None, return_dtype=return_dtype
-        )

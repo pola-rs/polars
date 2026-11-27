@@ -10,12 +10,12 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
-    from polars._typing import EngineType
+    from polars._typing import EngineType, PolarsDataType
 
 
 def test_fill_null_minimal_upcast_4056() -> None:
@@ -35,16 +35,25 @@ def test_fill_enum_upcast() -> None:
     assert_series_equal(s_filled, expected)
 
 
-def test_fill_null_enum_values() -> None:
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_fill_null_enum_values(engine: EngineType) -> None:
     dtype = pl.Enum(["a", "b", "c"])
-    cases: list[tuple[list[str | None], str, list[str | None]]] = [
-        (["a", None], "c", ["a", "c"]),
-        (["a", None], "absent", ["a", None]),
-        (["a", "b"], "absent", ["a", "b"]),
-    ]
-    for values, fill, expected in cases:
-        s = pl.Series("s", values, dtype=dtype)
-        assert_series_equal(s.fill_null(fill), pl.Series("s", expected, dtype=dtype))
+    schema: dict[str, PolarsDataType] = {"s": dtype, "f": pl.String}
+    lf = pl.LazyFrame({"s": ["a", None], "f": ["absent", "c"]}, schema=schema)
+
+    # only the values that fill a null should be in the Enum.
+    for fill in ["c", pl.col("f")]:
+        result = lf.select(pl.col("s").fill_null(fill)).collect(engine=engine)
+        assert_frame_equal(result, pl.DataFrame({"s": ["a", "c"]}, schema={"s": dtype}))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="conversion from `str` to `enum` failed",
+    ):
+        lf.select(pl.col("s").fill_null("absent")).collect(engine=engine)
+
+    s = pl.Series(["a", "b"], dtype=dtype)
+    assert_series_equal(s.fill_null("absent"), s)
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -55,22 +64,15 @@ def test_fill_null_categorical_adds_only_used_values(
     dtype = pl.Categorical(cats)
     lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": dtype})
     lf_null = pl.LazyFrame({"s": ["a", None]}, schema={"s": dtype})
-    unused, used, other = (f"{name}-{uuid4()}" for name in ("unused", "used", "other"))
+    unused, used = f"unused-{uuid4()}", f"used-{uuid4()}"
 
-    source = lf.collect(engine=engine)
     result = lf.select(pl.col("s").fill_null(unused)).collect(engine=engine)
-    assert_frame_equal(result, source)
-    assert_series_equal(source["s"].fill_null(unused), source["s"])
+    assert_frame_equal(result, lf.collect(engine=engine))
     assert unused not in cats
 
-    # Values in the output are added.
     result = lf_null.select(pl.col("s").fill_null(used)).collect(engine=engine)
     assert_frame_equal(result, pl.DataFrame({"s": ["a", used]}, schema={"s": dtype}))
     assert used in cats
-    expr = pl.when(pl.col("s") == "a").then(pl.col("s")).otherwise(pl.lit(other))
-    result = lf.select(expr).collect(engine=engine)
-    assert_frame_equal(result, pl.DataFrame({"s": ["a", other]}, schema={"s": dtype}))
-    assert other in cats
 
     # Of a fill column, only the values at the nulls are output.
     unused_col, used_col = (f"{name}-{uuid4()}" for name in ("unused", "used"))

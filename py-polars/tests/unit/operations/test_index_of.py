@@ -366,32 +366,17 @@ def test_categorical(convert_to_literal: bool) -> None:
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_index_of_categorical_absent_adds_no_categories(
-    category_mapping: pl.Categories, engine: EngineType
+@pytest.mark.parametrize("enum", [False, True])
+def test_index_of_absent_string(
+    category_mapping: pl.Categories, engine: EngineType, enum: bool
 ) -> None:
     cats = category_mapping
-    s = pl.Series("s", ["b", None, "a"], dtype=pl.Categorical(cats))
+    dtype = pl.Enum(["a", "b", "c"]) if enum else pl.Categorical(cats)
+    s = pl.Series("s", ["b", None, "a"], dtype=dtype)
     absent = f"absent-{uuid4()}"
     lf = s.to_frame().with_columns(needle=pl.lit(absent)).lazy()
     cases: list[tuple[IntoExpr, int | None]] = [
         (absent, None),
-        (pl.col("needle").first(), None),
-        ("a", 2),
-        (pl.lit(None, dtype=pl.String), 1),
-    ]
-    for needle, expected in cases:
-        result = lf.select(pl.col("s").index_of(needle)).collect(engine=engine)
-        assert result.item() == expected
-    assert s.index_of(absent) is None
-    assert absent not in cats
-
-
-@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_index_of_enum_absent(engine: EngineType) -> None:
-    s = pl.Series("s", ["b", None, "a"], dtype=pl.Enum(["a", "b", "c"]))
-    lf = s.to_frame().with_columns(needle=pl.lit("absent")).lazy()
-    cases: list[tuple[IntoExpr, int | None]] = [
-        ("absent", None),
         ("c", None),
         (pl.col("needle").first(), None),
         ("a", 2),
@@ -400,8 +385,10 @@ def test_index_of_enum_absent(engine: EngineType) -> None:
     for needle, expected in cases:
         result = lf.select(pl.col("s").index_of(needle)).collect(engine=engine)
         assert result.item() == expected
-    assert s.index_of("absent") is None
-    assert s.sort().index_of("absent") is None
+
+    assert s.index_of(absent) is None
+    assert s.sort().index_of(absent) is None
+    assert absent not in cats
 
 
 @pytest.mark.parametrize("value", [0, 0.1])
