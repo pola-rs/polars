@@ -6,9 +6,9 @@ use std::sync::LazyLock;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 use object_store::ClientOptions;
 #[cfg(feature = "aws")]
-use object_store::aws::AmazonS3Builder;
-#[cfg(feature = "aws")]
 pub use object_store::aws::AmazonS3ConfigKey;
+#[cfg(feature = "aws")]
+use object_store::aws::{AmazonS3Builder, AwsCredential};
 #[cfg(feature = "azure")]
 pub use object_store::azure::AzureConfigKey;
 #[cfg(feature = "azure")]
@@ -454,7 +454,20 @@ impl CloudOptions {
         let opt_credential_provider =
             self.initialized_credential_provider(clear_cached_credentials)?;
 
-        let mut builder = AmazonS3Builder::from_env()
+        // As `AmazonS3Builder::from_env`, but empty values count as unset, as in botocore.
+        let mut builder = AmazonS3Builder::new();
+        for (key, value) in std::env::vars_os() {
+            if let (Some(key), Some(value)) = (key.to_str(), value.to_str()) {
+                if let (true, false, Ok(key)) = (
+                    key.starts_with("AWS_"),
+                    value.is_empty(),
+                    key.to_ascii_lowercase().parse::<AmazonS3ConfigKey>(),
+                ) {
+                    builder = builder.with_config(key, value);
+                }
+            }
+        }
+        let mut builder = builder
             .with_client_options(get_client_options())
             .with_url(url.clone().to_string());
 
@@ -487,7 +500,7 @@ impl CloudOptions {
             provider => provider.is_some(),
         };
 
-        // The selected profile's keys and region, for what is still unset.
+        // The selected profile's keys, region and endpoint, for what is still unset.
         let requested_profile = match &self.credential_provider {
             Some(PlCredentialProvider::AutoInit(
                 super::credential_provider::AutoInitConfig::Aws {
@@ -498,40 +511,75 @@ impl CloudOptions {
             _ => None,
         };
         let profile = super::aws_profile::load_aws_profile(requested_profile.as_deref());
-        // Options win over the environment. The builder has defaults for some keys.
-        let option = |key: AmazonS3ConfigKey| {
-            let from_options = match &self.config {
-                Some(CloudConfig::Aws(options)) => options
-                    .iter()
-                    .find(|(k, _)| *k == key)
-                    .map(|(_, v)| v.clone()),
-                _ => None,
-            };
-            from_options.or_else(|| builder.get_config_value(&key))
+        // The last value wins, as when the options are applied below.
+        let from_options = |key: AmazonS3ConfigKey| match &self.config {
+            Some(CloudConfig::Aws(options)) => options
+                .iter()
+                .rev()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.clone()),
+            _ => None,
         };
-        let unsigned = option(AmazonS3ConfigKey::SkipSignature)
-            .is_some_and(|v| v.eq_ignore_ascii_case("true"));
-        if !provider_signs && !unsigned && option(AmazonS3ConfigKey::AccessKeyId).is_none() {
-            if let Some(err) = profile.error() {
-                return Err(err);
-            }
-            for (key, value) in [
-                (
-                    AmazonS3ConfigKey::AccessKeyId,
-                    &profile.values.access_key_id,
-                ),
-                (
-                    AmazonS3ConfigKey::SecretAccessKey,
-                    &profile.values.secret_access_key,
-                ),
-                (AmazonS3ConfigKey::Token, &profile.values.session_token),
-            ] {
-                if let Some(value) = value {
-                    builder = builder.with_config(key, value);
+        // Options win over the environment.
+        let option =
+            |key: AmazonS3ConfigKey| from_options(key).or_else(|| builder.get_config_value(&key));
+        // As object_store parses it.
+        let unsigned = option(AmazonS3ConfigKey::SkipSignature).is_some_and(|v| {
+            matches!(
+                v.to_ascii_lowercase().as_str(),
+                "1" | "true" | "on" | "yes" | "y"
+            )
+        });
+        let endpoint_set = option(AmazonS3ConfigKey::Endpoint).is_some()
+            || option(AmazonS3ConfigKey::S3Endpoint).is_some();
+        if !provider_signs && !unsigned {
+            let (key_id, secret_key) = (
+                from_options(AmazonS3ConfigKey::AccessKeyId),
+                from_options(AmazonS3ConfigKey::SecretAccessKey),
+            );
+            let credential = if key_id.is_some() || secret_key.is_some() {
+                // No session token from the environment, which may be for another endpoint.
+                key_id
+                    .zip(secret_key)
+                    .map(|(key_id, secret_key)| AwsCredential {
+                        key_id,
+                        secret_key,
+                        token: from_options(AmazonS3ConfigKey::Token),
+                    })
+            } else if option(AmazonS3ConfigKey::AccessKeyId).is_some()
+                && (requested_profile.is_none() || profile.values.credential().is_none())
+            {
+                // Keys in the environment, unless the options name a profile with keys.
+                None
+            } else {
+                // Web identity comes before the profile, unless the options name a profile.
+                let web_identity = requested_profile.is_none()
+                    && option(AmazonS3ConfigKey::WebIdentityTokenFile).is_some()
+                    && option(AmazonS3ConfigKey::RoleArn).is_some();
+                if let Some(err) = profile.error(web_identity) {
+                    return Err(err);
                 }
+                profile.values.credential().filter(|_| !web_identity)
+            };
+            if let Some(credential) = credential {
+                // Replaces partial credentials in the environment, such as a session token.
+                builder = builder.with_credentials(Arc::new(
+                    object_store::StaticCredentialProvider::new(credential),
+                ));
             }
         }
-        if let Some(region) = &profile.values.region {
+        // A Python provider object may use another profile; its own region and endpoint apply.
+        let same_profile = !provider_signs
+            || matches!(
+                self.credential_provider,
+                Some(PlCredentialProvider::AutoInit(_))
+            );
+        if let Some(endpoint) =
+            (profile.values.endpoint_url.as_ref()).filter(|_| !provider_signs && !endpoint_set)
+        {
+            builder = builder.with_config(AmazonS3ConfigKey::Endpoint, endpoint);
+        }
+        if let Some(region) = profile.values.region.as_ref().filter(|_| same_profile) {
             if builder
                 .get_config_value(&AmazonS3ConfigKey::Region)
                 .is_none()

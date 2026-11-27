@@ -263,16 +263,17 @@ class CredentialProviderAWS(CachingCredentialProvider):
         )
         options = {"region": region_name} if region_name is not None else {}
 
-        if endpoint_url := config.get("endpoint_url"):
-            if verbose():
-                eprint(f"[CredentialProviderAWS]: Loaded endpoint_url: {endpoint_url}")
-            return {**options, "endpoint_url": endpoint_url}
-
+        # An endpoint in the environment wins over the profile's, as in botocore.
         if any(
             os.getenv(k)
             for k in ("AWS_ENDPOINT", "AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_S3")
         ):
             return options
+
+        if endpoint_url := config.get("endpoint_url"):
+            if verbose():
+                eprint(f"[CredentialProviderAWS]: Loaded endpoint_url: {endpoint_url}")
+            return {**options, "endpoint_url": endpoint_url}
 
         use_virtual_hosted_style = storage_options.get("virtual_hosted_style_request")
         if use_virtual_hosted_style is None:
@@ -320,7 +321,12 @@ class CredentialProviderAWS(CachingCredentialProvider):
 
             return False
 
-        except self.EmptyCredentialError:
+        except self.EmptyCredentialError as e:
+            # A named profile must not fall back to other credentials.
+            if self.profile_name:
+                msg = f"aws_profile '{self.profile_name}' has no credentials"
+                raise polars.exceptions.ComputeError(msg) from e
+
             if verbose():
                 eprint("[CredentialProviderAWS]: Did not find any credentials")
 

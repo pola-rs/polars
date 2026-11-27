@@ -1,8 +1,9 @@
-//! The selected profile's keys and region from `~/.aws/config` and `~/.aws/credentials`, for when
-//! no credential provider gives credentials.
+//! The selected profile's keys, region and endpoint from `~/.aws/config` and
+//! `~/.aws/credentials`, for when no credential provider gives credentials.
 
 use std::path::Path;
 
+use object_store::aws::AwsCredential;
 use polars_error::{PolarsError, polars_err};
 use polars_utils::aliases::PlHashMap;
 
@@ -13,6 +14,8 @@ pub(crate) struct AwsProfile {
     /// `default` if no profile was named.
     pub(crate) name: String,
     pub(crate) named: bool,
+    /// The files read, as configured.
+    pub(crate) files: [String; 2],
     pub(crate) values: AwsProfileValues,
 }
 
@@ -24,20 +27,24 @@ pub(crate) fn load_aws_profile(requested: Option<&str>) -> AwsProfile {
         .map(str::to_string)
         .or_else(|| env("AWS_PROFILE"))
         .or_else(|| env("AWS_DEFAULT_PROFILE"));
-    let read = |var: &str, default: &str| {
-        let path = env(var);
-        let path = path.as_deref().unwrap_or(default);
-        std::fs::read_to_string(resolve_homedir(Path::new(path))).ok()
+    let files = [
+        env("AWS_CONFIG_FILE").unwrap_or_else(|| "~/.aws/config".to_string()),
+        env("AWS_SHARED_CREDENTIALS_FILE").unwrap_or_else(|| "~/.aws/credentials".to_string()),
+    ];
+    let read = |path: &str| {
+        let bytes = std::fs::read(resolve_homedir(Path::new(path))).ok()?;
+        Some(String::from_utf8_lossy(&bytes).into_owned())
     };
     let name = named.clone().unwrap_or_else(|| "default".to_string());
     let values = aws_profile_values(
         &name,
-        read("AWS_CONFIG_FILE", "~/.aws/config").as_deref(),
-        read("AWS_SHARED_CREDENTIALS_FILE", "~/.aws/credentials").as_deref(),
+        read(&files[0]).as_deref(),
+        read(&files[1]).as_deref(),
     );
     AwsProfile {
         name,
         named: named.is_some(),
+        files,
         values,
     }
 }
@@ -51,16 +58,24 @@ pub(crate) struct AwsProfileValues {
     pub(crate) secret_access_key: Option<String>,
     pub(crate) session_token: Option<String>,
     pub(crate) region: Option<String>,
-    /// Where the profile gets credentials that are not read here, such as `sso_session`.
+    pub(crate) endpoint_url: Option<String>,
+    /// Where the profile gets credentials that are not read here, such as `role_arn`.
     pub(crate) credential_source: Option<&'static str>,
 }
 
-/// Resolved before keys in the same profile.
-const BEFORE_KEYS: [&str; 4] = ["role_arn", "sso_session", "sso_start_url", "login_session"];
-/// Resolved when the profile has no keys.
-const WITHOUT_KEYS: [&str; 1] = ["credential_process"];
+impl AwsProfileValues {
+    pub(crate) fn credential(&self) -> Option<AwsCredential> {
+        Some(AwsCredential {
+            key_id: self.access_key_id.clone()?,
+            secret_key: self.secret_access_key.clone()?,
+            token: self.session_token.clone(),
+        })
+    }
+}
 
-/// The values of `profile`; the credentials file overrides the config file.
+/// The values of `profile`; the credentials file overrides the config file. Credentials come
+/// from the first source in botocore's order: assume-role, web identity, SSO, keys in the
+/// credentials file, `login_session`, `credential_process`, keys in the config file.
 pub(crate) fn aws_profile_values(
     profile: &str,
     config: Option<&str>,
@@ -69,65 +84,99 @@ pub(crate) fn aws_profile_values(
     let config = config.and_then(|c| section(c, profile, true));
     let credentials = credentials.and_then(|c| section(c, profile, false));
     let defined = config.is_some() || credentials.is_some();
-    let mut settings = config.unwrap_or_default();
-    settings.extend(credentials.unwrap_or_default());
+    let mut settings = config.clone().unwrap_or_default();
+    settings.extend(credentials.clone().unwrap_or_default());
 
-    let has_keys = settings.contains_key("aws_access_key_id");
-    let credential_source = BEFORE_KEYS
-        .into_iter()
-        .chain(WITHOUT_KEYS.into_iter().filter(|_| !has_keys))
-        .find(|k| settings.contains_key(*k));
-    let key = |k: &str| match credential_source {
-        Some(_) => None,
-        None => settings.get(k).cloned(),
+    let has = |k: &str| settings.contains_key(k);
+    let in_credentials = credentials.filter(|c| c.contains_key("aws_access_key_id"));
+    let credential_source = if has("role_arn") && has("web_identity_token_file") {
+        Some("web_identity_token_file")
+    } else if has("role_arn") {
+        Some("role_arn")
+    } else if has("sso_account_id") || has("sso_role_name") {
+        Some("sso_account_id")
+    } else if in_credentials.is_some() {
+        None
+    } else if has("login_session") {
+        Some("login_session")
+    } else if has("credential_process") {
+        Some("credential_process")
+    } else {
+        None
     };
+    // The keys and token come from one file.
+    let keys = in_credentials
+        .or(config)
+        .filter(|_| credential_source.is_none())
+        .unwrap_or_default();
+    let get = |s: &PlHashMap<String, String>, k: &str| s.get(k).filter(|v| !v.is_empty()).cloned();
     AwsProfileValues {
         defined,
-        access_key_id: key("aws_access_key_id"),
-        secret_access_key: key("aws_secret_access_key"),
-        session_token: key("aws_session_token"),
-        region: settings.get("region").filter(|r| !r.is_empty()).cloned(),
+        access_key_id: get(&keys, "aws_access_key_id"),
+        secret_access_key: get(&keys, "aws_secret_access_key"),
+        session_token: get(&keys, "aws_security_token").or_else(|| get(&keys, "aws_session_token")),
+        region: get(&settings, "region"),
+        endpoint_url: get(&settings, "endpoint_url"),
         credential_source,
     }
 }
 
 impl AwsProfile {
-    /// Why the profile's credentials cannot be read here, if so.
-    pub(crate) fn error(&self) -> Option<PolarsError> {
+    /// Why the profile's credentials cannot be read here, if so. Web identity from the
+    /// environment comes before the profile's sources other than `role_arn`.
+    pub(crate) fn error(&self, web_identity: bool) -> Option<PolarsError> {
         let profile = &self.name;
-        if self.named && !self.values.defined {
+        let values = &self.values;
+        if self.named && !values.defined {
+            let [config, credentials] = &self.files;
             return Some(polars_err!(
-                ComputeError: "AWS profile '{profile}' is not defined in the AWS config or credentials file"
+                ComputeError: "AWS profile '{profile}' is not defined in {config} or {credentials}"
             ));
         }
-        self.values.credential_source.map(|source| {
-            polars_err!(
-                ComputeError: "AWS profile '{profile}' gets its credentials through `{source}`, \
-                which Polars reads only with boto3 in Python; install boto3, or set the \
-                credentials in the environment: \
+        if web_identity && values.credential_source != Some("role_arn") {
+            return None;
+        }
+        if let Some(source) = values.credential_source {
+            let source = match source {
+                "sso_account_id" => "SSO".to_string(),
+                _ => format!("`{source}`"),
+            };
+            return Some(polars_err!(
+                ComputeError: "AWS profile '{profile}' gets its credentials through {source}, \
+                which Polars reads only through boto3 in Python; set the credentials in the \
+                environment instead: \
                 eval \"$(aws configure export-credentials --profile {profile} --format env)\""
-            )
-        })
+            ));
+        }
+        match (&values.access_key_id, &values.secret_access_key) {
+            (Some(_), None) => Some(polars_err!(
+                ComputeError: "AWS profile '{profile}' has aws_access_key_id but no \
+                aws_secret_access_key"
+            )),
+            _ => None,
+        }
     }
 }
 
 /// The settings of the profile's section: `[profile name]` or `[default]` in the config file,
-/// `[name]` in the credentials file. The last such section wins; nested settings are skipped.
+/// `[name]` in the credentials file. The last such section wins. Keys are case-insensitive and
+/// end at `=` or `:`; a line indented deeper than the key before it continues that key's value or
+/// nests under it, and is skipped.
 fn section(content: &str, profile: &str, config_file: bool) -> Option<PlHashMap<String, String>> {
-    let wanted = |header: &str| {
-        let name = match header.split_once(char::is_whitespace) {
-            Some(("profile", name)) if config_file => name,
-            _ if config_file && header != "default" => return false,
-            _ => header,
-        };
-        name.trim().trim_matches('"') == profile
+    let wanted = |header: &str| match header.split_once(char::is_whitespace) {
+        Some(("profile", name)) if config_file => name.trim().trim_matches(['"', '\'']) == profile,
+        _ => (!config_file || header == "default") && header == profile,
     };
     let mut out = None;
     let mut inside = false;
-    let mut nested_below: Option<usize> = None;
-    for line in content.lines() {
+    let mut key_indent: Option<usize> = None;
+    for line in content.trim_start_matches('\u{feff}').lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        if key_indent.is_some_and(|key_indent| indent > key_indent) {
             continue;
         }
         if let Some(rest) = trimmed.strip_prefix('[') {
@@ -136,22 +185,19 @@ fn section(content: &str, profile: &str, config_file: bool) -> Option<PlHashMap<
             if inside {
                 out = Some(PlHashMap::default());
             }
-            nested_below = None;
+            key_indent = None;
             continue;
         }
-        let indent = line.len() - line.trim_start().len();
-        if nested_below.is_some_and(|key_indent| indent > key_indent) {
+        let Some(at) = trimmed.find(['=', ':']) else {
             continue;
-        }
-        nested_below = None;
-        if let (true, Some(out), Some((key, value))) =
-            (inside, out.as_mut(), trimmed.split_once('='))
-        {
-            let (key, value) = (key.trim(), value.trim());
-            if value.is_empty() {
-                nested_below = Some(indent);
-            }
-            out.insert(key.to_string(), value.to_string());
+        };
+        key_indent = Some(indent);
+        if let (true, Some(out)) = (inside, out.as_mut()) {
+            let (key, value) = trimmed.split_at(at);
+            out.insert(
+                key.trim().to_ascii_lowercase(),
+                value[1..].trim().to_string(),
+            );
         }
     }
     out
@@ -172,6 +218,8 @@ s3 =
 
 [profile sso]
 sso_session = corp
+sso_account_id = 1
+sso_role_name = reader
 region = us-east-2
 ";
     const CREDENTIALS: &str = "
@@ -236,13 +284,30 @@ aws_secret_access_key = prod-secret
         let profile = |name: &str, named| AwsProfile {
             name: name.to_string(),
             named,
+            files: Default::default(),
             values: aws_profile_values(name, Some(CONFIG), Some(CREDENTIALS)),
         };
-        assert!(profile("missing", true).error().is_some());
-        assert!(profile("missing", false).error().is_none());
+        assert!(profile("missing", true).error(false).is_some());
+        assert!(profile("missing", false).error(false).is_none());
         let sso = profile("sso", true);
         assert_eq!(keys(&sso.values), (None, None, None, Some("us-east-2")));
-        assert!(sso.error().is_some());
+        assert!(sso.error(false).is_some());
+        // Web identity from the environment comes first.
+        assert!(sso.error(true).is_none());
+
+        // `credential_process` comes after keys in the credentials file, before those in the
+        // config file.
+        let config = "[profile p]\ncredential_process = x\naws_access_key_id = C\naws_secret_access_key = s\n";
+        let credentials = "[p]\naws_access_key_id = K\naws_secret_access_key = s\n";
+        let source =
+            |credentials| aws_profile_values("p", Some(config), credentials).credential_source;
+        assert_eq!(source(None), Some("credential_process"));
+        assert_eq!(source(Some(credentials)), None);
+        // `sso_session` alone configures a bearer token, not credentials.
+        let config =
+            "[profile b]\nsso_session = corp\naws_access_key_id = K\naws_secret_access_key = s\n";
+        let v = aws_profile_values("b", Some(config), None);
+        assert_eq!(v.access_key_id.as_deref(), Some("K"));
     }
 
     #[test]
@@ -265,5 +330,28 @@ aws_secret_access_key = prod-secret
             Some("[x]\nregion = b\n"),
         );
         assert_eq!(v.region.as_deref(), Some("b"));
+        // Any case, `:`, and a deeper line continues the value.
+        let v = aws_profile_values(
+            "x",
+            None,
+            Some("[x]\nAWS_ACCESS_KEY_ID : K\n  aws_access_key_id = L\n"),
+        );
+        assert_eq!(v.access_key_id.as_deref(), Some("K"));
+        // Even when it looks like a header.
+        let config = "[profile x]\naws_access_key_id = A\n[profile o]\nnote = n\n  [profile x]\n  aws_access_key_id = B\n";
+        let v = aws_profile_values("x", Some(config), None);
+        assert_eq!(v.access_key_id.as_deref(), Some("A"));
+        // The keys and token come from one file.
+        let v = aws_profile_values(
+            "x",
+            Some(
+                "[profile x]\naws_access_key_id = A\naws_secret_access_key = a\naws_session_token = T\n",
+            ),
+            Some("[x]\naws_access_key_id = B\naws_secret_access_key = b\n"),
+        );
+        assert_eq!(
+            (v.access_key_id.as_deref(), v.session_token),
+            (Some("B"), None)
+        );
     }
 }
