@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import importlib.util
 import re
 from collections.abc import Mapping
@@ -1340,6 +1341,8 @@ def _call_catalog_procedure(
         return _call_rewrite_manifests(catalog, stmt)
     if stmt["procedure"] == "rewrite_data_files":
         return _call_rewrite_data_files(catalog, stmt, predicate_of, storage_options)
+    if stmt["procedure"] == "expire_snapshots":
+        return _call_expire_snapshots(catalog, stmt)
     msg = f"unsupported procedure {stmt['procedure']!r}"
     raise NotImplementedError(msg)
 
@@ -1404,6 +1407,68 @@ def _call_add_files(
     return DataFrame(
         {"added_files_count": [added], "changed_partition_count": [changed]},
         schema={"added_files_count": Int64, "changed_partition_count": Int64},
+    )
+
+
+def _call_expire_snapshots(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> DataFrame:
+    from polars.datatypes import Int64
+    from polars.io.iceberg._maintenance import expire_snapshots
+
+    args = stmt["args"]
+    # Checked before loading the table.
+    retain_last = args.get("retain_last")
+    if retain_last is not None and (
+        not isinstance(retain_last, int)
+        or isinstance(retain_last, bool)
+        or retain_last < 1
+    ):
+        msg = (
+            "CALL expire_snapshots: `retain_last` must be a positive integer, "
+            f"found {retain_last!r}"
+        )
+        raise SQLInterfaceError(msg)
+    snapshot_ids = args.get("snapshot_ids", [])
+    if not isinstance(snapshot_ids, list) or not all(
+        isinstance(i, int) and not isinstance(i, bool) for i in snapshot_ids
+    ):
+        msg = (
+            "CALL expire_snapshots: `snapshot_ids` must be an array of integers such as "
+            f"array(5781943012, 6093317745), found {snapshot_ids!r}"
+        )
+        raise SQLInterfaceError(msg)
+    for arg, kind in (
+        ("max_concurrent_deletes", int),
+        ("stream_results", bool),
+        ("clean_expired_metadata", bool),
+    ):
+        value = args.get(arg)
+        if value is not None and (
+            not isinstance(value, kind) or (kind is int and isinstance(value, bool))
+        ):
+            msg = f"CALL expire_snapshots: `{arg}` must be {kind.__name__}, found {value!r}"
+            raise SQLInterfaceError(msg)
+    if args.get("clean_expired_metadata"):
+        msg = (
+            "CALL expire_snapshots: `clean_expired_metadata => true` is not supported "
+            "yet"
+        )
+        raise NotImplementedError(msg)
+    table = _load_procedure_table(catalog, stmt)
+    # `older_than` arrives as microseconds (UTC); `max_concurrent_deletes` and
+    # `stream_results` tune other engines' execution: no effect here.
+    older_than_us = args.get("older_than")
+    deleted = expire_snapshots(
+        table,
+        older_than_ms=None if older_than_us is None else older_than_us // 1000,
+        retain_last=retain_last,
+        snapshot_ids=snapshot_ids,
+        name=stmt["name"],
+    )
+    counts = dataclasses.asdict(deleted)
+    return DataFrame(
+        {c: [n] for c, n in counts.items()}, schema=dict.fromkeys(counts, Int64)
     )
 
 
@@ -2724,7 +2789,11 @@ def _fill_created_table(
     storage_options: StorageOptionsDict | None,
     name: str,
 ) -> None:
-    """Append the rows of `lf` to the new, empty `table`, dropping it on failure."""
+    """
+    Append the rows of `lf` to the new, empty `table`, dropping it on failure.
+
+    A commit of another writer meanwhile fails the append, and keeps the table.
+    """
     from pyiceberg.exceptions import CommitStateUnknownException
 
     from polars.io.iceberg._delete import _write_rows
@@ -2732,7 +2801,7 @@ def _fill_created_table(
     table_name = _display_name(identifier)
     created_location = table.metadata_location
     try:
-        _write_rows(table, lf, "append", storage_options)
+        _write_rows(table, lf, "append", storage_options, require_empty_table=True)
     except CommitStateUnknownException as error:
         error.add_note(
             f"table '{name}' was created, its rows may be missing: catalog table "

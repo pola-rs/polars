@@ -122,6 +122,7 @@ def test_merge_sorted_unbalanced(size: int, ra: list[int]) -> None:
     assert_series_equal(df.get_column("a"), reference)
 
 
+@pytest.mark.slow
 @given(
     lhs=series(
         name="a", allowed_dtypes=[pl.Int32], allow_null=False
@@ -158,6 +159,7 @@ def test_merge_sorted_parametric_binary(lhs: pl.Series, rhs: pl.Series) -> None:
     assert_series_equal(merge_sorted, append_sorted)
 
 
+@pytest.mark.slow
 @given(
     lhs=series(
         name="a", allowed_dtypes=[pl.String], allow_null=False
@@ -176,6 +178,7 @@ def test_merge_sorted_parametric_string(lhs: pl.Series, rhs: pl.Series) -> None:
     assert_series_equal(merge_sorted, append_sorted)
 
 
+@pytest.mark.slow
 @given(
     lhs=series(
         name="a",
@@ -202,6 +205,7 @@ def test_merge_sorted_parametric_struct(lhs: pl.Series, rhs: pl.Series) -> None:
     assert_series_equal(merge_sorted, append_sorted)
 
 
+@pytest.mark.slow
 @given(
     s=series(
         name="a",
@@ -370,6 +374,7 @@ def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
         assert_frame_equal(df_chained_from_right, df_full)
 
 
+@pytest.mark.slow
 @given(
     lhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
     rhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
@@ -561,6 +566,7 @@ def test_merge_sorted_empty_key_raises() -> None:
         a.merge_sorted(a, key=[])
 
 
+@pytest.mark.slow
 @given(
     left=dataframes(
         [

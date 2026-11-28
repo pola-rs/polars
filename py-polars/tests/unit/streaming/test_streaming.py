@@ -512,6 +512,7 @@ def test_streaming_int_range_over_length(
     assert_frame_equal(q.collect(), expected)
 
 
+@pytest.mark.slow
 def test_streaming_error_does_not_panic_on_teardown(tmp_path: Path, capfd: Any) -> None:
     # Leaving the task scope at the first error used to cancel a task while a
     # sibling was joining it: "joined on cancelled task", printed by the panic

@@ -834,8 +834,6 @@ def rewrite_data_files(
                 state.storage_file_io(),
                 [file[0] for files, _ in written for file in files],
             )
-            if remaining := state.remove_written_files():
-                error.add_note(f"data files may remain under '{remaining}'")
             raise
     return counts
 
@@ -866,7 +864,13 @@ def _write_group(
         table, storage_options=storage_options, replace_files=hand_back
     )
     state.sink_uuid_str = sink_uuid
-    state.attach_sink(_scan_iceberg_files(table, group, storage_options)).collect()
+    try:
+        state.attach_sink(_scan_iceberg_files(table, group, storage_options)).collect()
+    except Exception as error:
+        # its files are in its own directory, which the caller does not know
+        if (remaining := state.remove_written_files()) is not None:
+            error.add_note(f"data files may remain under '{remaining}'")
+        raise
     assert hand_back.files is not None
     # a group whose rows were all deleted leaves no file
     if empty := [path for path, rows, *_ in hand_back.files if rows == 0]:
@@ -916,3 +920,552 @@ def _as_compaction(producer: Any) -> None:
     # private in PyIceberg 0.12
     producer._summary = _summary
     producer._validate_concurrency = _validate_concurrency
+
+
+# The table property of the maximum age of non-main refs, as Iceberg Java.
+_MAX_REF_AGE_MS = "history.expire.max-ref-age-ms"
+
+
+@dataclass(frozen=True)
+class ExpiredFiles:
+    """The files an `expire_snapshots` deleted, as the procedure's result columns."""
+
+    deleted_data_files_count: int = 0
+    deleted_position_delete_files_count: int = 0
+    deleted_equality_delete_files_count: int = 0
+    deleted_manifest_files_count: int = 0
+    deleted_manifest_lists_count: int = 0
+    deleted_statistics_files_count: int = 0
+
+
+@dataclass(frozen=True)
+class _Expiry:
+    """The refs and snapshots an `expire_snapshots` removes."""
+
+    refs: list[str]
+    snapshot_ids: list[int]
+    # Snapshots whose partition statistics go with them.
+    partition_statistics: list[int]
+
+
+def expire_snapshots(
+    table: pyiceberg.table.Table,
+    *,
+    older_than_ms: int | None,
+    retain_last: int | None,
+    snapshot_ids: list[int],
+    name: str,
+) -> ExpiredFiles:
+    """
+    Expire snapshots of `table` as Iceberg's `expire_snapshots`, in one commit.
+
+    Each branch keeps its ancestors newer than its maximum snapshot age (default:
+    `older_than`) or among its newest minimum number (default: `retain_last`). Refs
+    older than their maximum ref age go, never `main`. Snapshots no ref reaches are
+    kept while newer than `older_than`. `snapshot_ids` are expired too. Then the files
+    only expired snapshots referenced are deleted, and counted.
+    """
+    from pyiceberg.exceptions import CommitFailedException, CommitStateUnknownException
+    from pyiceberg.table import TableProperties
+    from pyiceberg.utils.properties import property_as_int
+
+    from polars.exceptions import InvalidOperationError
+
+    properties = table.metadata.properties
+    _refuse_without_gc(table.metadata, name)
+    if (
+        str(table.catalog.properties.get("snapshot-loading-mode", "all")).lower()
+        == "refs"
+    ):
+        msg = (
+            f"snapshots of table '{name}' cannot be expired: the catalog sends only the "
+            "snapshots of branches and tags; attach it with the property "
+            "`snapshot-loading-mode` = `all`"
+        )
+        raise InvalidOperationError(msg)
+    for snapshot_id in snapshot_ids:
+        if table.metadata.snapshot_by_id(snapshot_id) is None:
+            msg = f"snapshot {snapshot_id} of table '{name}' not found"
+            raise InvalidOperationError(msg)
+
+    retries = max(
+        0,
+        property_as_int(
+            properties,
+            TableProperties.COMMIT_NUM_RETRIES,
+            TableProperties.COMMIT_NUM_RETRIES_DEFAULT,
+        )
+        or 0,
+    )
+    before = table.metadata
+    for attempt in range(retries + 1):
+        before = table.metadata
+        # Another writer may have disabled it meanwhile.
+        _refuse_without_gc(before, name)
+        expiry = _expiry(
+            before,
+            _now_ms(),
+            older_than_ms,
+            retain_last,
+            # Explicit ids another writer expired meanwhile are gone already.
+            [i for i in snapshot_ids if before.snapshot_by_id(i) is not None],
+            name,
+        )
+        if not expiry.refs and not expiry.snapshot_ids:
+            return ExpiredFiles()
+        try:
+            _commit_expiry(table, before, expiry)
+            break
+        except CommitFailedException:
+            # A ref moved: plan again on the table as it is now.
+            if attempt == retries:
+                raise
+            table.refresh()
+        except CommitStateUnknownException:
+            # Landed only if the planned snapshots and refs are gone now.
+            current_table = table.catalog.load_table(table.name())
+            current = current_table.metadata
+            if current.table_uuid != before.table_uuid or _expiry_overtaken(
+                current, expiry, all_gone=False
+            ):
+                raise
+            table.metadata = current
+            table.metadata_location = current_table.metadata_location
+            break
+        except Exception:
+            # Failed in another way: a catalog that applies the updates here, or that
+            # rejects removals another expiry made meanwhile, or a commit that landed
+            # and whose response could not be read.
+            current_table = table.catalog.load_table(table.name())
+            current = current_table.metadata
+            if current.table_uuid != before.table_uuid:
+                raise
+            if not _expiry_overtaken(current, expiry, all_gone=False):
+                # Every planned removal is done: clean up the files.
+                table.metadata = current
+                table.metadata_location = current_table.metadata_location
+                break
+            if attempt == retries or not _expiry_overtaken(current, expiry):
+                raise
+            table.refresh()
+    return _delete_expired_files(table, before, expiry.snapshot_ids, name)
+
+
+def _refuse_without_gc(metadata: TableMetadata, name: str) -> None:
+    from pyiceberg.utils.properties import property_as_bool
+
+    from polars.exceptions import InvalidOperationError
+
+    if not property_as_bool(metadata.properties, "gc.enabled", True):
+        msg = (
+            f"snapshots of table '{name}' cannot be expired: its property gc.enabled is "
+            "false (its files may belong to other tables)"
+        )
+        raise InvalidOperationError(msg)
+
+
+def _now_ms() -> int:
+    import time
+
+    return int(time.time() * 1000)
+
+
+def _expiry_overtaken(
+    current: TableMetadata, expiry: _Expiry, *, all_gone: bool = True
+) -> bool:
+    """
+    Whether planned removals are already gone from `current`.
+
+    With `all_gone`: some are (another writer removed them). Without: not all are (the
+    commit did not land).
+    """
+    partition_statistics = {s.snapshot_id for s in current.partition_statistics}
+    present = (
+        [current.snapshot_by_id(i) is not None for i in expiry.snapshot_ids]
+        + [r in current.refs for r in expiry.refs]
+        + [i in partition_statistics for i in expiry.partition_statistics]
+    )
+    return not all(present) if all_gone else any(present)
+
+
+def _expiry(
+    metadata: TableMetadata,
+    now_ms: int,
+    older_than_ms: int | None,
+    retain_last: int | None,
+    snapshot_ids: list[int],
+    name: str,
+) -> _Expiry:
+    """The refs and snapshots to remove, by Iceberg Java's rules (`RemoveSnapshots`)."""
+    from pyiceberg.table import TableProperties
+    from pyiceberg.table.refs import MAIN_BRANCH, SnapshotRefType
+    from pyiceberg.table.snapshots import ancestors_of
+    from pyiceberg.utils.properties import property_as_int
+
+    from polars.exceptions import InvalidOperationError
+
+    properties = metadata.properties
+    if older_than_ms is None:
+        max_age = property_as_int(
+            properties,
+            TableProperties.MAX_SNAPSHOT_AGE_MS,
+            TableProperties.MAX_SNAPSHOT_AGE_MS_DEFAULT,
+        )
+        older_than_ms = now_ms - max_age  # type: ignore[operator]
+    if retain_last is None:
+        retain_last = property_as_int(
+            properties,
+            TableProperties.MIN_SNAPSHOTS_TO_KEEP,
+            TableProperties.MIN_SNAPSHOTS_TO_KEEP_DEFAULT,
+        )
+    max_ref_age = property_as_int(properties, _MAX_REF_AGE_MS, None)
+
+    kept_refs = {}
+    removed_refs = []
+    for ref_name, ref in metadata.refs.items():
+        snapshot = metadata.snapshot_by_id(ref.snapshot_id)
+        ref_max_age = (
+            ref.max_ref_age_ms if ref.max_ref_age_ms is not None else max_ref_age
+        )
+        # A ref's age is its snapshot's.
+        if ref_name == MAIN_BRANCH or (
+            snapshot is not None
+            and (ref_max_age is None or now_ms - snapshot.timestamp_ms <= ref_max_age)
+        ):
+            kept_refs[ref_name] = ref
+        else:
+            removed_refs.append(ref_name)
+
+    keep = {ref.snapshot_id for ref in kept_refs.values()}
+    for snapshot_id in snapshot_ids:
+        if snapshot_id in keep:
+            refs = sorted(
+                n for n, r in kept_refs.items() if r.snapshot_id == snapshot_id
+            )
+            msg = (
+                f"snapshot {snapshot_id} of table '{name}' cannot be expired: it is the "
+                f"snapshot of {', '.join(repr(r) for r in refs)}"
+            )
+            raise InvalidOperationError(msg)
+
+    reached = set()
+    for ref in kept_refs.values():
+        head = metadata.snapshot_by_id(ref.snapshot_id)
+        if ref.snapshot_ref_type != SnapshotRefType.BRANCH or head is None:
+            reached.add(ref.snapshot_id)
+            continue
+        branch_older_than = (
+            now_ms - ref.max_snapshot_age_ms
+            if ref.max_snapshot_age_ms is not None
+            else older_than_ms
+        )
+        branch_keep = (
+            ref.min_snapshots_to_keep
+            if ref.min_snapshots_to_keep is not None
+            else retain_last
+        )
+        kept = 0
+        keeping = True
+        for ancestor in ancestors_of(head, metadata):
+            reached.add(ancestor.snapshot_id)
+            # The newest ancestors, until one is old enough and enough are kept.
+            keeping = keeping and (
+                kept < branch_keep or ancestor.timestamp_ms >= branch_older_than  # type: ignore[operator]
+            )
+            if keeping:
+                keep.add(ancestor.snapshot_id)
+                kept += 1
+    for snapshot in metadata.snapshots:
+        if (
+            snapshot.snapshot_id not in reached
+            and snapshot.timestamp_ms >= older_than_ms
+        ):
+            keep.add(snapshot.snapshot_id)
+
+    expired = {s.snapshot_id for s in metadata.snapshots if s.snapshot_id not in keep}
+    # Named snapshots go even if a branch's retention keeps them.
+    removed = expired | set(snapshot_ids)
+    return _Expiry(
+        removed_refs,
+        sorted(removed),
+        # Not every catalog drops partition statistics of removed snapshots.
+        sorted(
+            s.snapshot_id
+            for s in metadata.partition_statistics
+            if s.snapshot_id in removed
+        ),
+    )
+
+
+def _commit_expiry(
+    table: pyiceberg.table.Table, metadata: TableMetadata, expiry: _Expiry
+) -> None:
+    """Commit `expiry`, planned on `metadata`, failing if a ref moved since."""
+    from pyiceberg.table.refs import MAIN_BRANCH
+    from pyiceberg.table.update import (
+        AssertRefSnapshotId,
+        RemovePartitionStatisticsUpdate,
+        RemoveSnapshotRefUpdate,
+        RemoveSnapshotsUpdate,
+    )
+
+    updates: list[Any] = [RemoveSnapshotRefUpdate(ref_name=r) for r in expiry.refs]  # type: ignore[call-arg]
+    updates += [
+        RemovePartitionStatisticsUpdate(snapshot_id=i)  # type: ignore[call-arg]
+        for i in expiry.partition_statistics
+    ]
+    if expiry.snapshot_ids:
+        updates.append(RemoveSnapshotsUpdate(snapshot_ids=expiry.snapshot_ids))  # type: ignore[call-arg]
+    # Every ref, in one `_stage`: PyIceberg keeps one requirement per kind across calls.
+    requirements = [
+        AssertRefSnapshotId(ref=n, snapshot_id=r.snapshot_id)  # type: ignore[call-arg]
+        for n, r in metadata.refs.items()
+    ]
+    if MAIN_BRANCH not in metadata.refs:
+        requirements.append(AssertRefSnapshotId(ref=MAIN_BRANCH, snapshot_id=None))  # type: ignore[call-arg]
+    tx = table.transaction()
+    tx._stage(tuple(updates), tuple(requirements))
+    tx.commit_transaction()
+
+
+def _delete_expired_files(
+    table: pyiceberg.table.Table,
+    before: TableMetadata,
+    expired_ids: list[int],
+    name: str,
+) -> ExpiredFiles:
+    """
+    Delete the files only snapshots of `expired_ids` referenced, best effort.
+
+    A path goes if a removed snapshot referenced it (live in one of its manifests, its
+    manifests, its manifest list, its statistics) and no snapshot of the table as loaded
+    now uses it, in any role, under any name it may have (`_path_names`). Only the
+    manifests of removed snapshots that no kept
+    snapshot lists are read in full; kept manifests are read only while candidate files
+    remain. If a kept snapshot's manifests cannot be read, nothing is deleted.
+    """
+    from pyiceberg.manifest import DataFileContent
+    from pyiceberg.utils.concurrent import ExecutorFactory
+    from pyiceberg.utils.properties import property_as_bool
+
+    from polars._warnings import issue_warning
+
+    def keep_files(reason: str) -> ExpiredFiles:
+        issue_warning(
+            f"expired snapshots of table '{name}', but deleted no files: {reason}",
+            UserWarning,
+        )
+        return ExpiredFiles()
+
+    # The table as it is now: a commit of another writer may reference the files again.
+    try:
+        current = table.catalog.load_table(table.name()).metadata
+    except Exception as error:
+        return keep_files(f"the table could not be loaded again ({error})")
+    if current.table_uuid != before.table_uuid:
+        return keep_files("another table has its name now")
+    if not property_as_bool(current.properties, "gc.enabled", True):
+        return keep_files("its property gc.enabled is false now")
+    removed = [
+        s
+        for s in before.snapshots
+        if s.snapshot_id in expired_ids
+        and current.snapshot_by_id(s.snapshot_id) is None
+    ]
+    if not removed:
+        return ExpiredFiles()
+    io = table.io
+    executor = ExecutorFactory.get_or_create()
+
+    # Kept: the names of kept manifest lists, manifests and statistics.
+    kept: set[str] = set()
+    kept_manifests: dict[str, Any] = {}
+    try:
+        for snapshot in current.snapshots:
+            for manifest in snapshot.manifests(io):
+                kept_manifests.setdefault(manifest.manifest_path, manifest)
+            kept |= _path_names(snapshot.manifest_list)
+    except Exception as error:
+        return keep_files(f"a kept snapshot's manifests could not be read ({error})")
+    for path in [
+        *kept_manifests,
+        *(
+            s.statistics_path
+            for s in [*current.statistics, *current.partition_statistics]
+        ),
+    ]:
+        kept |= _path_names(path)
+
+    def unkept(path: str) -> bool:
+        return _path_names(path).isdisjoint(kept)
+
+    # Candidates: what removed snapshots referenced, that no kept one lists.
+    lists: dict[str, str] = {}
+    manifests: dict[str, Any] = {}
+    for snapshot in removed:
+        try:
+            for manifest in snapshot.manifests(io):
+                if unkept(manifest.manifest_path):
+                    manifests.setdefault(manifest.manifest_path, manifest)
+        except Exception:
+            # An unreadable removed snapshot's files are not candidates.
+            continue
+        if unkept(snapshot.manifest_list):
+            lists[snapshot.manifest_list] = snapshot.manifest_list
+
+    def live(manifest: Any) -> list[tuple[str, DataFileContent]]:
+        return [
+            (e.data_file.file_path, e.data_file.content)
+            for e in manifest.fetch_manifest_entry(io, discard_deleted=True)
+        ]
+
+    files: dict[str, tuple[str, DataFileContent]] = {}
+    for entries in executor.map(_or_none(live), list(manifests.values())):
+        for path, content in entries or []:
+            if unkept(path):
+                files.setdefault(path, (path, content))
+    stats = {
+        s.statistics_path: s.statistics_path
+        for s in [*before.statistics, *before.partition_statistics]
+        if s.snapshot_id in expired_ids and unkept(s.statistics_path)
+    }
+
+    # Kept manifests, read until no candidate is left: a path can be live in one (one
+    # a removed snapshot also listed, or one added since), in any role.
+    candidates = {
+        path: _path_names(path) for path in [*files, *stats, *manifests, *lists]
+    }
+    pending = list(kept_manifests.values())
+    while candidates and pending:
+        batch, pending = pending[:64], pending[64:]
+        try:
+            for entries in executor.map(live, batch):
+                live_names = {n for path, _ in entries for n in _path_names(path)}
+                candidates = {
+                    path: names
+                    for path, names in candidates.items()
+                    if names.isdisjoint(live_names)
+                }
+        except Exception as error:
+            return keep_files(f"a kept manifest could not be read ({error})")
+    files = {k: v for k, v in files.items() if k in candidates}
+    stats = {k: v for k, v in stats.items() if k in candidates and k not in files}
+    manifests = {k: v for k, v in manifests.items() if k in candidates}
+    lists = {k: v for k, v in lists.items() if k in candidates}
+
+    failed = 0
+
+    def delete(paths: list[str]) -> int:
+        nonlocal failed
+
+        def one(path: str) -> bool:
+            # FileIOs drop a query or fragment, and fsspec expands globs: both widen
+            # the delete.
+            if any(c in path for c in "?#*["):
+                return False
+            try:
+                io.delete(path)
+            except Exception:
+                return False
+            return True
+
+        done = sum(executor.map(one, paths))
+        failed += len(paths) - done
+        return done
+
+    def of(kind: DataFileContent) -> list[str]:
+        return sorted(path for path, content in files.values() if content == kind)
+
+    deleted = ExpiredFiles(
+        deleted_data_files_count=delete(of(DataFileContent.DATA)),
+        deleted_position_delete_files_count=delete(
+            of(DataFileContent.POSITION_DELETES)
+        ),
+        deleted_equality_delete_files_count=delete(
+            of(DataFileContent.EQUALITY_DELETES)
+        ),
+        # Metadata last: after a failure above, the metadata left still lists the files.
+        deleted_manifest_files_count=delete(
+            sorted(m.manifest_path for m in manifests.values())
+        ),
+        deleted_manifest_lists_count=delete(sorted(lists.values())),
+        deleted_statistics_files_count=delete(sorted(stats.values())),
+    )
+    if failed:
+        issue_warning(
+            f"expired snapshots of table '{name}', but {failed} of their files could "
+            "not be deleted",
+            UserWarning,
+        )
+    return deleted
+
+
+def _or_none(function: Any) -> Any:
+    """`function`, returning None where it raises."""
+
+    def call(*args: Any) -> Any:
+        try:
+            return function(*args)
+        except Exception:
+            return None
+
+    return call
+
+
+def _path_names(path: str) -> frozenset[str]:
+    """
+    Every name the file at `path` may have, as PyArrow's or fsspec's FileIO resolves it.
+
+    `s3a://b/k` is `s3://b/k`, with or without a `?query` or `#fragment` (PyArrow drops
+    them, fsspec keeps them), also as `s3:///b//./k`. Azure by container, whatever the
+    account host (`c@account.host/k`, `account.host/c/k`, `c/k`). HDFS by path, whatever
+    the name node. `file:///a/./b`, `file:/a/b`
+    and `/a/b` are one local file. Percent-encoded or not. A file is kept when any of
+    its names is a kept file's: more names only keep more files.
+    """
+    import posixpath
+    from pathlib import Path
+    from urllib.parse import unquote, urlparse
+
+    from polars.io.iceberg._plugin import _AZURE_SCHEMES, _backend
+
+    names = {path}
+    parsed = urlparse(path)
+    scheme = parsed.scheme.lower()
+    if len(scheme) == 1:
+        # A Windows drive.
+        locals_ = [path]
+    elif not scheme or scheme == "file":
+        # Literal (fsspec), and parsed: without query or fragment (PyArrow).
+        literal = re.sub(r"^file:(//(localhost)?)?(?=/)", "", path, flags=re.IGNORECASE)
+        locals_ = [literal, f"{parsed.netloc}{parsed.path}"]
+    else:
+        schemes = _backend(path)
+        canonical = schemes[0] if schemes else scheme
+        for name in (
+            f"{canonical}:{path.split(':', 1)[1]}",
+            f"{canonical}://{parsed.netloc}{parsed.path}",
+        ):
+            names |= {name, unquote(name)}
+        # Loosest: the bucket or container (no account, host, port), the key with
+        # slashes collapsed and `.`/`..` resolved; HDFS by path alone.
+        netloc = parsed.netloc.lower()
+        if scheme in ("hdfs", "viewfs"):
+            netloc = ""
+        elif "@" in netloc:
+            # Azure `container@account.host`.
+            netloc = netloc.split("@", 1)[0]
+        elif schemes == _AZURE_SCHEMES and "." in netloc:
+            # Azure `account.host/container`.
+            netloc = ""
+        for key in {parsed.path, unquote(parsed.path)}:
+            loose = posixpath.normpath(f"/{netloc}/{key}").lstrip("/")
+            names.add(f"{canonical}:{loose}")
+        return frozenset(names)
+    for local in [*locals_, *map(unquote, locals_)]:
+        if re.match(r"^/[A-Za-z]:", local):
+            local = local[1:]
+        names.add(local)
+        with contextlib.suppress(OSError, ValueError):
+            names.add(str(Path(local).resolve()))
+    return frozenset(names)

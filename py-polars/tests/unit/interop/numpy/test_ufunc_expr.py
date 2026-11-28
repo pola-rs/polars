@@ -132,6 +132,7 @@ def test_grouped_ufunc() -> None:
     df.group_by("id").agg(pl.col("values").log1p().sum().pipe(np.expm1))
 
 
+@pytest.mark.slow
 def test_generalized_ufunc_scalar() -> None:
     numba = pytest.importorskip("numba", exc_type=ImportError)
 
@@ -196,6 +197,7 @@ def make_gufunc_mean() -> Callable[[pl.Series], pl.Series]:
     return gufunc_mean  # type: ignore[no-any-return]
 
 
+@pytest.mark.slow
 def test_generalized_ufunc() -> None:
     gufunc_mean = make_gufunc_mean()
     df = pl.DataFrame({"s": [1.0, 2.0, 3.0]})
@@ -204,6 +206,7 @@ def test_generalized_ufunc() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.slow
 def test_grouped_generalized_ufunc() -> None:
     gufunc_mean = make_gufunc_mean()
     df = pl.DataFrame({"id": ["a", "a", "b", "b"], "values": [1.0, 2.0, 3.0, 4.0]})

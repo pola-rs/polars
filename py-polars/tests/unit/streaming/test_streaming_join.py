@@ -432,6 +432,7 @@ def test_cross_join_with_literal_column_25544() -> None:
     assert streaming_result.item() == 0
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("on", [["key"], ["key", "key_ext"]])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
 @pytest.mark.parametrize("descending", [False, True])
@@ -612,6 +613,7 @@ def test_merge_join_exprs() -> None:
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
 @pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
 @pytest.mark.parametrize("descending", [False, True])
@@ -901,6 +903,7 @@ def test_no_merge_join_after_join(
     assert "merge-join" not in dot
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
 @pytest.mark.parametrize("coalesce", [False, True])
@@ -1186,6 +1189,7 @@ def _join_keys(k: pl.Expr, key_type: str) -> dict[str, pl.Expr]:
     return {"k": struct, "k2": k % 3}
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "key_type", ["int", "str", "int, int", "struct", "struct, int"]
 )
@@ -1274,6 +1278,7 @@ def test_streaming_join_string_key_runs(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
 @pytest.mark.parametrize(
@@ -1446,6 +1451,7 @@ def _expected_join_of_keys(
     return pl.DataFrame(rows, schema={"l": pl.Int64, "r": pl.Int64}, orient="row")
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize("threads", ["1", None])
 @pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
@@ -1503,6 +1509,7 @@ def test_streaming_join_spilled_build(
         assert_series_equal(out[name], expected[name])
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize("threads", ["1", None])
 @pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
@@ -1566,6 +1573,7 @@ def _modes(*modes: object) -> pytest.MarkDecorator:
 _OUT_OF_CORE_MODES = _modes("grace", "hybrid", "one_partition", _SPILLED_MODE)
 
 
+@pytest.mark.slow
 @_OUT_OF_CORE_MODES
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
 @pytest.mark.parametrize(
@@ -1638,6 +1646,7 @@ def test_streaming_join_out_of_core_full_coalesce(
     assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "case",
     ["empty_left", "empty_right", "null_keys", "few_left_keys", "few_right_keys"],

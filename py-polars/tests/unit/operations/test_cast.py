@@ -6,6 +6,8 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -1175,3 +1177,65 @@ def test_strict_struct_cast_field_name_mismatch() -> None:
     s = pl.Series("x", [{"a": 1}])
     with pytest.raises(InvalidOperationError, match="field name mismatch"):
         s.cast(pl.Struct({"b": pl.Int64}), strict=True)
+
+
+_INT_BOUNDS = {
+    pl.Int8: (-(2**7), 2**7 - 1),
+    pl.Int16: (-(2**15), 2**15 - 1),
+    pl.Int32: (-(2**31), 2**31 - 1),
+    pl.Int64: (-(2**63), 2**63 - 1),
+    pl.UInt8: (0, 2**8 - 1),
+    pl.UInt16: (0, 2**16 - 1),
+    pl.UInt32: (0, 2**32 - 1),
+    pl.UInt64: (0, 2**64 - 1),
+}
+
+
+@pytest.mark.parametrize("from_dtype", _INT_BOUNDS)
+@pytest.mark.parametrize("to_dtype", _INT_BOUNDS)
+def test_int_cast_boundaries(from_dtype: Any, to_dtype: Any) -> None:
+    f_lo, f_hi = _INT_BOUNDS[from_dtype]
+    t_lo, t_hi = _INT_BOUNDS[to_dtype]
+    candidates = {f_lo, f_hi, 0, 1, t_lo, t_hi, t_lo - 1, t_hi + 1, -1}
+    values = sorted(v for v in candidates if f_lo <= v <= f_hi)
+    fits = [t_lo <= v <= t_hi for v in values]
+
+    s = pl.Series(values, dtype=from_dtype)
+    out = s.cast(to_dtype, strict=False)
+    assert out.dtype == to_dtype
+    assert out.to_list() == [
+        v if ok else None for v, ok in zip(values, fits, strict=True)
+    ]
+
+    with_nulls = pl.Series([None, *values, None], dtype=from_dtype)
+    out = with_nulls.cast(to_dtype, strict=False)
+    assert out.to_list() == [
+        None,
+        *[v if ok else None for v, ok in zip(values, fits, strict=True)],
+        None,
+    ]
+
+    if all(fits):
+        assert s.cast(to_dtype).to_list() == values
+        assert with_nulls.cast(to_dtype).to_list() == [None, *values, None]
+    else:
+        with pytest.raises(InvalidOperationError):
+            s.cast(to_dtype)
+
+
+def test_int_cast_hidden_out_of_range_under_null() -> None:
+    values = pa.py_buffer(np.array([1, 300, 2], dtype=np.int32).tobytes())
+    validity = pa.py_buffer(np.packbits([1, 0, 1], bitorder="little").tobytes())
+    arr = pa.Array.from_buffers(pa.int32(), 3, [validity, values], null_count=1)
+    s = pl.Series(arr)
+    assert s.cast(pl.UInt8).to_list() == [1, None, 2]
+    assert s.cast(pl.UInt8, strict=False).to_list() == [1, None, 2]
+
+
+def test_int_cast_multi_chunk_and_slice() -> None:
+    s = pl.concat(
+        [pl.Series([1, None], dtype=pl.Int64), pl.Series([255, 2], dtype=pl.Int64)],
+        rechunk=False,
+    )
+    assert s.cast(pl.UInt8).to_list() == [1, None, 255, 2]
+    assert s.slice(1, 3).cast(pl.Int16).to_list() == [None, 255, 2]

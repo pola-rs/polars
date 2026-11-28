@@ -438,6 +438,7 @@ def _corpus_params(cells: list[str]) -> list[Any]:
 _SQLITE_DRIVERS = ["sqlite3", "adbc", "connectorx", "sqlalchemy"]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("driver", "mode"), _corpus_params(_SQLITE_DRIVERS))
 def test_corpus_sqlite(edge_sqlite: str, driver: str, mode: str) -> None:
     from tests.unit.io.database._scan_corpus import check_corpus, ids
@@ -3480,6 +3481,7 @@ def _fake_adbc_session(stmt: Any) -> Any:
     return session
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("startup_delay", [0.15, 1.6])
 def test_adbc_cancel_is_repeated_until_the_statement_runs(startup_delay: float) -> None:
     # before the driver sent the query a cancel was refused (INVALID_STATE) and lost
@@ -3545,6 +3547,7 @@ def test_adbc_cancelled_statement_closes_after_its_handle_is_gone() -> None:
     assert closed == [True]
 
 
+@pytest.mark.slow
 def test_cancel_is_repeated_through_delayed_sqlite_execute(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3591,6 +3594,7 @@ def test_cancel_is_repeated_through_delayed_sqlite_execute(
         assert not session._issuing
 
 
+@pytest.mark.slow
 def test_cancel_at_exit_gives_up_on_a_driver_call_that_ignores_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3682,6 +3686,7 @@ def test_duckdb_empty_query_keeps_nested_dtypes(tmp_path: Path) -> None:
     assert lf.collect_schema() == full.schema
 
 
+@pytest.mark.slow
 def test_duckdb_connect_retries_a_file_still_held_by_a_closing_database() -> None:
     # #443: a connect racing the destruction of the file's last database instance
     from polars_database import _bridge
@@ -4878,6 +4883,7 @@ def test_scan_duckdb_column_retyped_after_planning_is_an_error(
     assert lf.select("id").collect().rows() == [(1,)]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("batch_size", [None, 1])
 @pytest.mark.parametrize(
     "table", ["blob_first", "numbers_first", "typed", "late_number"]

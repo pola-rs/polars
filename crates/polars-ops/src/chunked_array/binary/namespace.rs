@@ -109,7 +109,8 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     /// Check if binary contains given literal
     fn contains(&self, lit: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();
-        let f = |s: &[u8]| find(s, lit).is_some();
+        let finder = memchr::memmem::Finder::new(lit);
+        let f = |s: &[u8]| finder.find(s).is_some();
         unary_elementwise_values(ca, f)
     }
 

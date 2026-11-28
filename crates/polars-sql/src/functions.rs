@@ -26,6 +26,7 @@ use polars_plan::plans::{
 };
 use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::version::get_polars_lib_version;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, DateTimeField, DuplicateTreatment, Expr as SQLExpr,
@@ -45,8 +46,8 @@ use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
     decimal_literal_to_f64, interval_to_duration, null_as_string, null_on_null_length,
     null_reading, numeric_length, order_by_sort_options, parse_extract_date_part, parse_sql_array,
-    parse_sql_expr, resolve_expr_dtype, sql_binary, sql_position, substring_offset,
-    temporal_string_as,
+    parse_sql_expr, read_year_first, resolve_expr_dtype, sql_binary, sql_position,
+    substring_offset, temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::types::sql_type_name;
@@ -1132,6 +1133,18 @@ pub(crate) enum PolarsSQLFunctions {
     Typeof,
 
     // ----
+    // System functions
+    // ----
+    /// SQL 'version' function.
+    /// Returns the version that the program using Polars sets when it starts (see
+    /// `polars_utils::version`): Python Polars', the CLI's, or else the Rust crates'. It is
+    /// read when the query is planned.
+    /// ```sql
+    /// SELECT VERSION();
+    /// ```
+    Version,
+
+    // ----
     // Column selection
     // ----
     Columns,
@@ -1409,6 +1422,7 @@ impl PolarsSQLFunctions {
             "var",
             "var_samp",
             "variance",
+            "version",
             "week",
             "xor",
             "year",
@@ -1637,6 +1651,11 @@ impl PolarsSQLFunctions {
             // Type functions
             // ----
             "typeof" => Self::Typeof,
+
+            // ----
+            // System functions
+            // ----
+            "version" => Self::Version,
 
             // ----
             // Column selection
@@ -1948,9 +1967,11 @@ impl SQLFunctionVisitor<'_> {
             },
             ToChar => self.visit_to_char(),
             ToDate => {
-                self.visit_parse_template("TO_DATE", false, |e, options| e.str().to_date(options))
+                self.visit_parse_template("TO_DATE", false, true, |e, options| {
+                    e.str().to_date(options)
+                })
             },
-            ToTimestamp => self.visit_parse_template("TO_TIMESTAMP", true, |e, options| {
+            ToTimestamp => self.visit_parse_template("TO_TIMESTAMP", true, false, |e, options| {
                 e.str().to_datetime(
                     Some(TimeUnit::Microseconds),
                     None,
@@ -1988,7 +2009,7 @@ impl SQLFunctionVisitor<'_> {
             Date => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
+                    1 => self.visit_year_first(true, |e, options| e.str().to_date(options)),
                     2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
                     _ => {
                         polars_bail!(SQLSyntax: "DATE expects 1-2 arguments (found {})", args.len())
@@ -2289,9 +2310,8 @@ impl SQLFunctionVisitor<'_> {
             Timestamp => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    1 => self.visit_unary(|e| {
-                        e.str()
-                            .to_datetime(None, None, StrptimeOptions::default(), lit("latest"))
+                    1 => self.visit_year_first(false, |e, options| {
+                        e.str().to_datetime(None, None, options, lit("latest"))
                     }),
                     2 => self
                         .visit_binary(|e, fmt| e.str().to_datetime(None, None, fmt, lit("latest"))),
@@ -2450,6 +2470,20 @@ impl SQLFunctionVisitor<'_> {
             // Type functions
             // ----
             Typeof => self.visit_typeof(),
+
+            // ----
+            // System functions
+            // ----
+            Version => {
+                if self.func.over.is_some() {
+                    polars_bail!(SQLSyntax: "VERSION() cannot be used as a window function");
+                }
+                if self.func.filter.is_some() {
+                    polars_bail!(SQLSyntax: "VERSION() does not support a FILTER clause");
+                }
+                let version = get_polars_lib_version();
+                self.visit_nullary(|| lit(version.as_str()).alias("version"))
+            },
 
             // ----
             // Column selection
@@ -3758,11 +3792,13 @@ impl SQLFunctionVisitor<'_> {
     }
 
     /// TO_DATE or TO_TIMESTAMP, where `parse` converts the string. With `from_epoch`, a
-    /// number is the seconds since the Unix epoch, giving a UTC datetime.
+    /// number is the seconds since the Unix epoch, giving a UTC datetime. Without a
+    /// template, it parses like a cast (year-first only).
     fn visit_parse_template(
         &mut self,
         function: &str,
         from_epoch: bool,
+        date_only: bool,
         parse: impl Fn(Expr, StrptimeOptions) -> Expr,
     ) -> PolarsResult<Expr> {
         let args = extract_args(self.func)?;
@@ -3797,15 +3833,43 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => value,
         };
-        let mut options = StrptimeOptions::default();
-        if let Some(template) = template {
-            let ParseFormat { format, defaults } = parse_format(&template, function)?;
-            if !defaults.is_empty() {
-                value = concat_str([value, lit(defaults)], "", false);
-            }
-            options.format = Some(format.into());
+        let Some(template) = template else {
+            let e = read_year_first(value, date_only, true, parse);
+            return self.apply_window_spec(e);
+        };
+        let ParseFormat { format, defaults } = parse_format(&template, function)?;
+        if !defaults.is_empty() {
+            value = concat_str([value, lit(defaults)], "", false);
         }
+        let options = StrptimeOptions {
+            format: Some(format.into()),
+            ..Default::default()
+        };
         let e = parse(value, options);
+        self.apply_window_spec(e)
+    }
+
+    /// One-argument DATE or TIMESTAMP: parses like a cast (year-first only).
+    fn visit_year_first(
+        &mut self,
+        date_only: bool,
+        parse: impl Fn(Expr, StrptimeOptions) -> Expr,
+    ) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let value = match args.as_slice() {
+            [FunctionArgExpr::Expr(value)] => {
+                let value = self.parse_sql_arg(value)?;
+                match self.arg_dtype(&value)? {
+                    Some(DataType::Null) => value.cast(DataType::String),
+                    _ => value,
+                }
+            },
+            [FunctionArgExpr::Wildcard] => {
+                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+            },
+            _ => return self.not_supported_error(),
+        };
+        let e = read_year_first(value, date_only, true, parse);
         self.apply_window_spec(e)
     }
 

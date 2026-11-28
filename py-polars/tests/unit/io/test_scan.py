@@ -191,6 +191,7 @@ def data_file(
     raise NotImplementedError()
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_scan(
     capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
@@ -203,6 +204,7 @@ def test_scan(
     assert_frame_equal(df, data_file.df)
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_scan_with_limit(
     capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
@@ -222,6 +224,7 @@ def test_scan_with_limit(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_scan_with_filter(
     capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
@@ -245,6 +248,7 @@ def test_scan_with_filter(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_scan_with_filter_and_limit(
     capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
@@ -269,6 +273,7 @@ def test_scan_with_filter_and_limit(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_scan_with_limit_and_filter(
     capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
@@ -293,6 +298,7 @@ def test_scan_with_limit_and_filter(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_scan_with_row_index_and_limit(
     capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
@@ -318,6 +324,7 @@ def test_scan_with_row_index_and_limit(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_scan_with_row_index_and_filter(
     capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
@@ -343,6 +350,7 @@ def test_scan_with_row_index_and_filter(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_scan_with_row_index_limit_and_filter(
     capfd: Any, plmonkeypatch: PlMonkeyPatch, data_file: _DataFile, force_async: bool
@@ -587,6 +595,20 @@ def test_scan_single_dir_differing_file_extensions_raises_17436(tmp_path: Path) 
         match="parquet: File out of specification: The file must end with PAR1",
     ):
         pl.scan_parquet(tmp_path / "*").collect()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "metadata",
+    ["_delta_log/00000000000000000000.json", "metadata/00000-1.metadata.json"],
+)
+def test_scan_dir_of_table_format_raises(tmp_path: Path, metadata: str) -> None:
+    pl.DataFrame({"x": 1}).write_parquet(tmp_path / "part-0.parquet")
+    (tmp_path / metadata).parent.mkdir()
+    (tmp_path / metadata).write_text("{}")
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="Python Polars"):
+        pl.scan_parquet(tmp_path).collect()
 
 
 @pytest.mark.parametrize("format", ["parquet", "csv", "ndjson", "ipc"])
@@ -1464,6 +1486,7 @@ def test_scan_expand_paths_no_glob(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.slow
 def test_scan_sink_error_captures_path() -> None:
     storage_options = {
         "aws_endpoint_url": "http://localhost:333",

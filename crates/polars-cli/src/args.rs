@@ -34,7 +34,8 @@ COPY ... TO STDOUT (FORMAT <name>) writes its rows to standard output in the
 format it names, not in that of --format. With a binary format, such as
 parquet, it must be the last statement and the only one that returns rows.
 
-Standard output holds only the rows of queries, in every format. Statements
+Standard output holds only the results of queries, in every format, and a
+preview's note on what it left out. Statements
 that change the session or write a file, such as CREATE TABLE and COPY ... TO a
 file, print nothing when they succeed.
 
@@ -76,6 +77,22 @@ pub struct Args {
     /// Show the plan and the context of an error
     #[arg(long)]
     verbose: bool,
+
+    // `-o`, the output option of the old `polars-cli` (up to 0.9.0), is refused with a pointer to
+    // `--format`.
+    #[arg(short = 'o', hide = true, value_parser = old_output)]
+    #[allow(dead_code)]
+    output: Option<String>,
+}
+
+fn old_output(mode: &str) -> Result<String, String> {
+    let format = match mode {
+        "json" => "ndjson",
+        "arrow" => "arrow-stream",
+        "markdown" | "md" => "table",
+        mode => mode,
+    };
+    Err(format!("-o is now --format; use --format {format}"))
 }
 
 /// Where the SQL script comes from.
@@ -162,8 +179,9 @@ mod tests {
 
     #[test]
     fn formats() {
-        assert_eq!(parse(&[]).unwrap().format(), Format::Table);
+        assert_eq!(parse(&[]).unwrap().format(), Format::Preview);
         for (name, format) in [
+            ("preview", Format::Preview),
             ("table", Format::Table),
             ("csv", Format::Csv),
             ("ndjson", Format::Ndjson),
@@ -205,6 +223,7 @@ mod tests {
             // Nothing on the command line turns it off again.
             &["--read-only=false"],
             &["query.sql"],
+            &["-o", "csv"],
         ] {
             assert_eq!(parse(args).unwrap_err().exit_code(), 2, "{args:?}");
         }

@@ -1294,7 +1294,8 @@ impl IRFunctionExpr {
             F::Atan2 => FunctionOptions::elementwise(),
             #[cfg(feature = "sign")]
             F::Sign => FunctionOptions::elementwise(),
-            F::FillNull => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            F::FillNull => FunctionOptions::elementwise()
+                .with_casting_rules(CastingRules::FirstArgLosslessOrSupertypeWithWarning),
             F::FillNullWithStrategy(strategy) if strategy.is_elementwise() => {
                 FunctionOptions::elementwise()
             },

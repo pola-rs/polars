@@ -566,6 +566,7 @@ def test_invalid_cols(query: str) -> None:
         df.sql(query)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("filter_expr", ["", "WHERE 1 = 1", "WHERE a == 1 OR a != 1"])
 @pytest.mark.parametrize("order_expr", ["", "ORDER BY 1", "ORDER BY a"])
 def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) -> None:
@@ -914,12 +915,25 @@ def test_typeof() -> None:
         df.sql("SELECT TYPEOF(i, s) FROM self")
 
 
+def test_version() -> None:
+    res = pl.sql("SELECT version()", eager=True)
+    assert res.schema == {"version": pl.String}
+    assert res.item() == pl.__version__
+    with pytest.raises(SQLSyntaxError, match="window function"):
+        pl.sql("SELECT version() OVER ()", eager=True)
+
+
 def test_show_functions() -> None:
     with pl.SQLContext() as ctx:
         names = ctx.execute("SHOW FUNCTIONS", eager=True)["name"].to_list()
-        assert {"abs", "array_agg", "read_csv", "regexp_replace", "string_agg"} <= set(
-            names
-        )
+        assert {
+            "abs",
+            "array_agg",
+            "read_csv",
+            "regexp_replace",
+            "string_agg",
+            "version",
+        } <= set(names)
         assert names == sorted(names)
         res = ctx.execute("SHOW FUNCTIONS LIKE 'REGEXP_R%'", eager=True)
         assert res["name"].to_list() == ["regexp_replace"]

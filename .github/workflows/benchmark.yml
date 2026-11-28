@@ -2,22 +2,18 @@ name: Benchmark
 
 on:
   pull_request:
+    types:
+      - opened
+      - ready_for_review
+      - reopened
+      - synchronize
     paths:
       - crates/**
       - py-polars/polars-database/**
       - py-polars/polars-iceberg/**
       - Cargo.toml
-      - py-polars/tests/benchmark/**
-      - .github/workflows/benchmark.yml
-  push:
-    branches:
-      - main
-      - "1.x"
-    paths:
-      - crates/**
-      - py-polars/polars-database/**
-      - py-polars/polars-iceberg/**
-      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
 
@@ -30,6 +26,7 @@ env:
 
 jobs:
   main:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -63,16 +60,6 @@ jobs:
 
       - name: Set up Rust
         run: rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          env-vars: ImageVersion
-          save-if: ${{ github.event_name == 'push' }}
-          # This job builds with `-C target-cpu=native`, which the cache key does
-          # not capture, so reusing artifacts across runner CPUs risks SIGILL and
-          # makes timings incomparable; cache the registry only.
-          cache-targets: false
 
       - name: Build Polars release build
         working-directory: py-polars

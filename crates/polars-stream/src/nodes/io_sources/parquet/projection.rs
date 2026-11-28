@@ -11,6 +11,7 @@ use polars_parquet::read::{RowGroupMetadata, n_columns};
 use polars_plan::dsl::{
     CastColumnsPolicy, ExtraColumnsPolicy, FieldSelection, MissingColumnsPolicy, ScanFieldSelection,
 };
+use polars_plan::plans::predicates::null_count_dtype;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_scan::components::column_selector::ColumnSelector;
@@ -540,11 +541,15 @@ pub fn resolve_arrow_field_projections(
                     )?
                 };
 
+                let transform = resolved_transform.attach_transforms(input);
+                let null_count_transform = transform.null_count_transform();
+
                 Ok(ArrowFieldProjection::Mapped {
                     arrow_field,
                     output_name: output_name.clone(),
                     output_dtype: output_dtype.clone(),
-                    transform: resolved_transform.attach_transforms(input),
+                    transform,
+                    null_count_transform,
                     pruned,
                 })
             },
@@ -565,6 +570,8 @@ pub enum ArrowFieldProjection {
         output_name: PlSmallStr,
         output_dtype: DataType,
         transform: ColumnSelector,
+        /// [`ColumnSelector::null_count_transform`] of `transform`.
+        null_count_transform: ColumnSelector,
         pruned: Option<Arc<PrunedField>>,
     },
 }
@@ -648,16 +655,37 @@ impl ArrowFieldProjection {
                 transform,
                 output_dtype,
                 ..
+            } => apply_selector(transform, column, output_dtype),
+        }
+    }
+
+    /// Like [`Self::apply_transform`], for the `null_count` statistic. Does not apply `narrow`.
+    pub fn apply_null_count_transform(&self, column: Column) -> PolarsResult<Column> {
+        match self {
+            Self::Plain(..) => Ok(column),
+            Self::Mapped {
+                null_count_transform,
+                output_dtype,
+                ..
             } => {
-                let output_height = column.len();
-                let out = transform.select_from_columns(&[column], output_height)?;
-
-                debug_assert_eq!(out.dtype(), output_dtype);
-
-                Ok(out)
+                let nc_dtype = null_count_dtype(output_dtype);
+                apply_selector(null_count_transform, column, &nc_dtype)
             },
         }
     }
+}
+
+fn apply_selector(
+    selector: &ColumnSelector,
+    column: Column,
+    expected_dtype: &DataType,
+) -> PolarsResult<Column> {
+    let output_height = column.len();
+    let out = selector.select_from_columns(&[column], output_height)?;
+
+    debug_assert_eq!(out.dtype(), expected_dtype);
+
+    Ok(out)
 }
 
 #[cfg(test)]
