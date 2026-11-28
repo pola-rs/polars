@@ -374,13 +374,14 @@ pub fn phys_props(
             reverse,
             nulls_last,
             dyn_pred,
-            ..
+            payload_column,
         } => (
             PhysicalPropsDescription::TopK {
                 by_exprs: fmt_exprs(by_column, expr_arena),
                 reverse: reverse.clone(),
                 nulls_last: nulls_last.clone(),
                 dyn_pred: dyn_pred.as_ref().map(|dp| format!("{dp:?}")),
+                payload_column: payload_column.as_ref().map(ToString::to_string),
             },
             vec![input.node, k.node],
         ),

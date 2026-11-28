@@ -829,12 +829,16 @@ fn to_graph_rec<'a>(
             reverse,
             nulls_last,
             dyn_pred,
+            payload_column,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             let k_key = to_graph_rec(k.node, ctx)?;
 
             let k_schema = k.output_schema(ctx.phys_sm).clone();
             let input_schema = input.output_schema(ctx.phys_sm);
+            let payload_idx = payload_column
+                .as_ref()
+                .map(|name| input_schema.index_of(name).unwrap());
 
             // Keys are used by position and may have duplicate names, so give them unique names.
             let unique_by_column = by_column
@@ -858,6 +862,7 @@ fn to_graph_rec<'a>(
                         nulls_last.clone(),
                         key_schema,
                         key_selectors,
+                        payload_idx,
                         dyn_pred.clone(),
                         registry.task_metrics(),
                     )

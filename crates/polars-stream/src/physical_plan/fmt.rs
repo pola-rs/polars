@@ -532,15 +532,24 @@ fn visualize_plan_rec(
             reverse,
             nulls_last: _,
             dyn_pred: _,
+            payload_column,
         } => {
             let name = if reverse.iter().all(|r| *r) {
                 "bottom-k"
             } else {
                 "top-k"
             };
+            let projection = if payload_column.is_some() {
+                format!(
+                    r"\nproject payload: 1 / {}",
+                    input.output_schema(phys_sm).len()
+                )
+            } else {
+                String::new()
+            };
             (
                 format!(
-                    "{name}\\n{}",
+                    "{name}\\n{}{projection}",
                     fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoAliases)
                 ),
                 &[*input, *k][..],
