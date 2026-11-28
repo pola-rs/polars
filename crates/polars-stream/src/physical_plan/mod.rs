@@ -1054,7 +1054,7 @@ fn fuse_drops(
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
     expr_arena: &Arena<AExpr>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
 ) {
     // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
     // inputs of the fused node.
@@ -1143,7 +1143,7 @@ fn fuse_drops(
     }
 
     for key in projected_filters {
-        fuse_cross_join_filter(key, phys_sm, phys_to_ir, expr_arena, expr_cache);
+        fuse_cross_join_filter(key, phys_sm, phys_to_ir, expr_arena, expr_props);
     }
 }
 
@@ -1152,7 +1152,7 @@ fn fuse_cross_join_filter(
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
     expr_arena: &Arena<AExpr>,
-    expr_cache: &mut ExprCache,
+    expr_props: &mut ExprProperties,
 ) {
     // Run after mux insertion: going through a multiplexer could duplicate a shared join.
     let filter = &phys_sm[key];
@@ -1169,7 +1169,7 @@ fn fuse_cross_join_filter(
     if filter.output_schemas.len() != 1
         || output_schema.is_empty()
         || output_schema.len() >= filter_input_schema.len()
-        || !lower_expr::is_elementwise_rec_cached(predicate.node(), expr_arena, expr_cache)
+        || !expr_props.is_elementwise(predicate.node(), expr_arena)
     {
         return;
     }
@@ -1265,7 +1265,7 @@ pub fn build_physical_plan(
         phys_sm,
         &mut phys_to_ir,
         expr_arena,
-        &mut expr_cache,
+        &mut expr_props,
     );
 
     // TODO: remove this after fusing pre-select into group-by node.
