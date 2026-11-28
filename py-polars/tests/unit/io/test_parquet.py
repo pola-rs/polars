@@ -2137,24 +2137,20 @@ def _assert_nested_reads(
         expected.slice(offset, length),
     )
     idx = pl.col("idx")
-    for predicate in (
-        idx % 3 != 1,
-        idx % 2 == 0,
-        (idx * 7919) % 1000 < 20,
-        idx.is_between(offset, offset + length),
-        idx < 0,
-    ):
-        for use_statistics in (False, True):
-            res = (
-                pl.scan_parquet(
-                    path,
-                    parallel="prefiltered",
-                    use_statistics=use_statistics,
-                )
-                .filter(predicate)
-                .collect()
+    for use_statistics in (False, True):
+        scan = pl.scan_parquet(
+            path, parallel="prefiltered", use_statistics=use_statistics
+        )
+        for predicate in (
+            idx % 3 != 1,
+            idx % 2 == 0,
+            (idx * 7919) % 1000 < 20,
+            idx.is_between(offset, offset + length),
+            idx < 0,
+        ):
+            assert_frame_equal(
+                scan.filter(predicate).collect(), expected.filter(predicate)
             )
-            assert_frame_equal(res, expected.filter(predicate))
 
 
 def _write_small_pages(
@@ -2298,12 +2294,7 @@ def _write_half_null_struct(path: Path) -> bytearray:
     struct_type = pa.struct([pa.field("a", pa.int64())])
     pq.write_table(
         pa.table(
-            {
-                "idx": pa.array(range(1000), pa.int32()),
-                "s": pa.array(
-                    [None] * 500 + [{"a": i} for i in range(500)], struct_type
-                ),
-            },
+            {"idx": range(1000), "s": [None] * 500 + [{"a": i} for i in range(500)]},
             schema=pa.schema(
                 [
                     pa.field("idx", pa.int32(), nullable=False),
@@ -2321,13 +2312,13 @@ def _write_half_null_struct(path: Path) -> bytearray:
 
 
 def _assert_reads_raise(path: Path, match: str) -> None:
-    """Check that a full and a prefiltered read raise, keeping the last row."""
+    """Check full and prefiltered reads, keeping and discarding the last row."""
     with pytest.raises(pl.exceptions.ComputeError, match=match):
         pl.read_parquet(path)
-    with pytest.raises(pl.exceptions.ComputeError, match=match):
-        pl.scan_parquet(path, parallel="prefiltered", use_statistics=False).filter(
-            pl.col("idx") % 2 == 1
-        ).collect()
+    scan = pl.scan_parquet(path, parallel="prefiltered", use_statistics=False)
+    for parity in (0, 1):
+        with pytest.raises(pl.exceptions.ComputeError, match=match):
+            scan.filter(pl.col("idx") % 2 == parity).collect()
 
 
 def test_read_parquet_struct_with_missing_levels_raises(tmp_path: Path) -> None:
@@ -4401,6 +4392,33 @@ def test_categorical_dictionary_columns_with_plain_page_28959() -> None:
 
     assert result["cat"].dtype == pl.Categorical
     assert_frame_equal(result, df, categorical_as_str=True)
+
+
+@pytest.mark.parametrize("use_dictionary", [False, True])
+def test_required_categorical_in_nullable_struct(
+    tmp_path: Path, use_dictionary: bool
+) -> None:
+    cat_field = pl.Series("cat", ["a"], pl.Categorical).to_frame().to_arrow().schema[0]
+    struct_type = pa.struct([cat_field.with_nullable(False)])
+    rows = [None] * 64 + [{"cat": f"a{i}"} for i in range(16)]
+    rows += [None] * 16 + [{"cat": f"b{i}"} for i in range(16)] + [None] * 16
+    table = pa.table(
+        {
+            "idx": pa.array(range(len(rows)), pa.int32()),
+            "s": pa.array(rows, struct_type),
+        }
+    )
+    path = tmp_path / "required_categorical.parquet"
+    pq.write_table(
+        table,
+        path,
+        use_dictionary=use_dictionary,
+        dictionary_pagesize_limit=1,
+        row_group_size=64,
+        data_page_size=1,
+        write_batch_size=8,
+    )
+    _assert_nested_reads(path, pl.from_arrow(table), offset=3, length=12)
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical(), pl.Enum(["a", "b", "c", "d"])])

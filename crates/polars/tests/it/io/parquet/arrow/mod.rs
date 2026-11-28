@@ -949,17 +949,22 @@ fn filter_chunk() -> PolarsResult<()> {
     Ok(())
 }
 
-/// Writes `columns` as a row group and reads it back with `filter`, as the chunks of each column.
+/// Writes an array as a row group and reads it back with `filter`.
 fn filtered_roundtrip(
-    columns: Vec<(Field, Box<dyn Array>)>,
+    array: Box<dyn Array>,
+    is_nullable: bool,
     filter: p_read::Filter,
-) -> PolarsResult<Vec<Vec<Box<dyn Array>>>> {
-    let (fields, arrays): (Vec<_>, Vec<_>) = columns.into_iter().unzip();
-    let schema = ArrowSchema::from_iter(fields);
-    let chunk = RecordBatchT::try_new(arrays[0].len(), Arc::new(schema.clone()), arrays)?;
+) -> PolarsResult<Box<dyn Array>> {
+    let schema =
+        ArrowSchema::from_iter([Field::new("a".into(), array.dtype().clone(), is_nullable)]);
+    let chunk = RecordBatchT::try_new(array.len(), Arc::new(schema.clone()), vec![array])?;
     let mut reader = Cursor::new(integration_write(&schema, &[chunk])?);
     let metadata = p_read::read_metadata(&mut reader)?;
-    read_columns_many(&mut reader, &metadata.row_groups[0], &schema, Some(filter))
+    Ok(
+        read_columns_many(&mut reader, &metadata.row_groups[0], &schema, Some(filter))?
+            .remove(0)
+            .remove(0),
+    )
 }
 
 /// Checks that `array` holds `expected` in an allocation of exactly that many values.
@@ -983,25 +988,22 @@ fn masked_read_allocates_only_kept_values() -> PolarsResult<()> {
         .filter(keep)
         .collect::<Vec<_>>();
 
-    let field = Field::new("a".into(), ArrowDataType::Int64, false);
-    let struct_dtype = ArrowDataType::Struct(vec![field.clone()]);
+    let struct_dtype =
+        ArrowDataType::Struct(vec![Field::new("a".into(), ArrowDataType::Int64, false)]);
     let structs = StructArray::new(
         struct_dtype.clone(),
         values.len(),
         vec![values.clone().boxed()],
         None,
     );
-    let struct_field = Field::new("s".into(), struct_dtype, false);
-    let mut columns = filtered_roundtrip(
-        vec![(field, values.boxed()), (struct_field, structs.boxed())],
-        p_read::Filter::Mask(mask),
-    )?;
-    assert_exactly_allocated(columns[0].pop().unwrap(), &expected);
+    let filter = p_read::Filter::Mask(mask);
+    assert_exactly_allocated(
+        filtered_roundtrip(values.boxed(), false, filter.clone())?,
+        &expected,
+    );
 
-    let structs = columns[1][0]
-        .as_any_mut()
-        .downcast_mut::<StructArray>()
-        .unwrap();
+    let mut column = filtered_roundtrip(structs.boxed(), false, filter)?;
+    let structs = column.as_any_mut().downcast_mut::<StructArray>().unwrap();
     let empty = StructArray::new_empty(structs.dtype().clone());
     let (_, _, mut fields, _) = std::mem::replace(structs, empty).into_data();
     assert_exactly_allocated(fields.pop().unwrap(), &expected);
@@ -1011,51 +1013,55 @@ fn masked_read_allocates_only_kept_values() -> PolarsResult<()> {
 
 #[test]
 fn masked_list_read_allocates_kept_share_of_values() -> PolarsResult<()> {
-    // A masked read of a list column reserves the kept rows' share of its values. Each row
-    // has 3 values, so that share is exact and decoding must not grow it.
-    let keep = |i: &i64| i % 3 != 1;
-    let mut lists = MutableListArray::<i64, _>::new_with_field(
-        MutablePrimitiveArray::<i64>::new(),
-        "item".into(),
-        false,
-    );
-    let rows = (0..1000i64).map(|i| Some((3 * i..3 * i + 3).map(Some).collect::<Vec<_>>()));
-    lists.try_extend(rows)?;
-    let lists: ListArray<i64> = lists.into();
-    let mask = Bitmap::from_iter((0..1000).map(|i| keep(&i)));
-    let expected = (0..1000i64)
-        .filter(keep)
-        .flat_map(|i| 3 * i..3 * i + 3)
-        .collect::<Vec<_>>();
+    // Each row has 3 values. Check both a dense selection and one row from a large page.
+    for sparse in [false, true] {
+        let keep = |i: &i64| if sparse { *i == 0 } else { i % 3 != 1 };
+        let mut lists = MutableListArray::<i64, _>::new_with_field(
+            MutablePrimitiveArray::<i64>::new(),
+            "item".into(),
+            false,
+        );
+        let rows = (0..1000i64).map(|i| Some((3 * i..3 * i + 3).map(Some).collect::<Vec<_>>()));
+        lists.try_extend(rows)?;
+        let lists: ListArray<i64> = lists.into();
+        let mask = Bitmap::from_iter((0..1000).map(|i| keep(&i)));
+        let expected = (0..1000i64)
+            .filter(keep)
+            .flat_map(|i| 3 * i..3 * i + 3)
+            .collect::<Vec<_>>();
 
-    let field = Field::new("l".into(), lists.dtype().clone(), false);
-    let mut columns = filtered_roundtrip(vec![(field, lists.boxed())], p_read::Filter::Mask(mask))?;
-    let lists = columns[0][0]
-        .as_any_mut()
-        .downcast_mut::<ListArray<i64>>()
-        .unwrap();
-    let empty = ListArray::new_empty(lists.dtype().clone());
-    let (_, values, _, _) = std::mem::replace(lists, empty).into_inner();
-    assert_exactly_allocated(values, &expected);
+        let mut column = filtered_roundtrip(lists.boxed(), false, p_read::Filter::Mask(mask))?;
+        let lists = column
+            .as_any_mut()
+            .downcast_mut::<ListArray<i64>>()
+            .unwrap();
+        let empty = ListArray::new_empty(lists.dtype().clone());
+        let (_, values, offsets, _) = std::mem::replace(lists, empty).into_inner();
+        assert_exactly_allocated(values, &expected);
+        let offsets = offsets.into_mut().right().unwrap();
+        assert!(offsets.capacity() <= 2 * (expected.len() / 3 + 1));
+    }
 
     Ok(())
 }
 
 #[test]
-fn masked_read_refuses_chunk_with_more_rows_than_mask() -> PolarsResult<()> {
-    let values = Int64Array::from_vec((0..1000).collect());
-    let dtype = ArrowDataType::Struct(vec![Field::new("a".into(), ArrowDataType::Int64, false)]);
-    let structs = StructArray::new(dtype.clone(), values.len(), vec![values.boxed()], None);
-    let field = Field::new("s".into(), dtype, false);
-
-    let mask = Bitmap::new_with_value(true, 999);
-    let err =
-        filtered_roundtrip(vec![(field, structs.boxed())], p_read::Filter::Mask(mask)).unwrap_err();
-    assert!(
-        err.to_string().contains("more rows than the filter mask"),
-        "{err}"
-    );
-
+fn masked_read_refuses_chunk_with_wrong_number_of_rows() -> PolarsResult<()> {
+    for array in [pyarrow_struct("struct"), data(0..12i64, false)] {
+        let rows = array.len();
+        for (mask_len, message) in [
+            (rows - 1, "more rows than the filter mask".to_string()),
+            (
+                rows + 1,
+                format!("{rows} rows where {} were expected", rows + 1),
+            ),
+        ] {
+            let mask = Bitmap::from_iter((0..mask_len).map(|i| i == 0));
+            let err =
+                filtered_roundtrip(array.clone(), false, p_read::Filter::Mask(mask)).unwrap_err();
+            assert!(err.to_string().contains(&message), "{err}");
+        }
+    }
     Ok(())
 }
 
@@ -1094,10 +1100,9 @@ fn equality_predicate_read_returns_valid_needles() -> PolarsResult<()> {
     };
     for is_nullable in [false, true] {
         let array = Int64Array::from_vec((0..1000).map(|i| i % 4).collect());
-        let field = Field::new("a".into(), ArrowDataType::Int64, is_nullable);
         let filter = p_read::Filter::Predicate(predicate.clone());
-        let columns = filtered_roundtrip(vec![(field, array.boxed())], filter)?;
-        let column = columns[0][0].as_any().downcast_ref::<Int64Array>().unwrap();
+        let array = filtered_roundtrip(array.boxed(), is_nullable, filter)?;
+        let column = array.as_any().downcast_ref::<Int64Array>().unwrap();
         assert_eq!(column, &Int64Array::from_vec(vec![2; 250]));
     }
 

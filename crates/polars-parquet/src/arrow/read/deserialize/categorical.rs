@@ -333,13 +333,19 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
         filter: Option<super::Filter>,
         _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
+        let track_validity =
+            state.is_optional || !decoded.1.is_empty() || state.page_validity.is_some();
+        if track_validity && decoded.1.is_empty() {
+            decoded.1.extend_constant(decoded.0.len(), true);
+        }
+
         match state.translation {
             CategoricalTranslation::Dictionary(translation) => {
                 with_cast_mut_vec::<T, T::AlignedBytes, _, _>(&mut decoded.0, |aligned_bytes_vec| {
                     super::dictionary_encoded::decode_dict_dispatch(
                         translation,
                         T::try_from(self.dict_size).ok().unwrap(),
-                        state.is_optional,
+                        track_validity,
                         state.page_validity.as_ref(),
                         filter,
                         &mut decoded.1,
@@ -371,7 +377,7 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
                     },
                     filter,
                     state.page_validity,
-                    state.is_optional,
+                    track_validity,
                     &mut decoded.1,
                     &mut decoded.0,
                 )

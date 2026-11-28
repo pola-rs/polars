@@ -371,25 +371,25 @@ impl<'a> LeafRows<'a> {
         let num_row_items = rows[0].len();
         let list = rows.last_mut().unwrap();
         let num_list_rows = list.len();
+        // As in `collect_value`, each new top-level row takes a collect.
+        let (max_rows, max_outer_rows) = if self.row_rep == 0 {
+            (*num_collects, 0)
+        } else {
+            (usize::MAX, *num_collects)
+        };
         // A run starts at most a row per value, so reserving that many offsets keeps reallocation,
         // and the spilling of registers around it, out of the loop.
         let (mut new_offsets, width) = match &mut list.content {
             NestedContent::List { offsets } => {
-                offsets.reserve(page_def_levels.len());
+                offsets.reserve(page_def_levels.len().min(max_rows));
                 (Some(offsets.spare_capacity_mut()), 0)
             },
             NestedContent::FixedSizeList { width } => (None, *width),
             _ => unreachable!(),
         };
 
-        // As in `collect_value`, each new top-level row takes a collect. These are the rows of the
-        // list if it is the top level, else those of the outermost level. Counting them is cheaper
-        // than checking the repetition level of each value.
-        let (max_rows, max_outer_rows) = if self.row_rep == 0 {
-            (*num_collects, 0)
-        } else {
-            (usize::MAX, *num_collects)
-        };
+        // These are the list rows at the top level, or the rows of the outermost level.
+        // Counting them is cheaper than checking the repetition level of each value.
         let mut num_rows = 0;
         let mut num_outer_rows = 0;
         let mut is_misaligned = false;
@@ -703,6 +703,17 @@ impl NestedState {
         Self { nested }
     }
 
+    fn compact_offsets(&mut self) {
+        for nested in &mut self.nested {
+            if let NestedContent::List { offsets } = &mut nested.content {
+                let needed = offsets.len() + 1;
+                if offsets.capacity() > needed.saturating_mul(2) {
+                    offsets.shrink_to(needed);
+                }
+            }
+        }
+    }
+
     pub fn pop(&mut self) -> Option<(usize, Vec<i64>, Option<BitmapBuilder>)> {
         Some(self.nested.pop()?.take())
     }
@@ -868,7 +879,7 @@ fn decode_nested<const HAS_FIXED_SIZE_LIST: bool>(
     // Amortized allocations
     def_levels: &[u16],
     rep_levels: &[u16],
-) -> ParquetResult<()> {
+) -> ParquetResult<bool> {
     let leaf_def_level = *def_levels.last().unwrap();
     let leaf_rows = LeafRows::new(nested, def_levels, rep_levels);
 
@@ -942,7 +953,7 @@ fn decode_nested<const HAS_FIXED_SIZE_LIST: bool>(
         state.num_collects = Some(top_level_filter.take_leading_ones()).filter(|v| *v != 0);
     }
 
-    Ok(())
+    Ok(!current_rep_levels.is_empty())
 }
 
 /// Return the definition and repetition level iterators for this page.
@@ -992,13 +1003,6 @@ impl<D: utils::Decoder> PageDecoder<D> {
         let mut current_def_levels = Vec::<u16>::new();
         let mut current_rep_levels = Vec::<u16>::new();
 
-        // Without a list, each value is a row: a mask applies to the values directly.
-        let row_mask = match &filter {
-            Some(Filter::Mask(mask)) if max_rep_level == 0 => Some(mask.clone()),
-            _ => None,
-        };
-        let mut num_page_rows = 0;
-
         // Without a list, the kept rows are the values to decode. A list under a mask reserves
         // the kept rows' share of the values, and grows if those rows hold more.
         let num_values = self.iter.total_num_values();
@@ -1015,32 +1019,26 @@ impl<D: utils::Decoder> PageDecoder<D> {
             self.decoder.apply_dictionary(&mut target, dict)?;
         }
 
-        let (mut decode_state, top_level_filter) = match filter {
-            None => (
-                DecodingState {
-                    num_skips: None,
-                    num_collects: Some(usize::MAX),
-                },
-                Bitmap::new(),
-            ),
-            Some(Filter::Range(range)) => (
-                DecodingState {
-                    num_skips: Some(range.start),
-                    num_collects: Some(range.len()),
-                },
-                Bitmap::new(),
-            ),
-            Some(Filter::Mask(mask)) => (
-                DecodingState {
-                    num_skips: None,
-                    num_collects: None,
-                },
-                mask,
-            ),
+        let (num_skips, num_collects, mask) = match filter {
+            None => (None, Some(usize::MAX), None),
+            Some(Filter::Range(range)) => (Some(range.start), Some(range.len()), None),
+            Some(Filter::Mask(mask)) => (None, None, Some(mask)),
             Some(Filter::Predicate(_)) => todo!(),
         };
-
+        let mut decode_state = DecodingState {
+            num_skips,
+            num_collects,
+        };
+        let mask_len = mask.as_ref().map(Bitmap::len);
+        // Without a list, each value is a row: a mask applies to the values directly.
+        let row_mask = if max_rep_level == 0 {
+            mask.clone()
+        } else {
+            None
+        };
+        let top_level_filter = mask.unwrap_or_default();
         let mut top_level_filter = top_level_filter.iter();
+        let mut num_page_rows = 0;
 
         // Only columns with a fixed-size list pay for checking its rows.
         let has_fixed_size_list = nested_state
@@ -1077,82 +1075,64 @@ impl<D: utils::Decoder> PageDecoder<D> {
             };
             let page = page.decompress(&mut self.iter)?;
 
-            let (mut def_iter, mut rep_iter) = level_iters(&page)?;
-
-            let num_levels = def_iter.len().min(rep_iter.len());
-            def_iter.limit_to(num_levels);
-            rep_iter.limit_to(num_levels);
+            let (def_iter, rep_iter) = level_iters(&page)?;
+            let num_levels = page.num_values();
 
             current_def_levels.clear();
             current_rep_levels.clear();
 
             collect_level_values(&mut current_def_levels, def_iter)?;
 
-            if let Some(page_mask) = page_mask {
+            let (leaf_validity, leaf_filter) = if let Some(page_mask) = page_mask {
                 let leaf_validity = collect_masked_rows_without_list(
                     &current_def_levels,
                     &page_mask,
                     &mut nested_state.nested,
                     &def_levels,
                 );
-                let state = utils::State::new_nested(
-                    &self.decoder,
-                    &page,
-                    self.dict.as_ref(),
-                    leaf_validity,
+                (leaf_validity, page_mask)
+            } else {
+                collect_level_values(&mut current_rep_levels, rep_iter)?;
+                let mut leaf_filter = BitmapBuilder::with_capacity(num_levels);
+                let mut leaf_validity = BitmapBuilder::with_capacity(num_levels);
+
+                // @TODO: move this to outside the loop.
+                let mut batched_collector = BatchedNestedDecoder {
+                    num_waiting_valids: 0,
+                    num_waiting_invalids: 0,
+
+                    filter: &mut leaf_filter,
+                    validity: &mut leaf_validity,
+                };
+
+                let has_more_rows = decode_page(
+                    &current_def_levels,
+                    &current_rep_levels,
+                    &mut batched_collector,
+                    &mut nested_state.nested,
+                    &mut decode_state,
+                    &mut top_level_filter,
+                    &def_levels,
+                    &rep_levels,
                 )?;
-                state.decode(
-                    &mut self.decoder,
-                    &mut target,
-                    Some(Filter::Mask(page_mask)),
-                    &mut chunks,
-                )?;
+                if mask_len.is_some() && has_more_rows {
+                    return Err(ParquetError::oos(
+                        "the column chunk has more rows than the filter mask",
+                    ));
+                }
+                // A row may continue on the next page, so the last one is only checked for excess
+                // children.
+                if has_fixed_size_list {
+                    check_fixed_size_list_rows(&nested_state.nested, true)?;
+                }
 
-                self.iter.reuse_page_buffer(page);
-                continue;
-            }
+                batched_collector.finalize()?;
 
-            collect_level_values(&mut current_rep_levels, rep_iter)?;
-
-            let mut leaf_filter = BitmapBuilder::with_capacity(num_levels);
-            let mut leaf_validity = BitmapBuilder::with_capacity(num_levels);
-
-            // @TODO: move this to outside the loop.
-            let mut batched_collector = BatchedNestedDecoder {
-                num_waiting_valids: 0,
-                num_waiting_invalids: 0,
-
-                filter: &mut leaf_filter,
-                validity: &mut leaf_validity,
+                (Some(leaf_validity.freeze()), leaf_filter.freeze())
             };
 
-            decode_page(
-                &current_def_levels,
-                &current_rep_levels,
-                &mut batched_collector,
-                &mut nested_state.nested,
-                &mut decode_state,
-                &mut top_level_filter,
-                &def_levels,
-                &rep_levels,
-            )?;
-            // A row may continue on the next page, so the last one is only checked for excess
-            // children.
-            if has_fixed_size_list {
-                check_fixed_size_list_rows(&nested_state.nested, true)?;
-            }
-
-            batched_collector.finalize()?;
-
-            let leaf_validity = leaf_validity.freeze();
-            let leaf_filter = leaf_filter.freeze();
-
-            let state = utils::State::new_nested(
-                &self.decoder,
-                &page,
-                self.dict.as_ref(),
-                Some(leaf_validity),
-            )?;
+            let state =
+                utils::State::new_nested(&self.decoder, &page, self.dict.as_ref(), leaf_validity)?;
             state.decode(
                 &mut self.decoder,
                 &mut target,
@@ -1161,6 +1141,23 @@ impl<D: utils::Decoder> PageDecoder<D> {
             )?;
 
             self.iter.reuse_page_buffer(page);
+        }
+
+        if let Some(mask_len) = mask_len {
+            let missing_rows = if row_mask.is_some() {
+                mask_len - num_page_rows
+            } else {
+                top_level_filter.num_remaining()
+                    + decode_state.num_skips.unwrap_or(0)
+                    + decode_state.num_collects.unwrap_or(0)
+            };
+            if missing_rows != 0 {
+                return Err(ParquetError::oos(format!(
+                    "the column chunk has {} rows where {mask_len} were expected",
+                    mask_len - missing_rows,
+                )));
+            }
+            nested_state.compact_offsets();
         }
 
         // Rows don't span column chunks, so the last row must be complete here.

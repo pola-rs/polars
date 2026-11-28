@@ -9,11 +9,11 @@ use polars_arrow::array::{Array, IntoBoxedArray, Splitable};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::pushable::Pushable;
-use polars_compute::filter::filter_boolean_kernel;
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
 use self::filter::Filter;
+use super::dictionary_encoded::append_validity;
 use super::{BasicDecompressor, InitNested, NestedState, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -132,67 +132,49 @@ pub(crate) fn unspecialized_decode<T: Default>(
     validity: &mut BitmapBuilder,
     target: &mut impl Pushable<T>,
 ) -> ParquetResult<()> {
-    match &mut filter {
-        None => {},
+    let selection = match &mut filter {
+        None => None,
         Some(Filter::Range(range)) => {
-            match page_validity.as_mut() {
-                None => {
-                    for _ in 0..range.start {
-                        decode_one()?;
-                    }
-                },
-                Some(pv) => {
-                    let c;
-                    (c, *pv) = pv.split_at(range.start);
-                    for _ in 0..c.set_bits() {
-                        decode_one()?;
-                    }
-                    *pv = std::mem::take(pv).sliced(0, range.len());
-                },
-            }
-
-            num_rows = range.len();
+            let selection = Some((range.start, range.len()));
             filter = None;
+            selection
         },
         Some(Filter::Mask(mask)) => {
-            let leading_zeros = mask.take_leading_zeros();
+            let start = mask.take_leading_zeros();
             mask.take_trailing_zeros();
-
-            match page_validity.as_mut() {
-                None => {
-                    for _ in 0..leading_zeros {
-                        decode_one()?;
-                    }
-                },
-                Some(pv) => {
-                    let c;
-                    (c, *pv) = pv.split_at(leading_zeros);
-                    for _ in 0..c.set_bits() {
-                        decode_one()?;
-                    }
-                    *pv = std::mem::take(pv).sliced(0, mask.len());
-                },
-            }
-
-            num_rows = mask.len();
+            let selection = Some((start, mask.len()));
             if mask.unset_bits() == 0 {
                 filter = None;
             }
+            selection
         },
         Some(Filter::Predicate(_)) => todo!(),
     };
+    if let Some((start, len)) = selection {
+        let physical_skip = match page_validity.as_mut() {
+            None => start,
+            Some(pv) => {
+                let (prefix, suffix) = pv.split_at(start);
+                *pv = suffix.sliced(0, len);
+                prefix.set_bits()
+            },
+        };
+        for _ in 0..physical_skip {
+            decode_one()?;
+        }
+        num_rows = len;
+    }
 
     page_validity = page_validity.filter(|pv| pv.unset_bits() > 0);
+    if is_optional {
+        append_validity(page_validity.as_ref(), filter.as_ref(), validity, num_rows);
+    }
 
     match (filter, page_validity) {
         (None, None) => {
             target.reserve(num_rows);
             for _ in 0..num_rows {
                 target.push(decode_one()?);
-            }
-
-            if is_optional {
-                validity.extend_constant(num_rows, true);
             }
         },
         (None, Some(page_validity)) => {
@@ -204,11 +186,6 @@ pub(crate) fn unspecialized_decode<T: Default>(
                     T::default()
                 };
                 target.push(v);
-            }
-
-            // A required leaf only has page validity from a null ancestor, which holds the nulls.
-            if is_optional {
-                validity.extend_from_bitmap(&page_validity);
             }
         },
         (Some(Filter::Range(_)), _) => unreachable!(),
@@ -226,10 +203,6 @@ pub(crate) fn unspecialized_decode<T: Default>(
                 for _ in 0..num_zeros {
                     decode_one()?;
                 }
-            }
-
-            if is_optional {
-                validity.extend_constant(num_rows, true);
             }
         },
         (Some(Filter::Mask(mask)), Some(page_validity)) => {
@@ -277,10 +250,6 @@ pub(crate) fn unspecialized_decode<T: Default>(
             assert_eq!(fl, vl);
 
             iter(f, v)?;
-
-            if is_optional {
-                validity.extend_from_bitmap(&filter_boolean_kernel(&page_validity, &mask));
-            }
         },
         (Some(Filter::Predicate(_)), _) => todo!(),
     }
