@@ -68,6 +68,12 @@ where
                     )
                 }
             };
+            let (offset, width, upper_limit) = if offset.is_nan() || upper_limit.is_nan() {
+                // No non-NaN items; supply unit interval.
+                (0.0, 1.0 / bin_count as f64, 1.0)
+            } else {
+                (offset, width, upper_limit)
+            };
             // Manually set the final value to the maximum value to ensure the final value isn't
             // missed due to floating-point precision.
             let out = (0..bin_count)
