@@ -151,7 +151,9 @@ fn execute_replacement(
     validate_old(if kept.is_some() { &old } else { &cast_old })?;
     let old = cast_old;
     let dtype = dtype.unwrap_or(new.dtype());
-    let defer_cast = dtype.contains_categoricals() && new.dtype() != dtype;
+    // A cast to a Categorical adds the values to its categories, so then only those used are cast.
+    let defer = |values: &Series| dtype.contains_categoricals() && values.dtype() != dtype;
+    let defer_cast = defer(&new);
     #[cfg_attr(not(feature = "dtype-categorical"), allow(unused_mut))]
     let mut swapped: Vec<(DataType, DataType)> = Vec::new();
     let validation_dtype = dtype.clone().map_leaves(&mut |dt| match dt {
@@ -175,11 +177,9 @@ fn execute_replacement(
         let original = swapped.iter().find(|(own, _)| own == &dt);
         original.map_or(dt, |(_, original)| original.clone())
     });
-    // `default` is cast to `dtype` as `new` is, and the output dtype is the supertype of the two.
-    // But a cast to a Categorical adds the values to its categories, so then only the values used
-    // are cast, to the dtype of `new`.
-    let defer_default =
-        default.is_some_and(|d| dtype.contains_categoricals() && d.dtype() != dtype);
+    // `default` is cast to `dtype` as `new` is, and the output dtype is the supertype of the two
+    // (`new`'s if the cast of `default` is deferred).
+    let defer_default = default.is_some_and(defer);
     let default = match default {
         Some(d) if !defer_default && d.dtype() != dtype => {
             Some(d.cast_with_options(dtype, cast_options)?)
@@ -208,7 +208,7 @@ fn execute_replacement(
                 .cast_with_options(&resolved, cast_options)
         },
     };
-    // `default` for the values not `matched`, in the output dtype: if deferred, only those are cast.
+    // `default` for the values not `matched`, in the output dtype (if deferred, only those cast).
     let cast_default = |default: &Series, matched: &BooleanChunked| {
         if default.dtype() == &out_dtype {
             Ok(default.clone())

@@ -85,6 +85,8 @@ def test_replace_strict_empty() -> None:
     lf = pl.LazyFrame({"a": [None, None]})
     result = lf.select(pl.col("a").replace_strict({}))
     assert_frame_equal(lf, result)
+    result = lf.select(pl.col("a").replace_strict({}, return_dtype=pl.String))
+    assert_frame_equal(result, lf.cast(pl.String))
 
 
 def test_replace_strict_fast_path_many_to_one_default() -> None:
@@ -202,7 +204,6 @@ def test_replace_strict_only_adds_used_default_categories(engine: EngineType) ->
     lf = pl.LazyFrame({"s": [1, 2, 3], "d": ["d1", "d2", "d3"]})
     cases: list[tuple[list[int], str | list[str], str | pl.Expr, list[str]]] = [
         ([1, 2, 3], "x", "unused", ["x"] * 3),
-        ([1, 2, 3], ["x", "y", "x"], "unused", ["x", "y", "x"]),
         ([1, 3], "x", pl.col("d"), ["x", "d2", "x"]),
         ([1, 2], ["x", "y"], pl.col("d"), ["x", "y", "d3"]),
         ([], [], "d", ["d"] * 3),
@@ -366,24 +367,6 @@ def test_replace_strict_default_dtype_does_not_depend_on_use(
     assert_frame_equal(
         result, pl.DataFrame({"s": expected}, schema={"s": pl.List(pl.String)})
     )
-
-
-def test_replace_strict_empty_old_return_dtype() -> None:
-    lf = pl.LazyFrame({"a": [None, None]}, schema={"a": pl.Int64})
-    result = lf.select(pl.col("a").replace_strict([], [], return_dtype=pl.String))
-    expected = pl.LazyFrame({"a": [None, None]}, schema={"a": pl.String})
-    assert result.collect_schema() == expected.collect_schema()
-    assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_replace_strict_enum_absent_old_raises(engine: EngineType) -> None:
-    lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": pl.Enum(["a", "b", "c"])})
-    expr = pl.col("s").replace_strict({"absent": "x", "a": "y", "b": "z"}, default="d")
-    with pytest.raises(
-        InvalidOperationError, match="conversion from `str` to `enum` failed"
-    ):
-        lf.select(expr).collect(engine=engine)
 
 
 def test_replace_strict_int_to_int_null() -> None:

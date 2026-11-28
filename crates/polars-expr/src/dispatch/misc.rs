@@ -477,8 +477,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         s[0].as_materialized_series()
     };
 
-    #[cfg_attr(not(feature = "dtype-categorical"), allow(unused_mut))]
-    let mut needle_s = s[1].clone();
+    let needle_s = &s[1];
     polars_ensure!(
         needle_s.len() == 1,
         InvalidOperation: "needle of `index_of` can only contain a single value, found {} values",
@@ -487,18 +486,21 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
     // Type coercion leaves a string needle of a Categorical or Enum as is, to be looked up here:
     // casting adds it to a Categorical's categories, and fails or gives null for one an Enum lacks.
     #[cfg(feature = "dtype-categorical")]
-    if let DataType::Categorical(_, mapping) | DataType::Enum(_, mapping) = series.dtype()
-        && needle_s.dtype().is_string()
-    {
-        if needle_s
-            .str()?
-            .get(0)
-            .is_some_and(|v| mapping.get_cat(v).is_none())
+    let needle_s = &match series.dtype() {
+        DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)
+            if needle_s.dtype().is_string() =>
         {
-            return Ok(Column::full_null(series.name().clone(), 1, &IDX_DTYPE));
-        }
-        needle_s = needle_s.strict_cast(series.dtype())?;
-    }
+            if needle_s
+                .str()?
+                .get(0)
+                .is_some_and(|v| mapping.get_cat(v).is_none())
+            {
+                return Ok(Column::full_null(series.name().clone(), 1, &IDX_DTYPE));
+            }
+            needle_s.strict_cast(series.dtype())?
+        },
+        _ => needle_s.clone(),
+    };
     let needle = Scalar::new(
         needle_s.dtype().clone(),
         needle_s.get(0).unwrap().into_static(),

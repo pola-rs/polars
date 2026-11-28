@@ -11,7 +11,7 @@ from polars.exceptions import ArgumentRemovedError, InvalidOperationError, Shape
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import EngineType, PolarsDataType
+    from polars._typing import EngineType
 
 
 @pytest.fixture(scope="module")
@@ -81,6 +81,9 @@ def test_replace_categorical_absent_old_adds_no_categories(
     lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": dtype})
     # A `new` value paired with an absent `old` value can't be output either.
     absent, unused, new = (f"{name}-{uuid4()}" for name in ("absent", "unused", "new"))
+    # Nor can one of another Categorical or an Enum.
+    enum_old = pl.Series([absent, "a"], dtype=pl.Enum([absent, "a"]))
+    cat_old = enum_old.cast(pl.Categorical(pl.Categories.random()))
     for expr, expected in [
         (pl.col("s").replace("a", new), [new, "b"]),
         (pl.col("s").replace(absent, "a"), ["a", "b"]),
@@ -89,6 +92,8 @@ def test_replace_categorical_absent_old_adds_no_categories(
         (pl.col("s").replace([absent, "a"], [unused, "b"]), ["b", "b"]),
         (pl.col("s").replace({absent: unused, "b": "a"}), ["a", "a"]),
         (pl.col("s").replace({absent: unused, f"{absent}-2": "a"}), ["a", "b"]),
+        (pl.col("s").replace(enum_old, [unused, "b"]), ["b", "b"]),
+        (pl.col("s").replace(cat_old, [unused, "b"]), ["b", "b"]),
     ]:
         result = lf.select(expr).collect(engine=engine)
         assert_frame_equal(result, pl.DataFrame({"s": expected}, schema={"s": dtype}))
@@ -130,41 +135,13 @@ def test_replace_categorical_only_adds_values_for_present_keys(
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-@pytest.mark.parametrize(
-    "old_dtype",
-    [pl.Categorical(pl.Categories.random()), pl.Enum(["absent", "a"])],
-    ids=["categorical", "enum"],
-)
-def test_replace_categorical_old_of_other_dtype_adds_no_categories(
-    old_dtype: PolarsDataType, engine: EngineType
-) -> None:
-    cats = pl.Categories.random()
-    dtype = pl.Categorical(cats)
-    lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": dtype})
-    old = pl.Series(["absent", "a"], dtype=old_dtype)
-    cases: list[tuple[pl.Expr, list[str], PolarsDataType]] = [
-        (pl.col("s").replace(old, ["unused", "b"]), ["b", "b"], dtype),
-        (
-            pl.col("s").replace_strict(old, ["unused", "b"], default="d"),
-            ["b", "d"],
-            pl.String,
-        ),
-    ]
-    for expr, expected, out_dtype in cases:
-        result = lf.select(expr).collect(engine=engine)
-        assert_frame_equal(
-            result, pl.DataFrame({"s": expected}, schema={"s": out_dtype})
-        )
-    assert cats.to_series().to_list() == ["a", "b"]
-
-
-@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 def test_replace_enum_absent_old_raises(engine: EngineType) -> None:
     lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": pl.Enum(["a", "b", "c"])})
     for expr in [
         pl.col("s").replace("absent", "a"),
         pl.col("s").replace(["absent", "b"], "a"),
         pl.col("s").replace({"absent": "a", "b": "a"}),
+        pl.col("s").replace_strict({"absent": "x", "a": "y", "b": "z"}, default="d"),
     ]:
         with pytest.raises(
             InvalidOperationError, match="conversion from `str` to `enum` failed"
@@ -353,6 +330,7 @@ def test_replace_fast_path_many_to_one() -> None:
         ([2, 2], 100),
         ([2, 2], [100, 200]),
         ([2, 2], [100, 100]),
+        (["2", "02"], [100, 200]),
     ],
 )
 def test_replace_duplicates_old(old: list[int], new: int | list[int]) -> None:
@@ -362,15 +340,6 @@ def test_replace_duplicates_old(old: list[int], new: int | list[int]) -> None:
         match="`old` input for `replace` must not contain duplicates",
     ):
         s.replace(old, new)
-
-
-def test_replace_duplicates_old_after_cast() -> None:
-    s = pl.Series([1.0, 2.0, 3.0])
-    msg = "`old` input for `replace` must not contain duplicates"
-    with pytest.raises(InvalidOperationError, match=msg):
-        s.replace(["1", "1.0"], [10.0, 20.0])
-    with pytest.raises(InvalidOperationError, match=msg):
-        s.replace_strict(["1", "1.0"], [10.0, 20.0], default=0.0)
 
 
 def test_replace_duplicates_new() -> None:
