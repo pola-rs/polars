@@ -192,37 +192,59 @@ def test_duration_wildcard_expansion() -> None:
     ) == {"a": [timedelta(seconds=3600)], "b": [timedelta(seconds=7200)]}
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "weeks",
+        "days",
+        "hours",
+        "minutes",
+        "seconds",
+        "milliseconds",
+        "microseconds",
+        "nanoseconds",
+    ],
+)
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_duration_untyped_null(time_unit: TimeUnit, engine: EngineType) -> None:
-    # an untyped null gives a null duration, as a typed null does
+def test_duration_untyped_null(
+    field: str, time_unit: TimeUnit, engine: EngineType
+) -> None:
+    # an untyped null in any field gives a null duration, whether that field is
+    # coarser than, equal to, or finer than the time unit
     lf = pl.LazyFrame(
         {"x": [None, None], "i": [1, 2], "f": [1.5, 2.5]},
         schema={"x": pl.Null, "i": pl.Int32, "f": pl.Float64},
     )
+    other_field = "days" if field == "hours" else "hours"
+    dtype = pl.Duration(time_unit)
+
     for null in (pl.lit(None), pl.col("x")):
         for other in (pl.col("i"), pl.col("f")):
             result = lf.select(
-                d=pl.duration(days=null, hours=other, time_unit=time_unit)
-            )
-            expected = lf.select(
                 d=pl.duration(
-                    days=null.cast(pl.Int64), hours=other, time_unit=time_unit
+                    **{field: null, other_field: other},
+                    time_unit=time_unit,
                 )
             )
-            assert result.collect_schema() == {"d": pl.Duration(time_unit)}
-            df = result.collect(engine=engine)
-            assert df["d"].to_list() == [None, None]
-            assert_frame_equal(df, expected.collect(engine=engine))
+            assert result.collect_schema() == {"d": dtype}
+            assert_frame_equal(
+                result.collect(engine=engine),
+                pl.DataFrame({"d": [None, None]}, schema={"d": dtype}),
+            )
 
-    # all inputs literal
-    result = pl.LazyFrame().select(
-        d=pl.duration(weeks=pl.lit(None), days=pl.lit(None), time_unit=time_unit)
-    )
-    assert_frame_equal(
-        result.collect(engine=engine),
-        pl.DataFrame({"d": [None]}, schema={"d": pl.Duration(time_unit)}),
-    )
+    # all inputs literal; the null must not be read as zero
+    for other in (pl.lit(None), pl.lit(1)):
+        result = pl.LazyFrame().select(
+            d=pl.duration(
+                **{field: pl.lit(None), other_field: other},
+                time_unit=time_unit,
+            )
+        )
+        assert_frame_equal(
+            result.collect(engine=engine),
+            pl.DataFrame({"d": [None]}, schema={"d": dtype}),
+        )
 
 
 def test_duration_from_i128_23050() -> None:
