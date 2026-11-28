@@ -190,9 +190,13 @@ fn execute_replacement(
         false => Ok(new),
         true if used.iter().all(|&used| used) => new.cast_with_options(&resolved, cast_options),
         true => {
+            // Unused values are replaced by a used one, not by nulls: they would slow the gather.
+            let filler = match used.iter().position(|&used| used) {
+                Some(i) => new.new_from_index(i, 1),
+                None => Series::full_null(PlSmallStr::EMPTY, 1, new.dtype()),
+            };
             let used = BooleanChunked::from_slice(PlSmallStr::EMPTY, used);
-            let nulls = Series::full_null(PlSmallStr::EMPTY, 1, new.dtype());
-            new.zip_with(&used, &nulls)?
+            new.zip_with(&used, &filler)?
                 .cast_with_options(&resolved, cast_options)
         },
     };
