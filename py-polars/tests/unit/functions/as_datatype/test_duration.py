@@ -9,7 +9,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import TimeUnit
+    from polars._typing import EngineType, TimeUnit
 
 
 def test_empty_duration() -> None:
@@ -190,6 +190,39 @@ def test_duration_wildcard_expansion() -> None:
     assert df.select(pl.duration(hours=pl.all()).name.keep()).to_dict(
         as_series=False
     ) == {"a": [timedelta(seconds=3600)], "b": [timedelta(seconds=7200)]}
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_duration_untyped_null(time_unit: TimeUnit, engine: EngineType) -> None:
+    # an untyped null gives a null duration, as a typed null does
+    lf = pl.LazyFrame(
+        {"x": [None, None], "i": [1, 2], "f": [1.5, 2.5]},
+        schema={"x": pl.Null, "i": pl.Int32, "f": pl.Float64},
+    )
+    for null in (pl.lit(None), pl.col("x")):
+        for other in (pl.col("i"), pl.col("f")):
+            result = lf.select(
+                d=pl.duration(days=null, hours=other, time_unit=time_unit)
+            )
+            expected = lf.select(
+                d=pl.duration(
+                    days=null.cast(pl.Int64), hours=other, time_unit=time_unit
+                )
+            )
+            assert result.collect_schema() == {"d": pl.Duration(time_unit)}
+            df = result.collect(engine=engine)
+            assert df["d"].to_list() == [None, None]
+            assert_frame_equal(df, expected.collect(engine=engine))
+
+    # all inputs literal
+    result = pl.LazyFrame().select(
+        d=pl.duration(weeks=pl.lit(None), days=pl.lit(None), time_unit=time_unit)
+    )
+    assert_frame_equal(
+        result.collect(engine=engine),
+        pl.DataFrame({"d": [None]}, schema={"d": pl.Duration(time_unit)}),
+    )
 
 
 def test_duration_from_i128_23050() -> None:

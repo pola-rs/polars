@@ -822,7 +822,7 @@ impl OptimizationRule for TypeCoercionRule {
                 CastOptions::Strict,
                 |i, dtype| match dtype {
                     DataType::Int64 | DataType::Float64 => Ok(None),
-                    dt if dt.is_integer() => Ok(Some(DataType::Int64)),
+                    dt if dt.is_integer() || dt.is_null() => Ok(Some(DataType::Int64)),
                     dt if dt.is_float() => Ok(Some(DataType::Float64)),
                     dt => polars_bail!(
                         InvalidOperation: "expected integer or float dtype, (got {dt}) in input {i} of duration"
