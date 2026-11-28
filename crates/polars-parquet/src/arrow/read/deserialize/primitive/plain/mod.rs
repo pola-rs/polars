@@ -1,6 +1,7 @@
 use polars_arrow::array::{PrimitiveArray, Splitable};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::types::{AlignedBytes, NativeType, PrimitiveType};
+use polars_compute::filter::filter_values_into;
 use polars_utils::vec::with_cast_mut_vec;
 
 use super::DecoderFunction;
@@ -318,61 +319,28 @@ pub(super) fn decode_masked_required<B: AlignedBytes>(
         return required::decode(values.truncate(num_rows), target);
     }
 
-    assert!(mask.len() <= values.len());
-
+    assert_eq!(mask.len(), values.len());
     let start_length = target.len();
     target.reserve(num_rows);
-    let mut target_ptr = unsafe { target.as_mut_ptr().add(start_length) };
 
-    let mut mask_iter = mask.fast_iter_u56();
-    let mut num_rows_left = num_rows;
-    let mut value_offset = 0;
+    // The kernel may write one value past those it selects. The mask ends in a selected value,
+    // so the kernel filters the values before it, and that value is written over the extra one.
+    let last = mask.len() - 1;
+    let head_mask = mask.sliced(0, last);
 
-    let mut iter = |mut f: u64, len: usize| {
-        if num_rows_left == 0 {
-            return false;
-        }
-
-        let mut num_read = 0;
-        let mut num_written = 0;
-
-        while f != 0 {
-            let offset = f.trailing_zeros() as usize;
-
-            num_read += offset;
-
-            // SAFETY:
-            // 1. `values_buffer` starts out as only zeros, which we know is in the
-            //    dictionary following the original `dict.is_empty` check.
-            // 2. Each time we write to `values_buffer`, it is followed by a
-            //    `verify_dict_indices`.
-            let value = unsafe { values.get_unchecked(value_offset + num_read) };
-            unsafe { target_ptr.add(num_written).write(value) };
-
-            num_written += 1;
-            num_read += 1;
-
-            f >>= offset + 1; // Clear least significant bit.
-        }
-
-        unsafe {
-            target_ptr = target_ptr.add(num_written);
-        }
-        value_offset += len;
-        num_rows_left -= num_written;
-
-        true
-    };
-
-    for f in mask_iter.by_ref() {
-        if !iter(f, 56) {
-            break;
-        }
+    // SAFETY: `num_rows` values are reserved. The kernel selects `num_rows - 1` values and may
+    // write one more, `B::Unaligned` is `B` without its alignment, and the last write
+    // initializes the final value. `last` is in bounds, as `values` has the mask's length.
+    unsafe {
+        let out = target.as_mut_ptr().add(start_length);
+        filter_values_into(
+            &values.bytes[..last],
+            &head_mask,
+            out.cast::<B::Unaligned>(),
+        );
+        out.add(num_rows - 1).write(values.get_unchecked(last));
+        target.set_len(start_length + num_rows);
     }
-    let (f, fl) = mask_iter.remainder();
-    iter(f, fl);
-
-    unsafe { target.set_len(start_length + num_rows) };
 
     Ok(())
 }

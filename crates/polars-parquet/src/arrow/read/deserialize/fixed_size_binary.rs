@@ -647,6 +647,7 @@ impl Decoder for BinaryDecoder {
     ) -> ParquetResult<()> {
         if value.is_null() {
             decoded.extend_nulls(length);
+            return Ok(());
         }
 
         let value = value.as_binary().unwrap();
@@ -680,6 +681,7 @@ impl Decoder for BinaryDecoder {
                 }
             },
         }
+        decoded.1.extend_constant(length, true);
 
         Ok(())
     }

@@ -14,7 +14,7 @@ use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::utils::polars_arrow::array::{Array, Utf8ViewArray, View};
 use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_io::RowIndex;
 use polars_io::predicates::{DynamicPredicateSource, PhysicalIoExpr, ScanIOPredicate};
 use polars_io::prelude::_internal::canonicalize_parquet_maps;
@@ -496,7 +496,7 @@ fn decode_column(
         try_decode_dictionary_column(arrow_field, &columns_to_deserialize, filter.clone())?
     {
         if !skip_num_rows_check {
-            assert_eq!(column.len(), expected_num_rows);
+            check_num_rows(&arrow_field.name, column.len(), expected_num_rows)?;
         }
         return Ok((column, pred_true_mask));
     }
@@ -509,7 +509,7 @@ fn decode_column(
 
     if !skip_num_rows_check {
         let num_rows = arrays.iter().map(|array| array.len()).sum::<usize>();
-        assert_eq!(num_rows, expected_num_rows);
+        check_num_rows(&arrow_field.name, num_rows, expected_num_rows)?;
     }
 
     let mut series = Series::try_from((arrow_field, arrays))?;
@@ -1214,20 +1214,14 @@ fn decode_column_prefiltered(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    let prefilter = !arrow_field.dtype.is_nested()
-        || matches!(arrow_field.dtype, ArrowDataType::Dictionary(..));
+    let deserialize_filter = Some(Filter::Mask(mask_bitmap.clone()));
 
-    let deserialize_filter =
-        prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));
-
-    if prefilter
-        && let Some((column, _)) = try_decode_dictionary_column(
-            arrow_field,
-            &columns_to_deserialize,
-            deserialize_filter.clone(),
-        )?
-    {
-        assert_eq!(column.len(), expected_num_rows);
+    if let Some((column, _)) = try_decode_dictionary_column(
+        arrow_field,
+        &columns_to_deserialize,
+        deserialize_filter.clone(),
+    )? {
+        check_num_rows(&arrow_field.name, column.len(), expected_num_rows)?;
         return Ok(column);
     }
 
@@ -1248,19 +1242,21 @@ fn decode_column_prefiltered(
         }
     }
 
-    let mut series = if !prefilter {
-        let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, mask_bitmap.clone());
-        series.filter(&mask)?
-    } else {
-        series
-    };
-
-    // Done after the filter so that discarded rows cost nothing.
     canonicalize_parquet_maps(&mut series)?;
 
-    assert_eq!(series.len(), expected_num_rows);
+    check_num_rows(&arrow_field.name, series.len(), expected_num_rows)?;
 
     Ok(series.into_column())
+}
+
+/// A column chunk with other than the expected number of rows is out of specification.
+fn check_num_rows(name: &str, num_rows: usize, expected_num_rows: usize) -> PolarsResult<()> {
+    polars_ensure!(
+        num_rows == expected_num_rows,
+        ComputeError: "parquet column '{}' has {} rows where {} were expected",
+        name, num_rows, expected_num_rows
+    );
+    Ok(())
 }
 
 mod tests {

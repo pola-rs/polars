@@ -2130,20 +2130,32 @@ def test_read_parquet_fixed_size_list_mismatch_in_long_run_raises(
 def _assert_nested_reads(
     path: Path, expected: pl.DataFrame, *, offset: int = 1234, length: int = 1500
 ) -> None:
-    """Check a full read, a slice, and a prefiltered read with a fragmented mask."""
+    """Check a full read, a slice, and prefiltered reads with and without statistics."""
     assert_frame_equal(pl.read_parquet(path), expected)
     assert_frame_equal(
         pl.scan_parquet(path).slice(offset, length).collect(),
         expected.slice(offset, length),
     )
-    predicate = pl.col("idx") % 3 != 1
-    assert_frame_equal(
-        pl.scan_parquet(path, parallel="prefiltered").filter(predicate).collect(),
-        expected.filter(predicate),
-    )
+    idx = pl.col("idx")
+    for use_statistics in (False, True):
+        scan = pl.scan_parquet(
+            path, parallel="prefiltered", use_statistics=use_statistics
+        )
+        for predicate in (
+            idx % 3 != 1,
+            idx % 2 == 0,
+            (idx * 7919) % 1000 < 20,
+            idx.is_between(offset, offset + length),
+            idx < 0,
+        ):
+            assert_frame_equal(
+                scan.filter(predicate).collect(), expected.filter(predicate)
+            )
 
 
-def _write_small_pages(path: Path, columns: dict[str, Any], schema: pa.Schema) -> None:
+def _write_small_pages(
+    path: Path, columns: dict[str, Any], schema: pa.Schema, **options: Any
+) -> None:
     """Write pages of a few dozen values, so slice and mask edges fall inside pages."""
     pq.write_table(
         pa.table(columns, schema=schema),
@@ -2151,6 +2163,7 @@ def _write_small_pages(path: Path, columns: dict[str, Any], schema: pa.Schema) -
         data_page_size=512,
         write_batch_size=64,
         row_group_size=1000,
+        **options,
     )
 
 
@@ -2203,6 +2216,179 @@ def test_read_parquet_struct_without_list(
         {"idx": range(n), "s": rows}, schema={"idx": pl.Int32, "s": _NESTED_STRUCT}
     )
     _assert_nested_reads(path, expected)
+
+
+@pytest.mark.parametrize("use_dictionary", [False, True])
+def test_read_parquet_struct_leaf_types(use_dictionary: bool, tmp_path: Path) -> None:
+    # Each leaf type of a struct, read in full, sliced and masked.
+    n = 3000
+    rows = [
+        None
+        if i % 7 == 3
+        else {
+            "b": None if i % 5 == 1 else i % 3 == 0,
+            "f": None if i % 4 == 2 else i / 4,
+            "i": i % 50,
+            "s": None if i % 6 == 5 else str(i) * (i % 4),
+        }
+        for i in range(n)
+    ]
+    dtype = pl.Struct({"b": pl.Boolean, "f": pl.Float64, "i": pl.Int8, "s": pl.String})
+    expected = pl.DataFrame(
+        {"idx": range(n), "s": rows}, schema={"idx": pl.Int32, "s": dtype}
+    )
+    path = tmp_path / "leaves.parquet"
+    pq.write_table(
+        expected.to_arrow(),
+        path,
+        data_page_size=512,
+        write_batch_size=64,
+        row_group_size=1000,
+        use_dictionary=use_dictionary,
+    )
+    _assert_nested_reads(path, expected)
+
+
+def test_read_parquet_nullable_struct_required_delta_and_bss_leaves(
+    tmp_path: Path,
+) -> None:
+    # Note: only the second half of each row group has null structs, so some
+    # pages, and some masked pages, have no nulls while later ones do.
+    n = 3000
+    rows = [
+        None
+        if i % 1000 >= 500 and i % 7 == 3
+        else {"d": i - 1500, "f": i / 4, "j": i % 50}
+        for i in range(n)
+    ]
+    struct_type = pa.struct(
+        [
+            pa.field("d", pa.int64(), nullable=False),
+            pa.field("f", pa.float64(), nullable=False),
+            pa.field("j", pa.int32(), nullable=False),
+        ]
+    )
+    schema = pa.schema([pa.field("idx", pa.int32()), pa.field("s", struct_type)])
+    path = tmp_path / "required_leaves.parquet"
+    _write_small_pages(
+        path,
+        {"idx": range(n), "s": rows},
+        schema,
+        use_dictionary=False,
+        column_encoding={
+            "idx": "PLAIN",
+            "s.d": "DELTA_BINARY_PACKED",
+            "s.f": "BYTE_STREAM_SPLIT",
+            "s.j": "BYTE_STREAM_SPLIT",
+        },
+    )
+    dtype = pl.Struct({"d": pl.Int64, "f": pl.Float64, "j": pl.Int32})
+    expected = pl.DataFrame(
+        {"idx": range(n), "s": rows}, schema={"idx": pl.Int32, "s": dtype}
+    )
+    _assert_nested_reads(path, expected)
+
+
+def _write_half_null_struct(path: Path) -> bytearray:
+    """Write a struct that is null in the first 500 of 1000 rows, as uncompressed V1."""
+    struct_type = pa.struct([pa.field("a", pa.int64())])
+    pq.write_table(
+        pa.table(
+            {"idx": range(1000), "s": [None] * 500 + [{"a": i} for i in range(500)]},
+            schema=pa.schema(
+                [
+                    pa.field("idx", pa.int32(), nullable=False),
+                    pa.field("s", struct_type),
+                ]
+            ),
+        ),
+        path,
+        compression="none",
+        data_page_version="1.0",
+        use_dictionary=False,
+        write_statistics=False,
+    )
+    return bytearray(path.read_bytes())
+
+
+def _assert_reads_raise(path: Path, match: str) -> None:
+    """Check full and prefiltered reads, keeping and discarding the last row."""
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        pl.read_parquet(path)
+    scan = pl.scan_parquet(path, parallel="prefiltered", use_statistics=False)
+    for parity in (0, 1):
+        with pytest.raises(pl.exceptions.ComputeError, match=match):
+            scan.filter(pl.col("idx") % 2 == parity).collect()
+
+
+def test_read_parquet_struct_with_missing_levels_raises(tmp_path: Path) -> None:
+    # The definition levels of `s.a` are RLE runs of 500 zeros and 500 twos. Shortening
+    # the second run to 484 leaves the page 16 levels short.
+    path = tmp_path / "missing_levels.parquet"
+    data = _write_half_null_struct(path)
+    runs = b"\xe8\x07\x00\xe8\x07\x02"
+    assert data.count(runs) == 1
+
+    data[data.index(runs) + 3] = 0xC8
+    path.write_bytes(data)
+    _assert_reads_raise(path, "fewer definition or repetition levels than values")
+
+
+def test_read_parquet_struct_chunk_shorter_than_row_group_raises(
+    tmp_path: Path,
+) -> None:
+    # Make `s.a` hold 999 values in a row group of 1000 rows: in its page header (the
+    # i32 `num_values`) and its column metadata (the i64 `num_values`, which follows
+    # `path_in_schema`, a list of the 2 strings "s" and "a").
+    path = tmp_path / "short_chunk.parquet"
+    data = _write_half_null_struct(path)
+    page_offset = pq.ParquetFile(path).metadata.row_group(0).column(1).data_page_offset
+    path_in_schema = b"\x28\x01s\x01a"
+    assert data.count(path_in_schema) == 1
+
+    for num_values, start in (
+        (b"\x15\xd0\x0f", page_offset),
+        (b"\x16\xd0\x0f", data.index(path_in_schema)),
+    ):
+        data[data.index(num_values, start) + 1] = 0xCE  # zigzag varint 1000 -> 999
+    path.write_bytes(data)
+    metadata = pq.ParquetFile(path).metadata
+    assert metadata.num_rows == 1000
+    assert [metadata.row_group(0).column(i).num_values for i in (0, 1)] == [1000, 999]
+    _assert_reads_raise(path, "has 999 rows where 1000 were expected")
+
+
+def test_read_parquet_negative_page_num_values_raises(tmp_path: Path) -> None:
+    # Set the i32 `num_values` in the header of the second page of `s.a` to -1000.
+    path = tmp_path / "negative_num_values.parquet"
+    pq.write_table(
+        pa.table(
+            {"idx": range(2000), "s": [{"a": i} for i in range(2000)]},
+            schema=pa.schema(
+                [
+                    pa.field("idx", pa.int32(), nullable=False),
+                    pa.field("s", pa.struct([pa.field("a", pa.int64())])),
+                ]
+            ),
+        ),
+        path,
+        compression="none",
+        data_page_version="1.0",
+        use_dictionary=False,
+        write_statistics=False,
+        write_batch_size=1000,
+        data_page_size=1,
+    )
+    column = pq.ParquetFile(path).metadata.row_group(0).column(1)
+    start = column.data_page_offset
+    end = start + column.total_compressed_size
+    data = bytearray(path.read_bytes())
+    page_num_values = b"\x15\xd0\x0f"
+    assert data.count(page_num_values, start, end) == 2
+
+    data[data.rindex(page_num_values, start, end) + 1] = 0xCF  # zigzag varint -> -1000
+    path.write_bytes(data)
+    _assert_reads_raise(path, r"negative number of values \(-1000\)")
 
 
 @pytest.mark.slow
@@ -4243,6 +4429,33 @@ def test_categorical_dictionary_columns_with_plain_page_28959() -> None:
 
     assert result["cat"].dtype == pl.Categorical
     assert_frame_equal(result, df, categorical_as_str=True)
+
+
+@pytest.mark.parametrize("use_dictionary", [False, True])
+def test_required_categorical_in_nullable_struct(
+    tmp_path: Path, use_dictionary: bool
+) -> None:
+    cat_field = pl.Series("cat", ["a"], pl.Categorical).to_frame().to_arrow().schema[0]
+    struct_type = pa.struct([cat_field.with_nullable(False)])
+    rows = [None] * 64 + [{"cat": f"a{i}"} for i in range(16)]
+    rows += [None] * 16 + [{"cat": f"b{i}"} for i in range(16)] + [None] * 16
+    table = pa.table(
+        {
+            "idx": pa.array(range(len(rows)), pa.int32()),
+            "s": pa.array(rows, struct_type),
+        }
+    )
+    path = tmp_path / "required_categorical.parquet"
+    pq.write_table(
+        table,
+        path,
+        use_dictionary=use_dictionary,
+        dictionary_pagesize_limit=1,
+        row_group_size=64,
+        data_page_size=1,
+        write_batch_size=8,
+    )
+    _assert_nested_reads(path, pl.DataFrame(table), offset=3, length=12)
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical(), pl.Enum(["a", "b", "c", "d"])])
@@ -7113,10 +7326,9 @@ def test_delta_strings_invalid_utf8_in_prefix() -> None:
 def test_delta_strings_keep_only_selected_values(
     tmp_path: Path, values_per_page: int
 ) -> None:
-    # A value that repeats its predecessor is stored as just its prefix length, so a
-    # page of under 100 KB holds up to 256 MiB of values. Reading one row must not keep
-    # the others in memory, also from a list, of which a limit selects only the first
-    # values of the first page, and none of the later pages.
+    # A repeated value is stored as just its prefix length, so a page under 100 KB holds
+    # up to 256 MiB of values. Reading one row, by a limit or a filter and also from a
+    # list, must not keep the others in memory.
     tmp_path.mkdir(exist_ok=True)
     paths = {}
     for name, value in [("small", "x"), ("large", "x" * 65536)]:
@@ -7146,12 +7358,13 @@ import polars as pl
 
 lf = pl.scan_parquet(sys.argv[1], parallel="prefiltered")
 expected = [int(sys.argv[2])]
-out = lf.head(1).collect()
-assert out["s"].str.len_bytes().to_list() == expected
-assert out["l"].explode().str.len_bytes().to_list() == expected
-# Nested columns are filtered after they are decoded, so only `s` is read here.
-out = lf.filter(pl.col("i") == 7).select("s").collect()
-assert out["s"].str.len_bytes().to_list() == expected
+for out in (
+    lf.head(1).collect(),
+    lf.filter(pl.col("i") == 7).collect(),
+):
+    assert out["s"].str.len_bytes().to_list() == expected
+    assert out["l"].explode().str.len_bytes().to_list() == expected
+
 print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 """
 
