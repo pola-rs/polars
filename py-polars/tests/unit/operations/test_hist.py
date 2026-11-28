@@ -366,6 +366,35 @@ def test_hist_all_null() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_hist_all_nan_31081() -> None:
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series([0.5, 1.0], dtype=pl.Float64),
+            "category": pl.Series(["[0.0, 0.5]", "(0.5, 1.0]"], dtype=pl.Categorical),
+            "count": pl.Series([0, 0], dtype=pl.get_index_type()),
+        }
+    )
+    for s in (
+        pl.Series([float("nan"), float("nan")]),
+        pl.Series([float("nan"), None], dtype=pl.Float64),
+    ):
+        assert_frame_equal(s.hist(bin_count=2), expected)
+
+    s = pl.Series([0.0, float("nan"), 0.5, float("nan"), 1.0])
+    out = s.hist(bin_count=4)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
+            "category": pl.Series(
+                ["[0.0, 0.25]", "(0.25, 0.5]", "(0.5, 0.75]", "(0.75, 1.0]"],
+                dtype=pl.Categorical,
+            ),
+            "count": pl.Series([1, 1, 0, 1], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 @pytest.mark.parametrize("n_null", [0, 5])
 @pytest.mark.parametrize("n_values", [3, 10, 250])
 def test_hist_rand(n_values: int, n_null: int) -> None:
