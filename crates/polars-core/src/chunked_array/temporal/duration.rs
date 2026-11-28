@@ -1,6 +1,6 @@
 use chrono::Duration as ChronoDuration;
 use num_traits::ToPrimitive;
-use polars_arrow::array::PrimitiveArray;
+use polars_arrow::array::{Array, ArrayRef, PrimitiveArray};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and;
 use polars_arrow::temporal_conversions::{
@@ -194,47 +194,131 @@ fn integer_sum(
     }
     let sum_unit = terms.iter().map(|(_, ns)| *ns).fold(unit, i64::min);
     let k = unit / sum_unit;
-    let finish = |sum: Column| -> PolarsResult<Column> {
-        let sum = if k == 1 {
-            sum
-        } else {
-            sum.wrapping_trunc_div_scalar(k)
-        };
-        match floats {
-            Some(floats) => {
-                let sum = sum.as_materialized_series_maintain_scalar();
-                let out: Int64Chunked = broadcast_binary_elementwise(sum.i64()?, floats, |v, f| {
-                    add_float(v? as i128, f?)
-                });
-                Ok(out.into_column())
-            },
-            None => Ok(sum),
-        }
-    };
 
     // (a lone unscaled input needs no arithmetic)
     if let &[(c, ns)] = terms
         && ns == sum_unit
     {
-        return finish(c.strict_cast(&DataType::Int64)?);
+        return finish_integer_sum(c.strict_cast(&DataType::Int64)?, k, floats);
     }
-    let mut arrays = Vec::with_capacity(terms.len());
+
+    let cast_terms: Vec<_> = terms
+        .iter()
+        .map(|&(c, ns)| {
+            let c = c.strict_cast(&DataType::Int64)?;
+            Ok((
+                c.as_materialized_series_maintain_scalar().i64()?.clone(),
+                ns,
+            ))
+        })
+        .collect::<PolarsResult<_>>()?;
+    // Walk every input's chunk boundary. Arrow slices share their buffers, so the
+    // overflow fallback only materializes the span where it is needed.
+    let mut cursors: Vec<_> = cast_terms
+        .iter()
+        .map(|(c, _)| ChunkCursor::new(c.chunks(), c.len() == 1))
+        .collect();
+    let mut float_cursor = floats.map(|f| ChunkCursor::new(f.chunks(), f.len() == 1));
+    let mut remaining = len;
+    let mut out: Option<Column> = None;
+    while remaining > 0 {
+        let mut span_len = cursors
+            .iter_mut()
+            .map(ChunkCursor::remaining)
+            .min()
+            .unwrap()
+            .min(remaining);
+        if let Some(cursor) = &mut float_cursor {
+            span_len = span_len.min(cursor.remaining());
+        }
+
+        let arrays: Vec<(PrimitiveArray<i64>, i64)> = cursors
+            .iter_mut()
+            .zip(&cast_terms)
+            .map(|(cursor, (_, ns))| (cursor.take(span_len), ns / sum_unit))
+            .collect();
+        let sliced_floats = float_cursor.as_mut().map(|cursor| {
+            Float64Chunked::from_chunk_iter(PlSmallStr::EMPTY, [cursor.take(span_len)])
+        });
+        let part = integer_sum_chunk(&arrays, span_len, k, sliced_floats.as_ref())?;
+        if span_len == len {
+            return Ok(part);
+        }
+        match &mut out {
+            Some(out) => {
+                out.append_owned(part)?;
+            },
+            None => out = Some(part),
+        }
+        remaining -= span_len;
+    }
+    Ok(out.unwrap())
+}
+
+/// A cursor over the zero-copy slices of one input's Arrow chunks.
+struct ChunkCursor<'a> {
+    chunks: &'a [ArrayRef],
+    index: usize,
+    offset: usize,
+    scalar: bool,
+}
+
+impl<'a> ChunkCursor<'a> {
+    fn new(chunks: &'a [ArrayRef], scalar: bool) -> Self {
+        Self {
+            chunks,
+            index: 0,
+            offset: 0,
+            scalar,
+        }
+    }
+
+    fn remaining(&mut self) -> usize {
+        while self.chunks[self.index].len() == self.offset {
+            self.index += 1;
+            self.offset = 0;
+        }
+        if self.scalar {
+            usize::MAX
+        } else {
+            self.chunks[self.index].len() - self.offset
+        }
+    }
+
+    fn take<A: Array + Clone>(&mut self, len: usize) -> A {
+        self.remaining();
+        let mut arr = self.chunks[self.index]
+            .as_any()
+            .downcast_ref::<A>()
+            .unwrap()
+            .clone();
+        if !self.scalar {
+            arr.slice(self.offset, len);
+            self.offset += len;
+        }
+        arr
+    }
+}
+
+/// Sum a contiguous span of integer input arrays, with a row-local i128 fallback.
+fn integer_sum_chunk(
+    arrays: &[(PrimitiveArray<i64>, i64)],
+    len: usize,
+    k: i64,
+    floats: Option<&Float64Chunked>,
+) -> PolarsResult<Column> {
     let mut validity = None;
-    for &(c, ns) in terms {
-        let c = c.strict_cast(&DataType::Int64)?;
-        let s = c.as_materialized_series_maintain_scalar();
-        let arr = s.i64()?.rechunk().downcast_as_array().clone();
+    for (arr, _) in arrays {
         if arr.len() == len {
             validity = combine_validities_and(validity.as_ref(), arr.validity());
         }
-        arrays.push((arr, ns / sum_unit));
     }
 
     // Sum in i64, flagging overflow (in any slot, including null ones); bounds-check the
     // multiplications, as `overflowing_mul` does not vectorise
     let mut sum = None;
     let mut overflow = false;
-    for (arr, m) in &arrays {
+    for (arr, m) in arrays {
         // (NEON and AVX2 have no 64-bit vector multiply, so unscaled terms skip it)
         let (m, max, min) = (*m, i64::MAX / m, i64::MIN / m);
         overflow |= if m == 1 {
@@ -253,11 +337,32 @@ fn integer_sum(
             (lo + min as i128 * *m as i128, hi + max as i128 * *m as i128)
         });
         if lo < i64::MIN as i128 || hi > i64::MAX as i128 {
-            return Ok(exact_integer_sum(&arrays, validity, len, k, floats));
+            return Ok(exact_integer_sum(arrays, validity, len, k, floats));
         }
     }
     let sum = Int64Chunked::from_vec_validity(PlSmallStr::EMPTY, sum.unwrap(), validity);
-    finish(sum.into_column())
+    finish_integer_sum(sum.into_column(), k, floats)
+}
+
+fn finish_integer_sum(
+    sum: Column,
+    k: i64,
+    floats: Option<&Float64Chunked>,
+) -> PolarsResult<Column> {
+    let sum = if k == 1 {
+        sum
+    } else {
+        sum.wrapping_trunc_div_scalar(k)
+    };
+    match floats {
+        Some(floats) => {
+            let sum = sum.as_materialized_series_maintain_scalar();
+            let out: Int64Chunked =
+                broadcast_binary_elementwise(sum.i64()?, floats, |v, f| add_float(v? as i128, f?));
+            Ok(out.into_column())
+        },
+        None => Ok(sum),
+    }
 }
 
 /// [`integer_sum`] when it overflows i64: summed row by row in i128 (which cannot overflow,
@@ -274,7 +379,7 @@ fn exact_integer_sum(
         let value = |arr: &PrimitiveArray<i64>| arr.value(i.min(arr.len() - 1)) as i128;
         arrays.iter().map(|(arr, m)| value(arr) * *m as i128).sum()
     };
-    let floats = floats.map(|f| f.rechunk().downcast_as_array().clone());
+    let floats = floats.map(|f| f.downcast_as_array());
     let is_valid = |i: usize| validity.as_ref().is_none_or(|valid| valid.get_bit(i));
     let out: Int64Chunked = (0..len)
         .map(|i| {

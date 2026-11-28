@@ -281,6 +281,35 @@ def test_duration_chunks_and_scalars() -> None:
     }
 
 
+def test_duration_misaligned_chunks_with_overflow() -> None:
+    days = pl.concat(
+        [pl.Series("days", [200_000, 200_000]), pl.Series("days", [None, 3, 4])],
+        rechunk=False,
+    )
+    hours = pl.concat(
+        [pl.Series("hours", [-4_800_000, -4_800_000, 2]), pl.Series("hours", [4, 5])],
+        rechunk=False,
+    )
+    df = pl.DataFrame([days, hours, pl.Series("seconds", [0.25, 0.5, 1.5, 2.5, 3.5])])
+
+    result = (
+        df.lazy()
+        .select_seq(
+            pl.duration(days="days", hours="hours", seconds="seconds", time_unit="ns")
+        )
+        .collect(engine="in-memory")
+        .to_series()
+    )
+    assert result.n_chunks() > 1
+    assert result.to_list() == [
+        timedelta(seconds=0.25),
+        timedelta(seconds=0.5),
+        None,
+        timedelta(days=3, hours=4, seconds=2.5),
+        timedelta(days=4, hours=5, seconds=3.5),
+    ]
+
+
 NANOSECONDS_PER = {
     "weeks": 7 * 86_400 * 10**9,
     "days": 86_400 * 10**9,

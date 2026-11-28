@@ -172,6 +172,20 @@ impl TimeUnit {
     }
 }
 
+#[cfg(any(feature = "rows", feature = "object"))]
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
+#[inline]
+pub fn convert_time_units<T>(v: T, tu_l: TimeUnit, tu_r: TimeUnit) -> T
+where
+    T: num_traits::Num + num_traits::NumCast,
+{
+    match tu_l.rescale_to(tu_r) {
+        TimeUnitRescale::Unchanged => v,
+        TimeUnitRescale::Multiply(k) => v * T::from(k).unwrap(),
+        TimeUnitRescale::Divide(k) => v / T::from(k).unwrap(),
+    }
+}
+
 /// Error for a temporal value that can't be represented in another time unit.
 pub fn time_unit_conversion_error(
     from: impl std::fmt::Display,
