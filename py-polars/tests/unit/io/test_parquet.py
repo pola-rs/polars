@@ -4418,7 +4418,7 @@ def test_required_categorical_in_nullable_struct(
         data_page_size=1,
         write_batch_size=8,
     )
-    _assert_nested_reads(path, pl.from_arrow(table), offset=3, length=12)
+    _assert_nested_reads(path, pl.DataFrame(table), offset=3, length=12)
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical(), pl.Enum(["a", "b", "c", "d"])])
