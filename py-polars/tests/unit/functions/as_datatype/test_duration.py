@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -20,6 +20,13 @@ def test_empty_duration() -> None:
     s = pl.DataFrame([], {"days": pl.Int32}).select(pl.duration(days="days"))
     assert s.dtypes == [pl.Duration("us")]
     assert s.shape == (0, 1)
+
+    # (an empty input only broadcasts against scalars)
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    empty = pl.col("a").filter(pl.col("a") > 100)
+    assert df.select(pl.duration(days=1, hours=empty)).shape == (0, 1)
+    with pytest.raises(ShapeError):
+        df.select(pl.duration(days="a", hours=empty))
 
 
 @pytest.mark.parametrize(
@@ -218,12 +225,17 @@ def test_duration_from_i128_23050() -> None:
 def test_duration_overflow() -> None:
     # (~300 years cannot be represented with "ns" precision, so the total is null)
     df = pl.DataFrame({"days": [300 * 365, 1], "hours": [None, 1]})
+    result = df.select(pl.duration(days="days", hours=1, time_unit="ns"))
+    assert result.to_series().to_list() == [None, timedelta(1, hours=1)]
+
+    # (whereas the "us" total fits, though its nanosecond subtotal does not fit i64)
     result = df.select(
-        pl.duration(
-            days="days", hours="hours", nanoseconds=1, seconds=0.5, time_unit="us"
-        )
+        pl.duration(days="days", hours=1, nanoseconds=1, seconds=0.5, time_unit="us")
     )
-    assert result.to_series().to_list() == [None, timedelta(1, hours=1, seconds=0.5)]
+    assert result.to_series().to_list() == [
+        timedelta(300 * 365, hours=1, seconds=0.5),
+        timedelta(1, hours=1, seconds=0.5),
+    ]
 
     # (the floats of every row are added, also when the integers are scalars)
     result = pl.DataFrame({"f": [0.5, 1.5]}).select(
@@ -256,9 +268,12 @@ def test_duration_chunks_and_scalars() -> None:
             pl.DataFrame({"d": [3], "f": [None]}),
         ],
         rechunk=False,
-    ).with_columns(h=pl.lit(2), s=pl.lit(1.5), n=pl.lit(None, dtype=pl.Int64))
+    ).with_columns(
+        h=pl.lit(2), s=pl.lit(1.5), n=pl.lit(None, dtype=pl.Int64), ns=pl.lit(1501)
+    )
     result = df.select(
         chunks=pl.duration(days="d", hours=1),
+        lone_scalar=pl.duration(nanoseconds="ns"),
         first_scalar=pl.duration(weeks=1, days="d"),
         float_nulls=pl.duration(days=1, seconds="f"),
         null=pl.duration(days="d", hours="n"),  # (a null scalar nulls every result)
@@ -268,6 +283,7 @@ def test_duration_chunks_and_scalars() -> None:
     )
     assert result.to_dict(as_series=False) == {
         "chunks": [timedelta(days=1, hours=1), None, timedelta(days=3, hours=1)],
+        "lone_scalar": [timedelta(microseconds=1)] * 3,
         "first_scalar": [timedelta(days=8), None, timedelta(days=10)],
         "float_nulls": [
             timedelta(days=1, seconds=0.5),
@@ -307,6 +323,18 @@ def test_duration_misaligned_chunks_with_overflow() -> None:
         None,
         timedelta(days=3, hours=4, seconds=2.5),
         timedelta(days=4, hours=5, seconds=3.5),
+    ]
+
+    # (the nanosecond sums of the first span do not fit i64, so it is summed exactly)
+    result = df.select(
+        pl.duration(days="days", nanoseconds=1, seconds="seconds", time_unit="us")
+    ).to_series()
+    assert result.to_list() == [
+        timedelta(days=200_000, seconds=0.25),
+        timedelta(days=200_000, seconds=0.5),
+        None,
+        timedelta(days=3, seconds=2.5),
+        timedelta(days=4, seconds=3.5),
     ]
 
 

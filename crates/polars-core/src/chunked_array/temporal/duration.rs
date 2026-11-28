@@ -101,8 +101,8 @@ const COMPONENT_NANOSECONDS: [i64; 8] = [
     3_600 * NANOSECONDS,
     60 * NANOSECONDS,
     NANOSECONDS,
-    MICROSECONDS,
-    MILLISECONDS,
+    NANOSECONDS / MILLISECONDS,
+    NANOSECONDS / MICROSECONDS,
     1,
 ];
 
@@ -116,10 +116,11 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
     );
     let name = s[0].name().clone();
     let dtype = Duration(time_unit);
-    if s.iter().any(|c| c.is_empty()) {
+    // (an empty input only broadcasts against scalars)
+    let len = broadcast_len(s.iter())?;
+    if len == 0 {
         return Ok(Column::new_empty(name, &dtype));
     }
-    let len = broadcast_len(s.iter())?;
 
     // (a null scalar makes every result null)
     let is_scalar = |c: &Column| c.len() == 1 || matches!(c, Column::Scalar(_));
@@ -127,7 +128,7 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
         return Ok(Column::full_null(name, len, &dtype));
     }
 
-    // The non-zero scalar inputs, with the nanoseconds in each of their units
+    // The inputs other than zero scalars, with the nanoseconds in each of their units
     let is_zero = |c: &Column| is_scalar(c) && c.get(0).is_ok_and(|v| v.extract() == Some(0.0));
     let (ints, floats): (Vec<_>, Vec<_>) = s
         .iter()
@@ -187,7 +188,8 @@ fn integer_sum(
         }
         let q = ns / unit as i128;
         if q as f64 as i128 == q {
-            return Ok((floats + q as f64).into_column());
+            // (the non-strict cast nulls totals that do not fit, as `add_float` does)
+            return (floats + q as f64).into_column().cast(&DataType::Int64);
         }
         let out: Int64Chunked = unary_elementwise(floats, |f| add_float(q, f?));
         return Ok(out.into_column());
@@ -195,11 +197,13 @@ fn integer_sum(
     let sum_unit = terms.iter().map(|(_, ns)| *ns).fold(unit, i64::min);
     let k = unit / sum_unit;
 
-    // (a lone unscaled input needs no arithmetic)
+    // (a lone unscaled input needs no arithmetic; a scalar stays a single value)
     if let &[(c, ns)] = terms
         && ns == sum_unit
     {
-        return finish_integer_sum(c.strict_cast(&DataType::Int64)?, k, floats);
+        let c = c.strict_cast(&DataType::Int64)?;
+        let c = c.as_materialized_series_maintain_scalar().into_column();
+        return finish_integer_sum(c, k, floats);
     }
 
     let cast_terms: Vec<_> = terms
