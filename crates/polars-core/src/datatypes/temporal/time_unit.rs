@@ -179,15 +179,10 @@ pub fn convert_time_units<T>(v: T, tu_l: TimeUnit, tu_r: TimeUnit) -> T
 where
     T: num_traits::Num + num_traits::NumCast,
 {
-    use TimeUnit::*;
-    match (tu_l, tu_r) {
-        (Nanoseconds, Microseconds) => v / T::from(1_000).unwrap(),
-        (Nanoseconds, Milliseconds) => v / T::from(1_000_000).unwrap(),
-        (Microseconds, Nanoseconds) => v * T::from(1_000).unwrap(),
-        (Microseconds, Milliseconds) => v / T::from(1_000).unwrap(),
-        (Milliseconds, Microseconds) => v * T::from(1_000).unwrap(),
-        (Milliseconds, Nanoseconds) => v * T::from(1_000_000).unwrap(),
-        _ => v,
+    match tu_l.rescale_to(tu_r) {
+        TimeUnitRescale::Unchanged => v,
+        TimeUnitRescale::Multiply(k) => v * T::from(k).unwrap(),
+        TimeUnitRescale::Divide(k) => v / T::from(k).unwrap(),
     }
 }
 

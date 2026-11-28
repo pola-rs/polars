@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import math
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING
+from decimal import Decimal
+from fractions import Fraction
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -16,6 +20,13 @@ def test_empty_duration() -> None:
     s = pl.DataFrame([], {"days": pl.Int32}).select(pl.duration(days="days"))
     assert s.dtypes == [pl.Duration("us")]
     assert s.shape == (0, 1)
+
+    # (an empty input only broadcasts against scalars)
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    empty = pl.col("a").filter(pl.col("a") > 100)
+    assert df.select(pl.duration(days=1, hours=empty)).shape == (0, 1)
+    with pytest.raises(ShapeError):
+        df.select(pl.duration(days="a", hours=empty))
 
 
 @pytest.mark.parametrize(
@@ -209,3 +220,220 @@ def test_duration_from_i128_23050() -> None:
             )
         ),
     )
+
+
+def test_duration_overflow() -> None:
+    # (~300 years cannot be represented with "ns" precision, so the total is null)
+    df = pl.DataFrame({"days": [300 * 365, 1], "hours": [None, 1]})
+    result = df.select(pl.duration(days="days", hours=1, time_unit="ns"))
+    assert result.to_series().to_list() == [None, timedelta(1, hours=1)]
+
+    # (whereas the "us" total fits, though its nanosecond subtotal does not fit i64)
+    result = df.select(
+        pl.duration(days="days", hours=1, nanoseconds=1, seconds=0.5, time_unit="us")
+    )
+    assert result.to_series().to_list() == [
+        timedelta(300 * 365, hours=1, seconds=0.5),
+        timedelta(1, hours=1, seconds=0.5),
+    ]
+
+    # (the floats of every row are added, also when the integers are scalars)
+    result = pl.DataFrame({"f": [0.5, 1.5]}).select(
+        pl.duration(days=200_000, nanoseconds=1, seconds="f", time_unit="us")
+    )
+    expected = [17_280_000_000_500_000, 17_280_000_001_500_000]
+    assert result.to_series().to_physical().to_list() == expected
+
+    # A wide scalar integer subtotal is broadcast before the final float addition.
+    result = pl.DataFrame({"hours": [-4_800_000.0, -4_799_999.0]}).select(
+        pl.duration(days=200_000, hours="hours", time_unit="ns")
+    )
+    assert result.to_series().to_physical().to_list() == [0, 3_600_000_000_000]
+
+    # (masked values do not matter)
+    masked = pl.when(pl.col("days") < 1_000).then("days")
+    for days, hours in ((pl.col("days"), pl.col("hours")), (masked, pl.lit(1))):
+        result = df.select(pl.duration(days=days, hours=hours, time_unit="ns"))
+        assert result.to_series().to_list() == [None, timedelta(days=1, hours=1)]
+
+    # (unsigned) values outside the i64 range raise
+    with pytest.raises(InvalidOperationError, match=r"conversion from `u64` to `i64`"):
+        pl.select(pl.duration(seconds=pl.lit(pl.Series([2**63], dtype=pl.UInt64))))
+
+
+def test_duration_chunks_and_scalars() -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"d": [1, None], "f": [0.5, 1.0]}),
+            pl.DataFrame({"d": [3], "f": [None]}),
+        ],
+        rechunk=False,
+    ).with_columns(
+        h=pl.lit(2), s=pl.lit(1.5), n=pl.lit(None, dtype=pl.Int64), ns=pl.lit(1501)
+    )
+    result = df.select(
+        chunks=pl.duration(days="d", hours=1),
+        lone_scalar=pl.duration(nanoseconds="ns"),
+        first_scalar=pl.duration(weeks=1, days="d"),
+        float_nulls=pl.duration(days=1, seconds="f"),
+        null=pl.duration(days="d", hours="n"),  # (a null scalar nulls every result)
+        null_float=pl.duration(days="d", seconds=pl.lit(None, dtype=pl.Float64)),
+        scalar=pl.duration(days=pl.col("d").first(), hours="h", seconds="s"),
+        null_scalar=pl.duration(hours="h", seconds="n"),
+    )
+    assert result.to_dict(as_series=False) == {
+        "chunks": [timedelta(days=1, hours=1), None, timedelta(days=3, hours=1)],
+        "lone_scalar": [timedelta(microseconds=1)] * 3,
+        "first_scalar": [timedelta(days=8), None, timedelta(days=10)],
+        "float_nulls": [
+            timedelta(days=1, seconds=0.5),
+            timedelta(days=1, seconds=1),
+            None,
+        ],
+        "null": [None] * 3,
+        "null_float": [None] * 3,
+        "scalar": [timedelta(days=1, hours=2, seconds=1.5)] * 3,
+        "null_scalar": [None] * 3,
+    }
+
+
+def test_duration_misaligned_chunks_with_overflow() -> None:
+    days = pl.concat(
+        [pl.Series("days", [200_000, 200_000]), pl.Series("days", [None, 3, 4])],
+        rechunk=False,
+    )
+    hours = pl.concat(
+        [pl.Series("hours", [-4_800_000, -4_800_000, 2]), pl.Series("hours", [4, 5])],
+        rechunk=False,
+    )
+    df = pl.DataFrame([days, hours, pl.Series("seconds", [0.25, 0.5, 1.5, 2.5, 3.5])])
+
+    result = (
+        df.lazy()
+        .select_seq(
+            pl.duration(days="days", hours="hours", seconds="seconds", time_unit="ns")
+        )
+        .collect(engine="in-memory")
+        .to_series()
+    )
+    assert result.n_chunks() > 1
+    assert result.to_list() == [
+        timedelta(seconds=0.25),
+        timedelta(seconds=0.5),
+        None,
+        timedelta(days=3, hours=4, seconds=2.5),
+        timedelta(days=4, hours=5, seconds=3.5),
+    ]
+
+    # (the nanosecond sums of the first span do not fit i64, so it is summed exactly)
+    result = df.select(
+        pl.duration(days="days", nanoseconds=1, seconds="seconds", time_unit="us")
+    ).to_series()
+    assert result.to_list() == [
+        timedelta(days=200_000, seconds=0.25),
+        timedelta(days=200_000, seconds=0.5),
+        None,
+        timedelta(days=3, seconds=2.5),
+        timedelta(days=4, seconds=3.5),
+    ]
+
+
+NANOSECONDS_PER = {
+    "weeks": 7 * 86_400 * 10**9,
+    "days": 86_400 * 10**9,
+    "hours": 3_600 * 10**9,
+    "minutes": 60 * 10**9,
+    "seconds": 10**9,
+    "milliseconds": 10**6,
+    "microseconds": 10**3,
+    "nanoseconds": 1,
+}
+
+
+def _expected_duration(kwargs: dict[str, float], unit_ns: int) -> int | None:
+    # integers are summed exactly and truncated (towards zero), then the floats are
+    # added (in component order) with float precision; null if out of range
+    ints = sum(v * NANOSECONDS_PER[k] for k, v in kwargs.items() if isinstance(v, int))
+    integer = int(Fraction(ints, unit_ns))
+    floats = 0.0
+    for k, ns in NANOSECONDS_PER.items():
+        if isinstance(v := kwargs.get(k), float):
+            floats += v * (ns // unit_ns) if ns >= unit_ns else v / (unit_ns // ns)
+    total = integer + floats if floats else integer
+    return int(total) if math.isfinite(total) and -(2**63) <= total < 2**63 else None
+
+
+@pytest.mark.parametrize("time_unit", ["ns", "us", "ms"])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"nanoseconds": 999_999, "microseconds": 1},
+        {"milliseconds": 2, "microseconds": -1, "nanoseconds": -1_999_999},
+        {"seconds": 1, "microseconds": -1},
+        {"weeks": 1, "days": -3, "hours": 25, "seconds": -1, "nanoseconds": 1_500},
+        {"nanoseconds": 1.5e6, "microseconds": 500.0},
+        {"seconds": 1.0, "microseconds": -1.0},
+        {"days": 2, "hours": 1.5, "milliseconds": -0.75, "nanoseconds": 7},
+        {"milliseconds": 1, "microseconds": -1, "seconds": 0.5},
+        # (finer floats are divided exactly)
+        {"nanoseconds": 4413651200609999.5},
+        {"nanoseconds": 71, "microseconds": 0.9289999999999999},
+        # (the inputs can exceed the "ns" range if the total does not)
+        {"weeks": 50_000, "days": -349_999, "nanoseconds": -1},
+        {"weeks": -50_000, "days": 349_999, "nanoseconds": 1},
+        {"weeks": 50_000, "days": -349_999, "seconds": 0.5},
+        {"days": 300 * 365, "nanoseconds": 1, "seconds": 0.5},
+        {"days": 300 * 365, "nanoseconds": 1},
+        # (integers are truncated exactly before floats are added)
+        {"days": 200, "nanoseconds": 1, "seconds": 0.0},
+        {"seconds": 10**10, "nanoseconds": 1_000, "microseconds": 0.0},
+        {"days": 200_000, "hours": -4_800_000.0},
+        {"nanoseconds": 1_700_000_000_000_000_999, "seconds": 0.5},
+        {"nanoseconds": -1_700_000_000_000_000_999, "seconds": -0.5},
+        {"nanoseconds": 999, "microseconds": 0.9995},
+        {"nanoseconds": -(9 * 10**18), "seconds": 1.8e10},
+        {"seconds": 7_931_731_533, "milliseconds": 0.25, "nanoseconds": 0},
+        # (totals that are non-finite or out of range are null)
+        {"days": 300 * 365},
+        {"weeks": 15_000, "days": 2_000},
+        {"days": 300 * 365, "seconds": 1.0},
+        {"days": 1, "seconds": float("nan")},
+        {"milliseconds": float("inf")},
+        {"milliseconds": 2.0**63},
+        {"milliseconds": 2.0**63 - 1024},  # (the largest float below 2**63)
+    ],
+)
+def test_duration_combines_components(
+    kwargs: dict[str, float], time_unit: TimeUnit
+) -> None:
+    # The same result for columns and for literals, including zero float columns.
+    unit_ns = {"ns": 1, "us": 1_000, "ms": 1_000_000}[time_unit]
+    other = {k: type(v)(1) for k, v in kwargs.items()}
+    df = pl.DataFrame({k: [v, other[k]] for k, v in kwargs.items()})
+    expr = pl.duration(
+        **{k: pl.col(k) for k in kwargs},
+        time_unit=time_unit,  # type: ignore[arg-type]
+    ).to_physical()
+    evaluated = df.select(expr)
+    expected = _expected_duration(kwargs, unit_ns)
+    assert evaluated.to_series().to_list() == [
+        expected,
+        _expected_duration(other, unit_ns),
+    ]
+    assert df.head(1).select(expr).to_series().item() == expected
+
+    folded = pl.select(pl.duration(**kwargs, time_unit=time_unit))  # type: ignore[arg-type]
+    assert folded.columns == ["duration"]  # (folded into a literal)
+    assert folded.to_series().to_physical().item() == expected
+
+
+@pytest.mark.parametrize(
+    "value", [True, pl.lit("1"), pl.lit(Decimal("1.5")), pl.lit(date(2020, 1, 1))]
+)
+def test_duration_invalid_dtype(value: Any) -> None:
+    # (literals are not folded, so they raise like columns)
+    for days in (value, pl.col("x")):
+        with pytest.raises(
+            InvalidOperationError, match=r"expected integer or float dtype"
+        ):
+            pl.select(x=value).select(pl.duration(days=days))
