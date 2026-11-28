@@ -3,9 +3,7 @@ use num_traits::ToPrimitive;
 use polars_arrow::array::{Array, ArrayRef, PrimitiveArray};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and;
-use polars_arrow::temporal_conversions::{
-    MICROSECONDS, MILLISECONDS, NANOSECONDS, NANOSECONDS_IN_DAY,
-};
+use polars_arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS};
 use polars_compute::min_max::MinMaxKernel;
 use polars_utils::broadcast::broadcast_len;
 
@@ -93,18 +91,40 @@ impl DurationChunked {
     }
 }
 
-/// Nanoseconds in each (weeks, days, hours, minutes, seconds, milliseconds,
-/// microseconds, nanoseconds) input of [`impl_duration`].
-const COMPONENT_NANOSECONDS: [i64; 8] = [
-    7 * NANOSECONDS_IN_DAY,
-    NANOSECONDS_IN_DAY,
-    3_600 * NANOSECONDS,
-    60 * NANOSECONDS,
-    NANOSECONDS,
-    NANOSECONDS / MILLISECONDS,
-    NANOSECONDS / MICROSECONDS,
-    1,
+/// The unit of each (weeks, days, hours, minutes, seconds, milliseconds, microseconds,
+/// nanoseconds) input of [`impl_duration`]: a number of seconds, or a time unit.
+#[derive(Clone, Copy)]
+enum Component {
+    Seconds(i64),
+    Unit(TimeUnit),
+}
+
+const COMPONENTS: [Component; 8] = [
+    Component::Seconds(7 * 86_400),
+    Component::Seconds(86_400),
+    Component::Seconds(3_600),
+    Component::Seconds(60),
+    Component::Seconds(1),
+    Component::Unit(TimeUnit::Milliseconds),
+    Component::Unit(TimeUnit::Microseconds),
+    Component::Unit(TimeUnit::Nanoseconds),
 ];
+
+impl Component {
+    /// How values of this component are rescaled to `time_unit`.
+    fn rescale_to(self, time_unit: TimeUnit) -> TimeUnitRescale {
+        match self {
+            Component::Seconds(n) => TimeUnitRescale::Multiply(
+                n * match time_unit {
+                    TimeUnit::Nanoseconds => NANOSECONDS,
+                    TimeUnit::Microseconds => MICROSECONDS,
+                    TimeUnit::Milliseconds => MILLISECONDS,
+                },
+            ),
+            Component::Unit(unit) => unit.rescale_to(time_unit),
+        }
+    }
+}
 
 /// The duration in `time_unit` of the (weeks, days, hours, minutes, seconds, milliseconds,
 /// microseconds, nanoseconds) inputs: integers summed exactly and truncated once, with floats
@@ -128,24 +148,23 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
         return Ok(Column::full_null(name, len, &dtype));
     }
 
-    // The inputs other than zero scalars, with the nanoseconds in each of their units
+    // The inputs other than zero scalars, with their units
     let is_zero = |c: &Column| is_scalar(c) && c.get(0).is_ok_and(|v| v.extract() == Some(0.0));
     let (ints, floats): (Vec<_>, Vec<_>) = s
         .iter()
-        .zip(COMPONENT_NANOSECONDS)
+        .zip(COMPONENTS)
         .filter(|(c, _)| !is_zero(c))
         .partition(|(c, _)| c.dtype().is_integer());
 
     // Floats are rescaled to `time_unit` (dividing exactly, unlike `Column / f64`) and summed
-    let unit = time_unit.nanoseconds();
     let mut float_sum = None;
-    for (c, ns) in floats {
+    for (c, component) in floats {
         let c = c.cast(&DataType::Float64)?;
         let c = c.as_materialized_series_maintain_scalar().f64()?.clone();
-        let term = match ns.cmp(&unit) {
-            std::cmp::Ordering::Equal => c,
-            std::cmp::Ordering::Greater => &c * (ns / unit) as f64,
-            std::cmp::Ordering::Less => c.apply_values(|v| v / (unit / ns) as f64),
+        let term = match component.rescale_to(time_unit) {
+            TimeUnitRescale::Unchanged => c,
+            TimeUnitRescale::Multiply(k) => &c * k as f64,
+            TimeUnitRescale::Divide(k) => c.apply_values(|v| v / k as f64),
         };
         float_sum = Some(match float_sum {
             Some(sum) => &sum + &term,
@@ -160,7 +179,7 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
         len
     };
     let total = match (ints.is_empty(), float_sum) {
-        (false, float_sum) => integer_sum(&ints, unit, int_len, float_sum.as_ref())?,
+        (false, float_sum) => integer_sum(&ints, time_unit, int_len, float_sum.as_ref())?,
         (true, Some(sum)) => sum.into_column(),
         (true, None) => Column::new_scalar(name.clone(), 0i64.into(), len),
     };
@@ -169,24 +188,43 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
     Ok(duration.with_name(name))
 }
 
-/// The exact sum of integer `terms` in their finest unit, truncated to `unit` nanoseconds
-/// before adding `floats`; null where the final duration does not fit.
+/// The exact sum of the integer `terms` in the finest unit that they need (so that rescaling
+/// them only multiplies), truncated to `time_unit` before adding `floats`; null where the final
+/// duration does not fit.
 fn integer_sum(
-    terms: &[(&Column, i64)],
-    unit: i64,
+    terms: &[(&Column, Component)],
+    time_unit: TimeUnit,
     len: usize,
     floats: Option<&Float64Chunked>,
 ) -> PolarsResult<Column> {
+    let sum_unit = terms
+        .iter()
+        .filter_map(|(_, component)| match component {
+            Component::Unit(unit) => Some(*unit),
+            Component::Seconds(_) => None,
+        })
+        .fold(time_unit, Ord::min);
+    let scale = |component: Component| match component.rescale_to(sum_unit) {
+        TimeUnitRescale::Unchanged => 1,
+        TimeUnitRescale::Multiply(m) => m,
+        TimeUnitRescale::Divide(_) => unreachable!("integers are summed in the finest unit"),
+    };
+    let k = match sum_unit.rescale_to(time_unit) {
+        TimeUnitRescale::Unchanged => 1,
+        TimeUnitRescale::Divide(k) => k,
+        TimeUnitRescale::Multiply(_) => unreachable!("integers are summed in the finest unit"),
+    };
+
     // Compute scalar integer inputs once, then broadcast over the float column.
     if len == 1
         && let Some(floats) = floats
     {
-        let mut ns = 0i128;
-        for &(c, scale) in terms {
+        let mut total = 0i128;
+        for &(c, component) in terms {
             let c = c.strict_cast(&DataType::Int64)?;
-            ns += c.get(0)?.extract::<i64>().unwrap() as i128 * scale as i128;
+            total += c.get(0)?.extract::<i64>().unwrap() as i128 * scale(component) as i128;
         }
-        let q = ns / unit as i128;
+        let q = total / k as i128;
         if q as f64 as i128 == q {
             // (the non-strict cast nulls totals that do not fit, as `add_float` does)
             return (floats + q as f64).into_column().cast(&DataType::Int64);
@@ -194,12 +232,9 @@ fn integer_sum(
         let out: Int64Chunked = unary_elementwise(floats, |f| add_float(q, f?));
         return Ok(out.into_column());
     }
-    let sum_unit = terms.iter().map(|(_, ns)| *ns).fold(unit, i64::min);
-    let k = unit / sum_unit;
-
     // (a lone unscaled input needs no arithmetic; a scalar stays a single value)
-    if let &[(c, ns)] = terms
-        && ns == sum_unit
+    if let &[(c, component)] = terms
+        && scale(component) == 1
     {
         let c = c.strict_cast(&DataType::Int64)?;
         let c = c.as_materialized_series_maintain_scalar().into_column();
@@ -208,11 +243,11 @@ fn integer_sum(
 
     let cast_terms: Vec<_> = terms
         .iter()
-        .map(|&(c, ns)| {
+        .map(|&(c, component)| {
             let c = c.strict_cast(&DataType::Int64)?;
             Ok((
                 c.as_materialized_series_maintain_scalar().i64()?.clone(),
-                ns,
+                scale(component),
             ))
         })
         .collect::<PolarsResult<_>>()?;
@@ -239,7 +274,7 @@ fn integer_sum(
         let arrays: Vec<(PrimitiveArray<i64>, i64)> = cursors
             .iter_mut()
             .zip(&cast_terms)
-            .map(|(cursor, (_, ns))| (cursor.take(span_len), ns / sum_unit))
+            .map(|(cursor, (_, m))| (cursor.take(span_len), *m))
             .collect();
         let sliced_floats = float_cursor.as_mut().map(|cursor| {
             Float64Chunked::from_chunk_iter(PlSmallStr::EMPTY, [cursor.take(span_len)])
