@@ -3,15 +3,51 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use clap::error::ErrorKind;
-use clap::{CommandFactory, Parser};
-use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run};
+use clap::error::{ContextKind, ContextValue, ErrorKind};
+use clap::{CommandFactory, FromArgMatches};
+use polars::polars_utils::version::{
+    set_polars_lib_build_commit, set_polars_lib_name, set_polars_lib_version,
+};
+use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run, set_table_display};
 
 // The allocator of the Python runtime, so that both perform alike.
 #[global_allocator]
 static ALLOC: polars_ooc::Allocator = polars_ooc::Allocator;
 
+// The Python package's jemalloc settings (py-polars/src/polars/__init__.py). jemalloc reads this C
+// string (`const char *malloc_conf`) when it starts, before `main`; `_RJEM_MALLOC_CONF` overrides
+// any of its options.
+#[cfg(all(target_family = "unix", not(target_os = "emscripten")))]
+#[unsafe(export_name = "_rjem_malloc_conf")]
+static mut MALLOC_CONF: *const std::ffi::c_char =
+    c"dirty_decay_ms:500,muzzy_decay_ms:1000".as_ptr();
+
+// `POLARS_THP=1` adds transparent huge pages, which jemalloc supports only on Linux. An
+// `.init_array` entry with a priority runs before jemalloc's own, which has none.
+#[cfg(target_os = "linux")]
+#[used]
+#[unsafe(link_section = ".init_array.00100")]
+static WITH_THP: extern "C" fn() = with_thp;
+
+#[cfg(target_os = "linux")]
+extern "C" fn with_thp() {
+    // SAFETY: only jemalloc reads MALLOC_CONF, and it does so later in start-up.
+    unsafe {
+        let thp = libc::getenv(c"POLARS_THP".as_ptr());
+        if !thp.is_null() && std::ffi::CStr::from_ptr(thp) == c"1" {
+            MALLOC_CONF =
+                c"dirty_decay_ms:500,muzzy_decay_ms:1000,thp:always,metadata_thp:always".as_ptr();
+        }
+    }
+}
+
 fn main() -> ExitCode {
+    // For SQL `version()` and file metadata.
+    set_polars_lib_name("Polars (cli)");
+    set_polars_lib_version(env!("CARGO_PKG_VERSION"));
+    if let Some(commit) = option_env!("POLARS_BUILD_COMMIT") {
+        set_polars_lib_build_commit(commit);
+    }
     // Debug frames are large, as in the Python package.
     #[cfg(debug_assertions)]
     {
@@ -34,12 +70,18 @@ fn main() -> ExitCode {
 }
 
 fn run_command() -> ExitCode {
-    let args = match Args::try_parse() {
+    let parsed = Args::command()
+        .version(version())
+        .try_get_matches()
+        .and_then(|matches| Args::from_arg_matches(&matches));
+    let args = match parsed {
         Ok(args) => args,
         // Help and version requests arrive here too, with exit code 0.
         Err(error) => return report(error),
     };
     let format = args.format();
+    // SAFETY: `main` only waits for this thread, and Polars starts its threads later.
+    unsafe { set_table_display(format) };
     let read_only = args.read_only_origin();
     let verbose = args.verbose();
     let on_terminal = io::stdout().is_terminal();
@@ -94,7 +136,13 @@ fn read_script(input: Input) -> Result<Script, clap::Error> {
             )),
         },
         Input::Stdin => {
-            let no_sql = || usage_error(ErrorKind::MissingRequiredArgument, "no SQL was given");
+            let no_sql = || {
+                usage_error(
+                    ErrorKind::MissingRequiredArgument,
+                    "no SQL was given: pass it with -c, -f or on standard input \
+                    (polars has no interactive shell)",
+                )
+            };
             let mut stdin = io::stdin();
             if stdin.is_terminal() {
                 return Err(no_sql());
@@ -116,12 +164,32 @@ fn read_script(input: Input) -> Result<Script, clap::Error> {
     }
 }
 
+/// The version `--version` prints: the CLI's, with the commit it was built from when known.
+fn version() -> &'static str {
+    match option_env!("POLARS_BUILD_COMMIT") {
+        Some(commit) => {
+            let commit = commit.get(..10).unwrap_or(commit);
+            Box::leak(format!("{} ({commit})", env!("CARGO_PKG_VERSION")).into_boxed_str())
+        },
+        None => env!("CARGO_PKG_VERSION"),
+    }
+}
+
 /// A usage error found after the arguments were parsed, reported as clap reports its own.
 fn usage_error(kind: ErrorKind, message: impl std::fmt::Display) -> clap::Error {
     Args::command().error(kind, message)
 }
 
-fn report(error: clap::Error) -> ExitCode {
+fn report(mut error: clap::Error) -> ExitCode {
+    // The old `polars-cli` (up to 0.9.0) took the query as its argument.
+    if error.kind() == ErrorKind::UnknownArgument {
+        if let Some(ContextValue::String(arg)) = error.get(ContextKind::InvalidArg) {
+            if !arg.starts_with('-') {
+                let tip = "give SQL with -c, or a script file with -f".into();
+                error.insert(ContextKind::Suggested, ContextValue::StyledStrs(vec![tip]));
+            }
+        }
+    }
     // The exit code stands also when the message cannot be written.
     let _ = error.print();
     ExitCode::from(error.exit_code() as u8)

@@ -36,6 +36,10 @@ pub struct IcebergSinkState {
     pub maintain_order: bool,
     pub sort_order_id: Option<i32>,
     pub partition_spec_id: Option<i32>,
+    pub table_uuid: Option<PlSmallStr>,
+    pub schema_id: Option<i32>,
+    pub last_column_id: Option<i32>,
+    pub require_empty_table: bool,
 
     pub sink_uuid_str: String,
 
@@ -50,6 +54,9 @@ pub struct IcebergSinkState {
 
     #[cfg(feature = "python")]
     pub commit_result_df: Option<PythonObject>, // NoPickleOption[pl.DataFrame]
+
+    #[cfg(feature = "python")]
+    pub write_dirs: Option<PythonObject>, // _WriteDirs: the directories cleanup may remove
 
     #[cfg(feature = "python")]
     pub replace_files: Option<PythonObject>, // _ReplaceFiles: the data files a commit replaces
@@ -75,14 +82,32 @@ pub enum IcebergSchemaMode {
 mod _python_impl {
     use std::convert::Infallible;
 
+    use polars_core::error::PolarsResult;
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::PyString;
-    use pyo3::{Borrowed, Bound, FromPyObject, IntoPyObject, Py, PyAny, PyErr, PyResult, Python};
+    use pyo3::{
+        Borrowed, Bound, FromPyObject, IntoPyObject, Py, PyAny, PyErr, PyResult, Python, intern,
+    };
 
     use super::{IcebergCommitMode, IcebergSchemaMode, IcebergSinkState};
+    use crate::dsl::sink::{SinkedPathsCallbackArgs, commit_sinked_files};
 
     impl IcebergSinkState {
+        /// Commits the sinked files to the table, returning the id of the snapshot
+        /// the commit created.
+        ///
+        /// The id is `None` when the commit created no snapshot, or when that
+        /// snapshot has expired.
+        pub fn commit(&self, args: SinkedPathsCallbackArgs) -> PolarsResult<Option<i64>> {
+            let state = self.clone().into_sink_state_obj()?;
+            commit_sinked_files("Iceberg", &state, args)?;
+            Python::attach(|py| {
+                let snapshot_id = state.call_method0(py, intern!(py, "committed_snapshot_id"))?;
+                Ok(snapshot_id.extract(py)?)
+            })
+        }
+
         pub(crate) fn into_sink_state_obj(self) -> PyResult<Py<PyAny>> {
             Python::attach(|py| {
                 polars_utils::python_convert_registry::get_python_convert_registry()

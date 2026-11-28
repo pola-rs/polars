@@ -237,6 +237,7 @@ def test_duration_float_types_11625(
     assert_series_equal(s, expected, check_dtypes=False)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("time_unit", "time_unit_scale"),
     [("ns", 1), ("us", 1e3), ("ms", 1e6), (None, 1e3)],
@@ -294,6 +295,7 @@ def test_duration_float_types_series_11625(
     assert_series_equal(actual_ns.cast(pl.Float64), expected_ns.cast(pl.Float64))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("time_unit", "time_unit_kw", "time_unit_scale"),
     [

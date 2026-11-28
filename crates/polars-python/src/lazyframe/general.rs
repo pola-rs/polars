@@ -96,7 +96,7 @@ impl PyLazyFrame {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         source, sources, infer_schema_length, schema, schema_overrides, batch_size, n_rows, low_memory, rechunk,
-        row_index, ignore_errors, include_file_paths, cloud_options, credential_provider
+        row_index, ignore_errors, include_file_paths, cloud_options, credential_provider, extra_columns
     ))]
     fn new_from_ndjson(
         source: Option<Py<PyAny>>,
@@ -113,6 +113,7 @@ impl PyLazyFrame {
         include_file_paths: Option<String>,
         cloud_options: OptPyCloudOptions,
         credential_provider: Option<Py<PyAny>>,
+        extra_columns: Option<Wrap<ExtraColumnsPolicy>>,
     ) -> PyResult<Self> {
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
@@ -149,6 +150,7 @@ impl PyLazyFrame {
             .with_row_index(row_index)
             .with_ignore_errors(ignore_errors)
             .with_include_file_paths(include_file_paths.map(|x| x.into()))
+            .with_extra_columns_policy(extra_columns.map(|x| x.0))
             .finish()
             .map_err(PyPolarsErr::from)?;
 

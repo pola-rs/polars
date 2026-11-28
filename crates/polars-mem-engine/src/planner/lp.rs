@@ -479,7 +479,9 @@ fn create_physical_plan_impl(
             Ok(Box::new(executors::SliceExec { input, slice }))
         },
         Filter { input, predicate } => {
-            let streamable = is_elementwise_rec(predicate.node(), expr_arena);
+            // Only a predicate with the frame height can be evaluated per chunk.
+            let streamable = is_elementwise_rec(predicate.node(), expr_arena)
+                && predicate.is_length_preserving(expr_arena);
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(true);
@@ -573,10 +575,8 @@ fn create_physical_plan_impl(
             let allow_vertical_parallelism = options.should_broadcast
                 && !short_cse_input
                 && expr.iter().all(|e| is_elementwise_rec(e.node(), expr_arena))
-                // If all columns are literal we would get a 1 row per thread.
-                && !phys_expr.iter().all(|p| {
-                    p.is_literal()
-                });
+                // Splitting by chunks keeps the height only if some column has the frame height.
+                && expr.iter().any(|e| e.is_length_preserving(expr_arena));
 
             Ok(Box::new(executors::ProjectionExec {
                 input,

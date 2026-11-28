@@ -152,10 +152,12 @@ def _lazy_import(module_name: str) -> tuple[ModuleType, bool]:
 
 if TYPE_CHECKING:
     import dataclasses
+    import hashlib
     import html
     import json
     import pickle
     import subprocess
+    import uuid
 
     import altair
     import boto3
@@ -177,10 +179,12 @@ if TYPE_CHECKING:
 else:
     # infrequently-used builtins
     dataclasses, _ = _lazy_import("dataclasses")
+    hashlib, _ = _lazy_import("hashlib")
     html, _ = _lazy_import("html")
     json, _ = _lazy_import("json")
     pickle, _ = _lazy_import("pickle")
     subprocess, _ = _lazy_import("subprocess")
+    uuid, _ = _lazy_import("uuid")
 
     # heavy/optional third party libs
     altair, _ALTAIR_AVAILABLE = _lazy_import("altair")
@@ -321,10 +325,12 @@ def import_optional(
 __all__ = [
     # lazy-load rarely-used/heavy builtins (for fast startup)
     "dataclasses",
+    "hashlib",
     "html",
     "json",
     "pickle",
     "subprocess",
+    "uuid",
     # lazy-load third party libs
     "altair",
     "boto3",

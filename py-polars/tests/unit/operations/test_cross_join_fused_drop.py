@@ -102,6 +102,43 @@ def test_cross_join_sparse_output_from_one_side(
     assert_frame_equal(query.collect(engine="streaming"), expected)
 
 
+@pytest.mark.parametrize("morsel_size", ["100", "264"])
+def test_cross_join_sparse_chunked_nested_payloads(
+    morsel_size: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", morsel_size)
+    payload = [[i, -i] for i in range(132)]
+    arr = pl.Series(
+        "payload", [*payload[:130], None, [131, None]], dtype=pl.Array(pl.Int64, 2)
+    ).cast(pl.Array(pl.Date, 2))
+    source = pl.DataFrame({"b": range(132), "payload": arr}).with_columns(
+        pl.when(pl.col("b") != 0).then(pl.struct("payload")).alias("record"),
+        pl.col("payload").arr.to_list().alias("list_payload"),
+    )
+    build = pl.concat([source[:66], source[66:]], rechunk=False)
+    assert all(
+        build[name].n_chunks() == 2 for name in ("payload", "record", "list_payload")
+    )
+
+    # Keep multiple probe rows per input morsel so that a candidate batch can wrap
+    # from the last build chunk back to the first.
+    repeats = pl.thread_pool_size() + 1
+    probe = pl.LazyFrame({"p": [1, 0, 130] + [0] * repeats})
+    output = ("payload", "record", "list_payload", "p")
+    query = (
+        probe.join(build.lazy(), how="cross", maintain_order="left")
+        .filter((pl.col("p") + pl.col("b")) % 131 == 0)
+        .select(*output)
+    )
+    assert 'label="cross-join\\nfused predicate:' in physical_plan(query)
+    expected = (
+        source[[130, 0, 131, 1] + [0, 131] * repeats]
+        .with_columns(pl.Series("p", [1, 0, 0, 130] + [0, 0] * repeats))
+        .select(*output)
+    )
+    assert_frame_equal(query.collect(engine="streaming"), expected)
+
+
 def test_cross_join_fused_predicate_in_query_observer() -> None:
     msgpack = pytest.importorskip("msgpack")
     left = pl.LazyFrame({"a": [0, 1], "lp": list("ab")})

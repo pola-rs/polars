@@ -2209,7 +2209,7 @@ class Expr(metaclass=_Meta):
 
         Can return multiple Values.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2922,7 +2922,7 @@ class Expr(metaclass=_Meta):
 
         .. math:: a[i-1] < v <= a[i]
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
@@ -4680,7 +4680,7 @@ class Expr(metaclass=_Meta):
         """
         Get mask of unique values.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Examples
         --------
@@ -4763,7 +4763,7 @@ class Expr(metaclass=_Meta):
         """
         Return a boolean mask indicating duplicated values.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Returns
         -------
@@ -5234,7 +5234,7 @@ class Expr(metaclass=_Meta):
         """
         Bin values into discrete intervals delimited by quantiles of the data.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **experimental**. It may be removed or
@@ -5440,7 +5440,7 @@ class Expr(metaclass=_Meta):
         The ID starts at 0 and increases by one each time the value of the column
         changes.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -12209,7 +12209,7 @@ class Expr(metaclass=_Meta):
         This method differs from `value_counts` in that it does not return the
         values, only the counts and might be faster
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -12361,7 +12361,7 @@ class Expr(metaclass=_Meta):
         NaN. With `normalize=True`, input that sums to zero (including empty,
         all-null and all-zero input) gives NaN; with `normalize=False` it gives 0.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -12496,7 +12496,7 @@ class Expr(metaclass=_Meta):
         """
         Bin values into buckets and count their occurrences.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed

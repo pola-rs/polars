@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_arrow::array::builder::ShareStrategy;
 use polars_async::executor::{TaskMetricAggregator, spawn};
 use polars_core::frame::builder::DataFrameBuilder;
+use polars_core::prelude::{Column, Series};
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinBuildSide, MaintainOrderJoin};
 use polars_error::{polars_ensure, polars_warn};
@@ -116,6 +117,74 @@ struct CrossJoinChunk<'a> {
 struct CrossJoinIndices {
     build: Vec<IdxSize>,
     probe: Vec<IdxSize>,
+    build_chunk_ends: Vec<Option<Vec<usize>>>,
+    chunk_indices: Vec<IdxSize>,
+}
+
+impl CrossJoinIndices {
+    fn gather_build(
+        &mut self,
+        build: &DataFrame,
+        column_idx: usize,
+        start: usize,
+        len: usize,
+    ) -> Column {
+        let column = &build.columns()[column_idx];
+        let Some(series) = column
+            .as_series()
+            .filter(|s| s.n_chunks() > 1 && s.dtype().is_nested() && !s.dtype().contains_objects())
+        else {
+            let slice = column.slice((start, len));
+            // SAFETY: The indices are relative to this build slice.
+            return unsafe { slice.take_slice_unchecked(&self.build) };
+        };
+
+        // Prepare offsets only for selected nested payloads in sparse batches. A normal
+        // gather can repeatedly rechunk the same build rows for different probe rows.
+        self.build_chunk_ends.resize_with(build.width(), || None);
+        let chunks = series.chunks();
+        let chunk_ends = self.build_chunk_ends[column_idx].get_or_insert_with(|| {
+            let mut end = 0;
+            chunks
+                .iter()
+                .map(|chunk| {
+                    end += chunk.len();
+                    end
+                })
+                .collect()
+        });
+        let mut output: Option<Series> = None;
+        let mut indices = self.build.as_slice();
+        while let Some(&first) = indices.first() {
+            let chunk_idx = chunk_ends.partition_point(|&end| end <= start + first as usize);
+            let chunk = &chunks[chunk_idx];
+            let end = chunk_ends[chunk_idx];
+            let base = end - chunk.len();
+            self.chunk_indices.clear();
+            self.chunk_indices.extend(
+                indices
+                    .iter()
+                    .map(|&i| start + i as usize)
+                    .take_while(|i| (base..end).contains(i))
+                    .map(|i| (i - base) as IdxSize),
+            );
+            // SAFETY: These are the consecutive output indices in this source chunk,
+            // rebased to its start and checked against its range above.
+            let gathered = unsafe {
+                series
+                    .select_chunk(chunk_idx)
+                    .take_slice_unchecked(&self.chunk_indices)
+            };
+            if let Some(output) = &mut output {
+                output.append_owned(gathered).unwrap();
+            } else {
+                output = Some(gathered);
+            }
+            indices = &indices[self.chunk_indices.len()..];
+        }
+        // Compact only the gathered rows when they came from multiple runs.
+        output.unwrap().rechunk().into()
+    }
 }
 
 impl CrossJoinChunk<'_> {
@@ -230,17 +299,14 @@ impl CrossJoinChunk<'_> {
     fn gather_columns(
         &self,
         columns: &[CrossJoinColumn],
-        indices: &CrossJoinIndices,
+        indices: &mut CrossJoinIndices,
         len: usize,
     ) -> DataFrame {
         let columns = columns
             .iter()
             .map(|col| {
                 let mut output = if col.is_left == self.left_is_build {
-                    let build =
-                        self.build.columns()[col.index].slice((self.build_start, self.build_len));
-                    // SAFETY: The indices are relative to this build slice.
-                    unsafe { build.take_slice_unchecked(&indices.build) }
+                    indices.gather_build(self.build, col.index, self.build_start, self.build_len)
                 } else {
                     let probe = &self.probe.columns()[col.index];
                     if self.probe_len == 1 {

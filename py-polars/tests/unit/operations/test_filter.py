@@ -419,6 +419,13 @@ def test_filter_wide_frame_single_chunk() -> None:
     assert_frame_equal(out, df.filter(df.get_column("m")))
 
 
+def test_filter_scalar_predicate_single_chunk() -> None:
+    # Large enough for the predicate to be evaluated in row chunks.
+    df = pl.DataFrame({"a": range(100_000)})
+    assert_frame_equal(df.filter(pl.lit("x").str.contains("x")), df)
+    assert_frame_equal(df.filter(pl.lit(1).is_in(pl.Series([2]).implode())), df.clear())
+
+
 def _run_with_exact_memory_usage(code: str) -> None:
     # A thread only adds its allocations to `_estimate_memory_usage`
     # once they pass `POLARS_OOC_DRIFT_THRESHOLD`.
