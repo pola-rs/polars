@@ -43,6 +43,7 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::joins::cross_join::{CrossJoinColumn, CrossJoinNode, CrossJoinPredicate};
 use crate::nodes::joins::merge_join::MergeJoinNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::physical_plan::lower_group_by::augmented_group_by_input_schema;
@@ -1715,6 +1716,7 @@ fn to_graph_rec<'a>(
             nulls_last,
             keys_row_encoded,
             args,
+            pre_drop_schema,
         } => {
             let args = args.clone();
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
@@ -1729,6 +1731,7 @@ fn to_graph_rec<'a>(
                         left_input_schema,
                         right_input_schema,
                         output_schema,
+                        pre_drop_schema.clone(),
                         left_on.clone(),
                         right_on.clone(),
                         tmp_left_key_col.clone(),
@@ -1751,19 +1754,68 @@ fn to_graph_rec<'a>(
             input_left,
             input_right,
             args,
+            fused_predicate,
         } => {
             let args = args.clone();
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
             let left_input_schema = input_left.output_schema(ctx.phys_sm).clone();
             let right_input_schema = input_right.output_schema(ctx.phys_sm).clone();
+            let fused_predicate = if let Some((predicate, joined_schema)) = fused_predicate {
+                let left_width = left_input_schema.len();
+                let column = |name: &PlSmallStr| {
+                    // A cross join emits every left column, then every right column
+                    // under its joined name, including any suffix.
+                    let index = joined_schema.index_of(name).unwrap();
+                    CrossJoinColumn {
+                        is_left: index < left_width,
+                        index: if index < left_width {
+                            index
+                        } else {
+                            index - left_width
+                        },
+                        name: name.clone(),
+                    }
+                };
+                let predicate_schema = {
+                    let names: PlHashSet<_> =
+                        aexpr_to_leaf_names_iter(predicate.node(), ctx.expr_arena).collect();
+                    let operand_names = joined_schema
+                        .iter_names()
+                        .filter(|name| names.contains(name));
+                    Arc::new(joined_schema.try_project(operand_names)?)
+                };
+                let expr = create_stream_expr(predicate, ctx, &predicate_schema)?;
+                let mut output_only = Vec::new();
+                let output_operand_indices = node
+                    .output_schema(0)
+                    .iter_names()
+                    .map(|name| {
+                        let operand = predicate_schema.index_of(name);
+                        if operand.is_none() {
+                            output_only.push(column(name));
+                        }
+                        operand
+                    })
+                    .collect();
+                Some(CrossJoinPredicate {
+                    expr,
+                    operands: predicate_schema.iter_names().map(column).collect(),
+                    output: node.output_schema(0).iter_names().map(column).collect(),
+                    output_operand_indices,
+                    output_only,
+                })
+            } else {
+                None
+            };
 
             ctx.add_node_with_metrics(
                 |registry| {
-                    nodes::joins::cross_join::CrossJoinNode::new(
+                    CrossJoinNode::new(
                         left_input_schema,
                         right_input_schema,
                         &args,
+                        fused_predicate,
                         registry.task_metrics(),
                     )
                 },
@@ -1784,6 +1836,7 @@ fn to_graph_rec<'a>(
             by_descending,
             by_nulls_last,
             args,
+            pre_drop_schema,
         } => {
             let args = args.clone();
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
@@ -1798,6 +1851,7 @@ fn to_graph_rec<'a>(
                         nodes::joins::asof_join::AsOfJoinNode::new(
                             left_input_schema,
                             right_input_schema,
+                            pre_drop_schema.as_ref().map(|_| node.output_schema(0)),
                             left_on.clone(),
                             right_on.clone(),
                             tmp_left_key_col.clone(),
@@ -1830,6 +1884,7 @@ fn to_graph_rec<'a>(
             tmp_right_key_cols,
             descending,
             args,
+            pre_drop_schema,
             options,
         } => {
             let args = args.clone();
@@ -1843,6 +1898,7 @@ fn to_graph_rec<'a>(
                     nodes::joins::range_join::RangeJoinNode::new(
                         left_input_schema,
                         right_input_schema,
+                        pre_drop_schema.as_ref().map(|_| node.output_schema(0)),
                         left_on.clone(),
                         right_on.clone(),
                         tmp_left_key_cols.clone(),

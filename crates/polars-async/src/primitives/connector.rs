@@ -241,6 +241,11 @@ pin_project! {
 unsafe impl<T: Send, S: Sync> Send for SendFuture<'_, T, S> {}
 
 impl<T: Send, S: Sync> SenderExt<T, S> {
+    /// Whether the receiver has closed the connector.
+    pub fn is_closed(&self) -> bool {
+        self.connector.state.load(Ordering::Relaxed) & CLOSED_BIT != 0
+    }
+
     /// Returns a future that when awaited will send the value to the [`ReceiverExt`].
     /// Returns Err(value) if the connector is closed.
     #[must_use]

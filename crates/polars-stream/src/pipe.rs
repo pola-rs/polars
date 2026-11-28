@@ -26,6 +26,11 @@ pub struct PortReceiver(ReceiverExt<Morsel, Option<Arc<PipeMetrics>>>);
 
 impl PortSender {
     #[inline]
+    pub fn is_closed(&self) -> bool {
+        self.0.is_closed()
+    }
+
+    #[inline]
     pub async fn send(&mut self, morsel: Morsel) -> Result<(), Morsel> {
         let rows = morsel.height() as u64;
         self.0.send(morsel).await?;

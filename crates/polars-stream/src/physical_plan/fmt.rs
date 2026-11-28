@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use polars_core::schema::SchemaRef;
 use polars_defs::join::JoinArgs;
 use polars_defs::time::group_by::ClosedWindow;
 #[cfg(feature = "dynamic_group_by")]
@@ -175,6 +176,20 @@ fn fmt_join_label(base_label: &str, left_on: &str, right_on: &str, args: &JoinAr
         write!(label, r"\njoin-nulls").unwrap();
     }
     label
+}
+
+fn fmt_join_projection(label: &mut String, pre_drop_schema: Option<&SchemaRef>, node: &PhysNode) {
+    if let Some(schema) = pre_drop_schema {
+        let kept = node.output_schema(0);
+        write!(
+            EscapeLabel(label),
+            "\nproject {} / {}: {}",
+            kept.len(),
+            schema.len(),
+            kept.iter_names().join(", "),
+        )
+        .unwrap();
+    }
 }
 
 #[recursive::recursive]
@@ -869,6 +884,7 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+            pre_drop_schema,
             ..
         } => {
             let mut tmp_arena: Arena<AExpr> = Arena::with_capacity(2);
@@ -880,12 +896,13 @@ fn visualize_plan_rec(
                 .iter()
                 .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
                 .collect_vec();
-            let label = fmt_join_label(
+            let mut label = fmt_join_label(
                 "merge-join",
                 &fmt_exprs_to_label(&left_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
                 &fmt_exprs_to_label(&right_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
                 args,
             );
+            fmt_join_projection(&mut label, pre_drop_schema.as_ref(), &phys_sm[node_key]);
             (label, &[*input_left, *input_right][..])
         },
         PhysNodeKind::InMemoryJoin {
@@ -988,6 +1005,7 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+            pre_drop_schema,
             ..
         } => {
             let mut tmp_arena: Arena<AExpr> = Arena::with_capacity(3);
@@ -999,33 +1017,54 @@ fn visualize_plan_rec(
                 .iter()
                 .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
                 .collect_vec();
-            let label = fmt_join_label(
+            let mut label = fmt_join_label(
                 "range-join",
                 &fmt_exprs_to_label(&left_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
                 &fmt_exprs_to_label(&right_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
                 args,
             );
+            fmt_join_projection(&mut label, pre_drop_schema.as_ref(), &phys_sm[node_key]);
             (label, &[*input_left, *input_right][..])
         },
         PhysNodeKind::CrossJoin {
             input_left,
             input_right,
-            args: _,
-        } => ("cross-join".to_string(), &[*input_left, *input_right][..]),
+            fused_predicate,
+            ..
+        } => {
+            let mut label = "cross-join".to_string();
+            if let Some((predicate, joined_schema)) = fused_predicate {
+                let predicate =
+                    fmt_exprs_to_label(from_ref(predicate), expr_arena, FormatExprStyle::NoAliases);
+                let schema = phys_sm[node_key].output_schema(0);
+                write!(label, "\\nfused predicate: {predicate}").unwrap();
+                write!(
+                    EscapeLabel(&mut label),
+                    "\nproject {} / {}: {}",
+                    schema.len(),
+                    joined_schema.len(),
+                    schema.iter_names().join(", "),
+                )
+                .unwrap();
+            }
+            (label, &[*input_left, *input_right][..])
+        },
         PhysNodeKind::AsOfJoin {
             input_left,
             input_right,
             left_on,
             right_on,
             args,
+            pre_drop_schema,
             ..
         } => {
-            let label = fmt_join_label(
+            let mut label = fmt_join_label(
                 "asof-join",
                 &escape_graphviz(&left_on[..]),
                 &escape_graphviz(&right_on[..]),
                 args,
             );
+            fmt_join_projection(&mut label, pre_drop_schema.as_ref(), &phys_sm[node_key]);
             (label, &[*input_left, *input_right][..])
         },
         #[cfg(feature = "merge_sorted")]

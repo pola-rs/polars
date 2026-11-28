@@ -43,6 +43,7 @@ pub struct MergeJoinParams {
     pub left: MergeJoinSideParams,
     pub right: MergeJoinSideParams,
     pub output_schema: SchemaRef,
+    projection: MergeJoinProjection,
     pub key_descending: bool,
     pub key_nulls_last: bool,
     pub keys_row_encoded: bool,
@@ -111,6 +112,7 @@ impl MergeJoinNode {
         left_input_schema: SchemaRef,
         right_input_schema: SchemaRef,
         output_schema: SchemaRef,
+        pre_drop_schema: Option<SchemaRef>,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
         tmp_left_key_col: Option<PlSmallStr>,
@@ -128,6 +130,15 @@ impl MergeJoinNode {
         assert!(left_on.len() == right_on.len());
         assert_eq!(left_key_dtype, right_key_dtype);
 
+        let projection = MergeJoinProjection::new(
+            &left_input_schema,
+            &right_input_schema,
+            &output_schema,
+            pre_drop_schema.as_deref().unwrap_or(&output_schema),
+            &args,
+            &left_on,
+            &right_on,
+        );
         let state = MergeJoinState::Running;
         let left = MergeJoinSideParams {
             on: left_on,
@@ -143,6 +154,7 @@ impl MergeJoinNode {
             left,
             right,
             output_schema,
+            projection,
             key_descending: descending,
             key_nulls_last: nulls_last,
             keys_row_encoded,
@@ -487,6 +499,9 @@ async fn compute_join_and_send(
     let build_key = build_key.to_physical_repr();
     let probe_key = probe_key.to_physical_repr();
 
+    let left_is_build = params.left_is_build();
+    let (build_payload, probe_payload) = params.projection.select(&build, &probe, left_is_build);
+
     let mut build_row_offset = 0;
     let mut probe_row_offset = 0;
     let mut probe_last_matched = 0;
@@ -514,18 +529,20 @@ async fn compute_join_and_send(
             &mut probe_last_matched,
         );
 
-        let df = gather_and_postprocess(
-            build.clone(),
-            probe.clone(),
-            Some(&arenas.gather_build),
-            Some(&arenas.gather_probe),
-            &mut arenas.df_builders,
-            &params.args,
-            &params.left.on,
-            &params.right.on,
-            params.left_is_build(),
-            &params.output_schema,
-        )?;
+        // SAFETY: Both frames were rechunked and projected above. match_keys
+        // emits paired in-bounds indices or MAX on a side that gathers nulls.
+        // Only this projection initializes and resets the builders.
+        let df = unsafe {
+            params.projection.gather_and_postprocess(
+                &build_payload,
+                &probe_payload,
+                Some(&arenas.gather_build),
+                Some(&arenas.gather_probe),
+                &mut arenas.df_builders,
+                left_is_build,
+            )
+        }?;
+        debug_assert_eq!(df.schema(), &params.output_schema);
         if df.height() > 0 {
             let mut morsel = Morsel::new_unregistered(df, seq, source_token.clone());
             morsel.set_consume_token(wait_group.token());
@@ -537,18 +554,19 @@ async fn compute_join_and_send(
     }
 
     if params.probe_params().emit_unmatched {
-        let df_unmatched = gather_and_postprocess(
-            build,
-            probe,
-            None,
-            Some(&arenas.gather_probe_unmatched),
-            &mut arenas.df_builders,
-            &params.args,
-            &params.left.on,
-            &params.right.on,
-            params.left_is_build(),
-            &params.output_schema,
-        )?;
+        // SAFETY: The frames and builders are as above. The unmatched probe
+        // indices are in bounds, and the build side is supplied as all nulls.
+        let df_unmatched = unsafe {
+            params.projection.gather_and_postprocess(
+                &build_payload,
+                &probe_payload,
+                None,
+                Some(&arenas.gather_probe_unmatched),
+                &mut arenas.df_builders,
+                left_is_build,
+            )
+        }?;
+        debug_assert_eq!(df_unmatched.schema(), &params.output_schema);
         if df_unmatched.height() > 0 {
             if params.args.maintain_order == MaintainOrderJoin::None {
                 let mut morsel = Morsel::new_unregistered(df_unmatched, seq, source_token.clone());
@@ -939,6 +957,15 @@ mod tests {
         MergeJoinParams {
             left: side(matches!(how, JoinType::Left | JoinType::Full)),
             right: side(matches!(how, JoinType::Right | JoinType::Full)),
+            projection: MergeJoinProjection::new(
+                &Schema::default(),
+                &Schema::default(),
+                &Schema::default(),
+                &Schema::default(),
+                &args,
+                &[],
+                &[],
+            ),
             output_schema: Arc::new(Schema::default()),
             key_descending: false,
             key_nulls_last: true,

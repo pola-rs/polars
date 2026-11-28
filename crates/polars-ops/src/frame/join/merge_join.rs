@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::iter::repeat_n;
+use std::sync::Arc;
 
 use bytemuck::TransparentWrapper;
 use polars_arrow::array::Array;
@@ -9,7 +10,6 @@ use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_defs::join::{JoinArgs, JoinType};
-use polars_utils::itertools::Itertools;
 use polars_utils::sort::reorder_cmp;
 use polars_utils::total_ord::{TotalOrd, TotalOrdWrap};
 use polars_utils::{IdxSize, format_pl_smallstr};
@@ -223,155 +223,271 @@ fn match_null_keys_impl(
     *probe_row_offset = probe_n;
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn gather_and_postprocess(
-    build: DataFrame,
-    probe: DataFrame,
-    gather_build: Option<&[IdxSize]>,
-    gather_probe: Option<&[IdxSize]>,
-    df_builders: &mut Option<(DataFrameBuilder, DataFrameBuilder)>,
-    args: &JoinArgs,
-    left_on: &[PlSmallStr],
-    right_on: &[PlSmallStr],
-    left_is_build: bool,
-    output_schema: &Schema,
-) -> PolarsResult<DataFrame> {
-    let should_coalesce = args.should_coalesce();
-    let left_emit_unmatched = matches!(args.how, JoinType::Left | JoinType::Full);
-    let right_emit_unmatched = matches!(args.how, JoinType::Right | JoinType::Full);
+#[derive(Debug)]
+struct MergeJoinSideProjection {
+    indices: Vec<usize>,
+    schema: SchemaRef,
+    gather_nulls: bool,
+}
 
-    let (mut left, mut right);
-    let (gather_left, gather_right);
-    if left_is_build {
-        (left, right) = (build, probe);
-        (gather_left, gather_right) = (gather_build, gather_probe);
-    } else {
-        (left, right) = (probe, build);
-        (gather_left, gather_right) = (gather_probe, gather_build);
-    }
-
-    let left_keys_coalesced_away = should_coalesce && matches!(args.how, JoinType::Right);
-
-    // Remove non-payload columns
-    for col in left
-        .columns()
-        .iter()
-        .map(Column::name)
-        .cloned()
-        .collect_vec()
-    {
-        if left_on.contains(&col) && should_coalesce {
-            continue;
-        }
-        if !output_schema.contains(&col) {
-            left.drop_in_place(&col).unwrap();
+impl MergeJoinSideProjection {
+    fn new(input: &Schema, indices: Vec<usize>, gather_nulls: bool) -> Self {
+        let schema = indices
+            .iter()
+            .map(|&idx| {
+                let (name, dtype) = input.get_at_index(idx).unwrap();
+                (name.clone(), dtype.clone())
+            })
+            .collect();
+        Self {
+            indices,
+            schema: Arc::new(schema),
+            gather_nulls,
         }
     }
-    for col in right
-        .columns()
-        .iter()
-        .map(Column::name)
-        .cloned()
-        .collect_vec()
-    {
-        if right_on.contains(&col) && should_coalesce {
-            continue;
+
+    fn select<'a>(&self, df: &'a DataFrame) -> Cow<'a, DataFrame> {
+        if self.indices.len() == df.width() {
+            return Cow::Borrowed(df);
         }
-        // A right column takes the suffix only where it collides with a left column
-        // that survives coalescing.
-        let collides =
-            left.schema().contains(&col) && !(left_keys_coalesced_away && left_on.contains(&col));
-        let renamed = match collides {
-            true => Cow::Owned(format_pl_smallstr!("{}{}", col, args.suffix())),
-            false => Cow::Borrowed(&col),
+        let columns = self
+            .indices
+            .iter()
+            .map(|&i| df.columns()[i].clone())
+            .collect();
+        // SAFETY: The projection preserves column lengths, names, and types.
+        Cow::Owned(unsafe { DataFrame::new_unchecked(df.height(), columns) })
+    }
+
+    // The projected frame, builder, and indices must satisfy the corresponding
+    // side of MergeJoinProjection::gather_and_postprocess's contract.
+    unsafe fn gather(
+        &self,
+        df: &DataFrame,
+        indices: Option<&[IdxSize]>,
+        height: usize,
+        builder: &mut DataFrameBuilder,
+    ) -> DataFrame {
+        match indices {
+            Some(indices) if self.gather_nulls => {
+                builder.opt_gather_extend(df, indices, ShareStrategy::Never);
+                builder.freeze_reset()
+            },
+            Some(indices) => {
+                // SAFETY: The matcher emits only in-bounds indices on this side.
+                unsafe { builder.gather_extend(df, indices, ShareStrategy::Never) };
+                builder.freeze_reset()
+            },
+            None => DataFrame::full_null(&self.schema, height),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct MergeJoinProjection {
+    left: MergeJoinSideProjection,
+    right: MergeJoinSideProjection,
+    coalesced_keys: Vec<(usize, usize)>,
+    // Right gather columns with no output name contribute only to a coalesced left key.
+    right_output_names: Vec<Option<PlSmallStr>>,
+}
+
+impl MergeJoinProjection {
+    pub fn new(
+        left: &Schema,
+        right: &Schema,
+        output: &Schema,
+        pre_drop: &Schema,
+        args: &JoinArgs,
+        left_on: &[PlSmallStr],
+        right_on: &[PlSmallStr],
+    ) -> Self {
+        let should_coalesce = args.should_coalesce();
+        let left_keys_coalesced_away = should_coalesce && matches!(args.how, JoinType::Right);
+        let right_keys_coalesced_away = should_coalesce && !left_keys_coalesced_away;
+        let coalesce_full = should_coalesce && matches!(args.how, JoinType::Full);
+        let left_keys: PlHashSet<_> = left_on.iter().collect();
+        let right_keys: PlHashSet<_> = right_on.iter().collect();
+        let coalesced_keys: Vec<_> = if coalesce_full {
+            left_on
+                .iter()
+                .zip(right_on)
+                .filter(|(l, _)| output.contains(l))
+                .collect()
+        } else {
+            Vec::new()
         };
-        if !output_schema.contains(&renamed) {
-            right.drop_in_place(&col).unwrap();
+        let needed_right_keys: PlHashSet<_> = coalesced_keys.iter().map(|&(_, r)| r).collect();
+
+        let left_indices = left
+            .iter_names()
+            .enumerate()
+            .filter(|(_, col)| {
+                output.contains(col) && !(left_keys_coalesced_away && left_keys.contains(col))
+            })
+            .map(|(idx, _)| idx)
+            .collect();
+
+        let mut right_indices = Vec::new();
+        let mut right_output_names = Vec::new();
+        for (idx, col) in right.iter_names().enumerate() {
+            if right_keys_coalesced_away && right_keys.contains(col) {
+                if needed_right_keys.contains(col) {
+                    right_indices.push(idx);
+                    right_output_names.push(None);
+                }
+                continue;
+            }
+
+            // Resolve suffixes before pruning the left namesake from the gather.
+            let collides = pre_drop.contains(col)
+                && left.contains(col)
+                && !(left_keys_coalesced_away && left_keys.contains(col));
+            let name = if collides {
+                format_pl_smallstr!("{col}{}", args.suffix())
+            } else {
+                col.clone()
+            };
+            if output.contains(&name) {
+                right_indices.push(idx);
+                right_output_names.push(Some(name));
+            }
+        }
+
+        let left = MergeJoinSideProjection::new(
+            left,
+            left_indices,
+            matches!(args.how, JoinType::Right | JoinType::Full),
+        );
+        let right = MergeJoinSideProjection::new(
+            right,
+            right_indices,
+            matches!(args.how, JoinType::Left | JoinType::Full),
+        );
+        let coalesced_keys = coalesced_keys
+            .into_iter()
+            .map(|(l, r)| {
+                (
+                    left.schema.index_of(l).unwrap(),
+                    right.schema.index_of(r).unwrap(),
+                )
+            })
+            .collect();
+
+        Self {
+            left,
+            right,
+            coalesced_keys,
+            right_output_names,
         }
     }
 
-    if df_builders.is_none() {
-        *df_builders = Some((
-            DataFrameBuilder::new(left.schema().clone()),
-            DataFrameBuilder::new(right.schema().clone()),
-        ));
-    }
-
-    let (left_build, right_build) = df_builders.as_mut().unwrap();
-    let mut left = match gather_left {
-        Some(gather_left) if right_emit_unmatched => {
-            left_build.opt_gather_extend(&left, gather_left, ShareStrategy::Never);
-            left_build.freeze_reset()
-        },
-        Some(gather_left) => unsafe {
-            left_build.gather_extend(&left, gather_left, ShareStrategy::Never);
-            left_build.freeze_reset()
-        },
-        None => DataFrame::full_null(left.schema(), gather_right.unwrap().len()),
-    };
-    let mut right = match gather_right {
-        Some(gather_right) if left_emit_unmatched => {
-            right_build.opt_gather_extend(&right, gather_right, ShareStrategy::Never);
-            right_build.freeze_reset()
-        },
-        Some(gather_right) => unsafe {
-            right_build.gather_extend(&right, gather_right, ShareStrategy::Never);
-            right_build.freeze_reset()
-        },
-        None => DataFrame::full_null(right.schema(), gather_left.unwrap().len()),
-    };
-
-    // Coalesce the key columns.
-    if should_coalesce {
-        match args.how {
-            JoinType::Inner | JoinType::Left => {
-                for c in right_on {
-                    if right.schema().contains(c) {
-                        right.drop_in_place(c.as_str())?;
-                    }
-                }
-            },
-            JoinType::Right => {
-                for c in left_on {
-                    if left.schema().contains(c) {
-                        left.drop_in_place(c.as_str())?;
-                    }
-                }
-            },
-            JoinType::Full => {
-                for (left_keycol, right_keycol) in Iterator::zip(left_on.iter(), right_on.iter()) {
-                    let left_col = left.column(left_keycol).unwrap();
-                    let right_col = right.column(right_keycol).unwrap();
-                    let coalesced =
-                        coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
-                    left.replace(left_keycol, coalesced).unwrap();
-                    right.drop_in_place(right_keycol).unwrap();
-                }
-            },
-            _ => unreachable!(),
+    pub fn select<'a>(
+        &self,
+        build: &'a DataFrame,
+        probe: &'a DataFrame,
+        left_is_build: bool,
+    ) -> (Cow<'a, DataFrame>, Cow<'a, DataFrame>) {
+        if left_is_build {
+            (self.left.select(build), self.right.select(probe))
+        } else {
+            (self.right.select(build), self.left.select(probe))
         }
     }
 
-    // Rename any duplicate right columns to "{}_right".
-    let left_cols: PlHashSet<_> = left.columns().iter().map(Column::name).cloned().collect();
-    let right_cols_vec = right.get_column_names_owned();
-    let renames = right_cols_vec
-        .iter()
-        .filter(|c| left_cols.contains(*c))
-        .map(|c| {
-            let renamed = format_pl_smallstr!("{}{}", c, args.suffix());
-            (c.as_str(), renamed)
+    /// Gather output rows from the projected sides and coalesce keys.
+    ///
+    /// # Safety
+    /// - `build` and `probe` must be rechunked frames projected by `self.select`
+    ///   for this projection's input schemas and the same `left_is_build`.
+    /// - At least one gather slice must be present, and two present slices must
+    ///   have the same length. Every index must be in bounds of its frame.
+    ///   `IdxSize::MAX` is allowed on a side only if the opposite join side
+    ///   emits unmatched rows. An absent slice supplies an all-null side.
+    /// - `df_builders` must be `None` or the unmodified, reset builders populated
+    ///   by a previous call using this projection.
+    pub unsafe fn gather_and_postprocess(
+        &self,
+        build: &DataFrame,
+        probe: &DataFrame,
+        gather_build: Option<&[IdxSize]>,
+        gather_probe: Option<&[IdxSize]>,
+        df_builders: &mut Option<(DataFrameBuilder, DataFrameBuilder)>,
+        left_is_build: bool,
+    ) -> PolarsResult<DataFrame> {
+        let ((left, gather_left), (right, gather_right)) = if left_is_build {
+            ((build, gather_build), (probe, gather_probe))
+        } else {
+            ((probe, gather_probe), (build, gather_build))
+        };
+        let height = gather_left.or(gather_right).unwrap().len();
+        let (left_builder, right_builder) = df_builders.get_or_insert_with(|| {
+            (
+                DataFrameBuilder::new(self.left.schema.clone()),
+                DataFrameBuilder::new(self.right.schema.clone()),
+            )
         });
-    right = right.rename_many(renames).unwrap();
+        // SAFETY: The caller guarantees the schema, builder state, and indices on both sides.
+        let (mut left, right) = unsafe {
+            (
+                self.left
+                    .gather(left, gather_left, height, left_builder)
+                    .into_columns(),
+                self.right
+                    .gather(right, gather_right, height, right_builder)
+                    .into_columns(),
+            )
+        };
 
-    // Merge left and right and drop unused output columns.
-    left.hstack_mut(right.columns())?;
-    for col in left_on {
-        if left.schema().contains(col) && !output_schema.contains(col) {
-            left.drop_in_place(col).unwrap();
+        // Keep right key columns available until every left key has consumed its
+        // partners, including repeated right keys. Repeated left keys coalesce in
+        // the order of the join condition.
+        for &(l, r) in &self.coalesced_keys {
+            left[l] = coalesce_columns(&[left[l].clone(), right[r].clone()])?;
         }
+        left.extend(right.into_iter().zip(&self.right_output_names).filter_map(
+            |(mut col, name)| {
+                let name = name.as_ref()?;
+                if col.name() != name {
+                    col.rename(name.clone());
+                }
+                Some(col)
+            },
+        ));
+        DataFrame::new(height, left)
     }
+}
 
-    debug_assert_eq!(**left.schema(), *output_schema);
-    Ok(left)
+#[cfg(test)]
+mod tests {
+    use polars_core::df;
+    use polars_defs::join::JoinCoalesce;
+
+    use super::*;
+
+    #[test]
+    fn merge_join_projection_coalesces_repeated_keys() {
+        let left = df!("a" => [] as [i32; 0], "b" => [] as [i32; 0]).unwrap();
+        let right = df!("x" => [7, 10], "y" => [8, 11]).unwrap();
+        let mut args = JoinArgs::new(JoinType::Full);
+        args.coalesce = JoinCoalesce::CoalesceColumns;
+        let projection = MergeJoinProjection::new(
+            left.schema(),
+            right.schema(),
+            left.schema(),
+            left.schema(),
+            &args,
+            &["a".into(), "a".into(), "b".into()],
+            &["x".into(), "y".into(), "x".into()],
+        );
+        let (build, probe) = projection.select(&left, &right, true);
+        // SAFETY: Both frames are projected single-chunk frames, [0, 1] are in
+        // bounds of the right frame, and no builders have been used yet.
+        let result = unsafe {
+            projection.gather_and_postprocess(&build, &probe, None, Some(&[0, 1]), &mut None, true)
+        }
+        .unwrap();
+
+        assert_eq!(result, df!("a" => [7, 10], "b" => [7, 10]).unwrap());
+    }
 }

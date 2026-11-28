@@ -14,6 +14,7 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::in_memory_sink::InMemorySinkNode;
+use crate::nodes::joins::utils::JoinPayload;
 use crate::nodes::{ComputeNode, NodeMemoryUsage};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
@@ -53,6 +54,7 @@ struct RangeJoinParams {
     /// never gathered.
     point_schema: SchemaRef,
     interval_schema: SchemaRef,
+    payloads: Option<(JoinPayload, JoinPayload)>,
     point_on: PlSmallStr,
     point_tmp_key_col: Option<PlSmallStr>,
     lower_on: Option<PlSmallStr>,
@@ -83,6 +85,7 @@ impl RangeJoinNode {
     pub fn new(
         left_schema: SchemaRef,
         right_schema: SchemaRef,
+        projected_output: Option<&SchemaRef>,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
         tmp_left_key_cols: Vec<Option<PlSmallStr>>,
@@ -157,6 +160,32 @@ impl RangeJoinNode {
                     unreachable!("range-join operator1 bound must be lower bound ")
                 },
             };
+        let payloads = projected_output.map(|output| {
+            let point_is_tmp = |name: &PlSmallStr| point_tmp_key_col.as_ref() == Some(name);
+            let interval_is_tmp = |name: &PlSmallStr| {
+                lower_tmp_key_col.as_ref() == Some(name) || upper_tmp_key_col.as_ref() == Some(name)
+            };
+            if left_is_point {
+                JoinPayload::for_join(
+                    &point_schema,
+                    &interval_schema,
+                    output,
+                    args.suffix(),
+                    point_is_tmp,
+                    interval_is_tmp,
+                )
+            } else {
+                let (interval, point) = JoinPayload::for_join(
+                    &interval_schema,
+                    &point_schema,
+                    output,
+                    args.suffix(),
+                    interval_is_tmp,
+                    point_is_tmp,
+                );
+                (point, interval)
+            }
+        });
         let without_tmp = |schema: SchemaRef, tmp_cols: &[&Option<PlSmallStr>]| {
             let mut schema = (*schema).clone();
             for col in tmp_cols.iter().copied().flatten() {
@@ -165,12 +194,17 @@ impl RangeJoinNode {
             Arc::new(schema)
         };
         let input_point_schema = point_schema.clone();
-        let point_schema = without_tmp(point_schema, &[&point_tmp_key_col]);
-        let interval_schema =
-            without_tmp(interval_schema, &[&lower_tmp_key_col, &upper_tmp_key_col]);
+        let (point_schema, interval_schema) = match &payloads {
+            Some((point, interval)) => (point.schema.clone(), interval.schema.clone()),
+            None => (
+                without_tmp(point_schema, &[&point_tmp_key_col]),
+                without_tmp(interval_schema, &[&lower_tmp_key_col, &upper_tmp_key_col]),
+            ),
+        };
         let params = RangeJoinParams {
             point_schema,
             interval_schema,
+            payloads,
             point_on,
             point_tmp_key_col,
             lower_on,
@@ -310,7 +344,9 @@ fn transition_to_probe(
         .column(params.point_key_col())?
         .as_materialized_series()
         .clone();
-    if let Some(col) = &params.point_tmp_key_col {
+    if let Some((point, _)) = &params.payloads {
+        point_df = point.select(&point_df);
+    } else if let Some(col) = &params.point_tmp_key_col {
         point_df.drop_in_place(col)?;
     }
     Ok(ProbeState {
@@ -402,12 +438,16 @@ async fn compute_and_emit_task(
             ),
         };
 
-        // The temporary key columns are only read for the bounds above.
-        for col in [&params.lower_tmp_key_col, &params.upper_tmp_key_col]
-            .into_iter()
-            .flatten()
-        {
-            interval_df.drop_in_place(col)?;
+        if let Some((_, interval)) = &params.payloads {
+            interval_df = interval.select(&interval_df);
+        } else {
+            // The temporary key columns are only read for the bounds above.
+            for col in [&params.lower_tmp_key_col, &params.upper_tmp_key_col]
+                .into_iter()
+                .flatten()
+            {
+                interval_df.drop_in_place(col)?;
+            }
         }
 
         for (row_idx, (start, end)) in
@@ -476,10 +516,16 @@ async fn freeze_builders_and_emit(
     let results_point = builder_point.freeze_reset();
     let results_interval = builder_interval.freeze_reset();
 
-    let output = if params.left_is_point {
-        _finish_join(results_point, results_interval, params.args.suffix.clone())?
+    let (mut left, right) = if params.left_is_point {
+        (results_point, results_interval)
     } else {
-        _finish_join(results_interval, results_point, params.args.suffix.clone())?
+        (results_interval, results_point)
+    };
+    let output = if params.payloads.is_some() {
+        left.hstack_mut(right.columns())?;
+        left
+    } else {
+        _finish_join(left, right, params.args.suffix.clone())?
     };
 
     let mut morsel = Morsel::new_unregistered(output, seq, st);
