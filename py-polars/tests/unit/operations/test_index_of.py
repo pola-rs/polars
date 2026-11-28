@@ -366,15 +366,10 @@ def test_categorical(convert_to_literal: bool) -> None:
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-@pytest.mark.parametrize("enum", [False, True])
 def test_index_of_absent_string(
-    category_mapping: pl.Categories, engine: EngineType, enum: bool
+    category_mapping: pl.Categories, engine: EngineType
 ) -> None:
-    cats = category_mapping
-    dtype = pl.Enum(["a", "b", "c"]) if enum else pl.Categorical(cats)
-    s = pl.Series("s", ["b", None, "a"], dtype=dtype)
     absent = f"absent-{uuid4()}"
-    lf = s.to_frame().with_columns(needle=pl.lit(absent)).lazy()
     cases: list[tuple[IntoExpr, int | None]] = [
         (absent, None),
         ("c", None),
@@ -382,13 +377,15 @@ def test_index_of_absent_string(
         ("a", 2),
         (pl.lit(None, dtype=pl.String), 1),
     ]
-    for needle, expected in cases:
-        result = lf.select(pl.col("s").index_of(needle)).collect(engine=engine)
-        assert result.item() == expected
-
-    assert s.index_of(absent) is None
-    assert s.sort().index_of(absent) is None
-    assert absent not in cats
+    for dtype in [pl.Categorical(category_mapping), pl.Enum(["a", "b", "c"])]:
+        s = pl.Series("s", ["b", None, "a"], dtype=dtype)
+        lf = s.to_frame().with_columns(needle=pl.lit(absent)).lazy()
+        for needle, expected in cases:
+            result = lf.select(pl.col("s").index_of(needle)).collect(engine=engine)
+            assert result.item() == expected
+        assert s.index_of(absent) is None
+        assert s.sort().index_of(absent) is None
+    assert absent not in category_mapping
 
 
 @pytest.mark.parametrize("value", [0, 0.1])

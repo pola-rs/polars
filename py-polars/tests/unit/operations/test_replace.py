@@ -11,7 +11,7 @@ from polars.exceptions import ArgumentRemovedError, InvalidOperationError, Shape
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import EngineType
+    from polars._typing import EngineType, PolarsDataType
 
 
 @pytest.fixture(scope="module")
@@ -127,6 +127,35 @@ def test_replace_categorical_only_adds_values_for_present_keys(
 
     assert_frame_equal(result, pl.DataFrame({"s": [expected] * 8}, schema={"s": dtype}))
     assert cats.to_series().len() == seed.len() + 1
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "old_dtype",
+    [pl.Categorical(pl.Categories.random()), pl.Enum(["absent", "a"])],
+    ids=["categorical", "enum"],
+)
+def test_replace_categorical_old_of_other_dtype_adds_no_categories(
+    old_dtype: PolarsDataType, engine: EngineType
+) -> None:
+    cats = pl.Categories.random()
+    dtype = pl.Categorical(cats)
+    lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": dtype})
+    old = pl.Series(["absent", "a"], dtype=old_dtype)
+    cases: list[tuple[pl.Expr, list[str], PolarsDataType]] = [
+        (pl.col("s").replace(old, ["unused", "b"]), ["b", "b"], dtype),
+        (
+            pl.col("s").replace_strict(old, ["unused", "b"], default="d"),
+            ["b", "d"],
+            pl.String,
+        ),
+    ]
+    for expr, expected, out_dtype in cases:
+        result = lf.select(expr).collect(engine=engine)
+        assert_frame_equal(
+            result, pl.DataFrame({"s": expected}, schema={"s": out_dtype})
+        )
+    assert cats.to_series().to_list() == ["a", "b"]
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -333,6 +362,15 @@ def test_replace_duplicates_old(old: list[int], new: int | list[int]) -> None:
         match="`old` input for `replace` must not contain duplicates",
     ):
         s.replace(old, new)
+
+
+def test_replace_duplicates_old_after_cast() -> None:
+    s = pl.Series([1.0, 2.0, 3.0])
+    msg = "`old` input for `replace` must not contain duplicates"
+    with pytest.raises(InvalidOperationError, match=msg):
+        s.replace(["1", "1.0"], [10.0, 20.0])
+    with pytest.raises(InvalidOperationError, match=msg):
+        s.replace_strict(["1", "1.0"], [10.0, 20.0], default=0.0)
 
 
 def test_replace_duplicates_new() -> None:

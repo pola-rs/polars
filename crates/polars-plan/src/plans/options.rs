@@ -198,7 +198,9 @@ pub enum CastingRules {
     /// to a `Categorical`'s categories, and fails or gives null for those an `Enum` lacks): the
     /// function must look them up.
     FirstArgLosslessKeepString,
-    /// Like `FirstArgLosslessKeepString`, but falls back to the deprecated supertype casting.
+    /// Like `FirstArgLosslessKeepString`, but falls back to the deprecated supertype casting, so
+    /// string arguments are kept if the supertype (not the first argument) is a `Categorical` or
+    /// `Enum`.
     // @3.0: Drop the supertype fallback.
     FirstArgLosslessOrSupertypeWithWarning,
     Supertype(SuperTypeOptions),

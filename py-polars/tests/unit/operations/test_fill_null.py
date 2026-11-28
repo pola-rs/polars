@@ -87,6 +87,13 @@ def test_fill_null_categorical_adds_only_used_values(
     assert used_col in cats
     assert unused_col not in cats
 
+    # A scalar fill column is cast once, not masked to the nulls.
+    scalar = f"scalar-{uuid4()}"
+    lf_scalar = lf_null.with_columns(f=pl.lit(scalar))
+    result = lf_scalar.select(pl.col("s").fill_null(pl.col("f"))).collect(engine=engine)
+    assert_frame_equal(result, pl.DataFrame({"s": ["a", scalar]}, schema={"s": dtype}))
+    assert scalar in cats
+
 
 def test_fill_null_categorical_scalar_with_string_series() -> None:
     dtype = pl.Categorical(pl.Categories.random())

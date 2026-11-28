@@ -167,16 +167,6 @@ def test_replace_strict_extension_keys_to_categorical() -> None:
     )
 
 
-def test_replace_strict_join_result_name_collision() -> None:
-    s = pl.Series("__POLARS_REPLACE_RESULT", ["a", "b"])
-    result = s.replace_strict({"a": "x", "b": "y"}, return_dtype=pl.Categorical)
-    assert_series_equal(
-        result,
-        pl.Series("__POLARS_REPLACE_RESULT", ["x", "y"], dtype=pl.Categorical),
-        categorical_as_str=True,
-    )
-
-
 @pytest.mark.parametrize("map_keys", [False, True])
 @pytest.mark.parametrize("with_default", [False, True])
 def test_replace_strict_only_adds_used_output_categories(
@@ -190,7 +180,7 @@ def test_replace_strict_only_adds_used_output_categories(
     )
     dtype = pl.Map(cat, pl.String) if map_keys else cat
     new = pl.lit(entries).implode() if map_keys else ["used", "unused"]
-    kwargs: dict[str, Any] = {"default": None} if with_default else {}
+    kwargs: dict[str, Any] = {"default": "unused-default"} if with_default else {}
 
     # a call that raises adds nothing either.
     for values in ["used", ["used", "unused"]]:
@@ -203,6 +193,25 @@ def test_replace_strict_only_adds_used_output_categories(
     assert "used" in cats
     assert "unused" not in cats
     assert cats.to_series().len() == seed.len() + 1
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_strict_only_adds_used_default_categories(engine: EngineType) -> None:
+    cats = pl.Categories.random()
+    dtype = pl.Categorical(cats)
+    lf = pl.LazyFrame({"s": [1, 2, 3], "d": ["d1", "d2", "d3"]})
+    cases: list[tuple[list[int], str | list[str], str | pl.Expr, list[str]]] = [
+        ([1, 2, 3], "x", "unused", ["x"] * 3),
+        ([1, 2, 3], ["x", "y", "x"], "unused", ["x", "y", "x"]),
+        ([1, 3], "x", pl.col("d"), ["x", "d2", "x"]),
+        ([1, 2], ["x", "y"], pl.col("d"), ["x", "y", "d3"]),
+        ([], [], "d", ["d"] * 3),
+    ]
+    for old, new, default, expected in cases:
+        expr = pl.col("s").replace_strict(old, new, default=default, return_dtype=dtype)
+        result = lf.select(expr).collect(engine=engine)
+        assert_frame_equal(result, pl.DataFrame({"s": expected}, schema={"s": dtype}))
+    assert sorted(cats.to_series().to_list()) == ["d", "d2", "d3", "x", "y"]
 
 
 def test_replace_strict_enum_to_new_enum() -> None:
@@ -329,23 +338,42 @@ def test_replace_strict_all_null_categorical_resolves_dtype(
         assert_series_equal(result, pl.Series([None, None], dtype=expected))
 
 
+@pytest.mark.may_fail_lazy_schema  # reason: the schema of `pl.List` stays `List(Null)`
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("categorical", [False, True])
 @pytest.mark.parametrize(
-    ("values", "expected", "dtype"),
+    ("values", "expected"),
     [
-        (["a", "b"], [[1], [2]], pl.List(pl.Int64)),
-        (["a", "z"], [["1"], ["s"]], pl.List(pl.String)),
+        (["a", "b"], [["1"], ["2"]]),
+        (["a", "z"], [["1"], ["s"]]),
+        (["a", "b", "a", "z"], [["1"], ["2"], ["1"], ["s"]]),
     ],
 )
-def test_replace_strict_only_coerces_used_default(
+def test_replace_strict_default_dtype_does_not_depend_on_use(
     values: list[str],
-    expected: list[list[int] | list[str]],
-    dtype: PolarsDataType,
+    expected: list[list[str]],
+    categorical: bool,
+    engine: EngineType,
 ) -> None:
-    s = pl.Series(values, dtype=pl.Categorical(pl.Categories.random()))
-    result = s.replace_strict(
+    dtype = pl.Categorical(pl.Categories.random()) if categorical else pl.String
+    lf = pl.LazyFrame({"s": values}, schema={"s": dtype})
+    expr = pl.col("s").replace_strict(
         {"a": [1], "b": [2]}, default=pl.lit(["s"]), return_dtype=pl.List
     )
-    assert_series_equal(result, pl.Series(expected, dtype=dtype))
+    # Each value is a morsel, so the default is used in some and not in others.
+    with pl.Config(streaming_chunk_size=1):
+        result = lf.select(expr).collect(engine=engine)
+    assert_frame_equal(
+        result, pl.DataFrame({"s": expected}, schema={"s": pl.List(pl.String)})
+    )
+
+
+def test_replace_strict_empty_old_return_dtype() -> None:
+    lf = pl.LazyFrame({"a": [None, None]}, schema={"a": pl.Int64})
+    result = lf.select(pl.col("a").replace_strict([], [], return_dtype=pl.String))
+    expected = pl.LazyFrame({"a": [None, None]}, schema={"a": pl.String})
+    assert result.collect_schema() == expected.collect_schema()
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])

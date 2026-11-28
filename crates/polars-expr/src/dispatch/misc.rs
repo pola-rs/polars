@@ -477,6 +477,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         s[0].as_materialized_series()
     };
 
+    #[cfg_attr(not(feature = "dtype-categorical"), allow(unused_mut))]
     let mut needle_s = s[1].clone();
     polars_ensure!(
         needle_s.len() == 1,
@@ -631,8 +632,11 @@ pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
     let mut fill = fill.clone();
     if (series.dtype().is_categorical() || series.dtype().is_enum()) && fill.dtype().is_string() {
         // Only the strings that fill a null are cast: the cast adds them to a Categorical's
-        // categories, and raises for those an Enum lacks.
-        if let Some(mask) = mask.as_ref().filter(|_| fill.len() == series.len()) {
+        // categories, and raises for those an Enum lacks. A scalar fills them all.
+        if let Some(mask) = mask
+            .as_ref()
+            .filter(|_| fill.len() == series.len() && fill.as_scalar_column().is_none())
+        {
             let nulls = Column::full_null(PlSmallStr::EMPTY, 1, &DataType::String);
             fill = nulls.zip_with_same_type(mask, &fill)?;
         }
