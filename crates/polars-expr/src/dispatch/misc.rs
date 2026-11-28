@@ -483,6 +483,24 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         InvalidOperation: "needle of `index_of` can only contain a single value, found {} values",
         needle_s.len()
     );
+    // Type coercion leaves a string needle of a Categorical or Enum as is, to be looked up here:
+    // casting adds it to a Categorical's categories, and fails or gives null for one an Enum lacks.
+    #[cfg(feature = "dtype-categorical")]
+    let needle_s = &match series.dtype() {
+        DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)
+            if needle_s.dtype().is_string() =>
+        {
+            if needle_s
+                .str()?
+                .get(0)
+                .is_some_and(|v| mapping.get_cat(v).is_none())
+            {
+                return Ok(Column::full_null(series.name().clone(), 1, &IDX_DTYPE));
+            }
+            needle_s.strict_cast(series.dtype())?
+        },
+        _ => needle_s.clone(),
+    };
     let needle = Scalar::new(
         needle_s.dtype().clone(),
         needle_s.get(0).unwrap().into_static(),
@@ -598,44 +616,37 @@ pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
 }
 
 pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
-    match (s[0].len(), s[1].len()) {
-        (a, b) if a == b || b == 1 => {
-            let series = s[0].clone();
-
-            // Nothing to fill, so return early
-            // this is done after casting as the output type must be correct
-            if series.null_count() == 0 {
-                return Ok(series);
-            }
-
-            let fill_value = s[1].clone();
-
-            // Handle Null dtype columns: fill with the fill value (changes dtype)
-            if series.dtype() == &DataType::Null {
-                return Ok(fill_value.new_from_index(0, series.len()));
-            }
-
-            // default branch
-            fn default(series: Column, fill_value: Column) -> PolarsResult<Column> {
-                let mask = series.is_not_null();
-                series.zip_with_same_type(&mask, &fill_value)
-            }
-
-            let fill_value = if series.dtype().is_categorical() && fill_value.dtype().is_string() {
-                fill_value.cast(series.dtype()).unwrap()
-            } else {
-                fill_value
-            };
-            default(series, fill_value)
+    let series = &s[0];
+    let fill = &s[1];
+    let out_len = match (series.len(), fill.len()) {
+        (a, b) if a == b || b == 1 => a,
+        (1, b) => b,
+        (self_len, other_len) => {
+            polars_bail!(length_mismatch = "fill_null", self_len, other_len)
         },
-        (1, other_len) => {
-            if s[0].has_nulls() {
-                Ok(s[1].clone())
-            } else {
-                Ok(s[0].new_from_index(0, other_len))
-            }
-        },
-        (self_len, other_len) => polars_bail!(length_mismatch = "fill_null", self_len, other_len),
+    };
+    let null_count = series.null_count();
+    if null_count == 0 {
+        return Ok(series.broadcast_to(out_len)?.into_owned());
+    }
+
+    let mask = (null_count < series.len()).then(|| series.is_not_null());
+    let mut fill = fill.clone();
+    if (series.dtype().is_categorical() || series.dtype().is_enum()) && fill.dtype().is_string() {
+        // Only the strings that fill a null are cast: the cast adds them to a Categorical's
+        // categories, and raises for those an Enum lacks. A scalar fills them all.
+        if let Some(mask) = mask
+            .as_ref()
+            .filter(|_| fill.len() == series.len() && fill.as_scalar_column().is_none())
+        {
+            let nulls = Column::full_null(PlSmallStr::EMPTY, 1, &DataType::String);
+            fill = nulls.zip_with_same_type(mask, &fill)?;
+        }
+        fill = fill.strict_cast(series.dtype())?;
+    }
+    match mask {
+        Some(mask) => series.zip_with_same_type(&mask, &fill),
+        None => fill.broadcast_owned_to(out_len),
     }
 }
 

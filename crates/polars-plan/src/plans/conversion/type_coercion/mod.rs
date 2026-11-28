@@ -759,7 +759,7 @@ impl OptimizationRule for TypeCoercionRule {
                                 }
                             }
                         },
-                        CastingRules::FirstArgLossless => {
+                        CastingRules::FirstArgLosslessKeepString => {
                             for other in &input[1..] {
                                 let other = other.dtype(schema, expr_arena)?;
                                 can_cast_to_lossless(&super_type, other)?;
@@ -798,7 +798,12 @@ impl OptimizationRule for TypeCoercionRule {
                     } else {
                         CastOptions::NonStrict
                     };
-                    for (e, dtype) in input.iter_mut().zip(dtypes) {
+                    let keep_strings = !matches!(casting_rules, CastingRules::Supertype(_))
+                        && (super_type.is_categorical() || super_type.is_enum());
+                    for (i, (e, dtype)) in input.iter_mut().zip(dtypes).enumerate() {
+                        if keep_strings && i > 0 && dtype.is_string() {
+                            continue;
+                        }
                         cast_expr_ir(e, &dtype, &super_type, expr_arena, literal_options)?;
                     }
                 }

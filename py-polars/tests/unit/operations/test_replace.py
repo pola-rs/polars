@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ArgumentRemovedError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 @pytest.fixture(scope="module")
@@ -66,6 +70,83 @@ def test_replace_cat_to_cat(str_mapping: dict[str | None, str]) -> None:
         schema_overrides={"replaced": pl.Categorical},
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_categorical_absent_old_adds_no_categories(
+    category_mapping: pl.Categories, engine: EngineType
+) -> None:
+    cats = category_mapping
+    dtype = pl.Categorical(cats)
+    lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": dtype})
+    # A `new` value paired with an absent `old` value can't be output either.
+    absent, unused, new = (f"{name}-{uuid4()}" for name in ("absent", "unused", "new"))
+    # Nor can one of another Categorical or an Enum.
+    enum_old = pl.Series([absent, "a"], dtype=pl.Enum([absent, "a"]))
+    cat_old = enum_old.cast(pl.Categorical(pl.Categories.random()))
+    for expr, expected in [
+        (pl.col("s").replace("a", new), [new, "b"]),
+        (pl.col("s").replace(absent, "a"), ["a", "b"]),
+        (pl.col("s").replace(absent, unused), ["a", "b"]),
+        (pl.col("s").replace([absent, "b"], "a"), ["a", "a"]),
+        (pl.col("s").replace([absent, "a"], [unused, "b"]), ["b", "b"]),
+        (pl.col("s").replace({absent: unused, "b": "a"}), ["a", "a"]),
+        (pl.col("s").replace({absent: unused, f"{absent}-2": "a"}), ["a", "b"]),
+        (pl.col("s").replace(enum_old, [unused, "b"]), ["b", "b"]),
+        (pl.col("s").replace(cat_old, [unused, "b"]), ["b", "b"]),
+    ]:
+        result = lf.select(expr).collect(engine=engine)
+        assert_frame_equal(result, pl.DataFrame({"s": expected}, schema={"s": dtype}))
+    s = lf.collect()["s"]
+    assert_series_equal(s.replace(absent, unused), s)
+    with pytest.raises(InvalidOperationError, match="must have the same length"):
+        lf.select(pl.col("s").replace([absent, "a"], ["x", "y", "z"])).collect(
+            engine=engine
+        )
+    assert absent not in cats
+    assert unused not in cats
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("values", "mapping", "expected"),
+    [
+        (["a"] * 8, {"a": "b", "b": "c"}, "b"),
+        (["a"] * 8, {None: "b", "a": "c"}, "c"),
+        ([None] * 8, {None: "b", "b": "c"}, "b"),
+    ],
+)
+def test_replace_categorical_only_adds_values_for_present_keys(
+    values: list[str | None],
+    mapping: dict[str | None, str],
+    expected: str,
+    engine: EngineType,
+) -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    dtype = pl.Categorical(cats)
+    seed = pl.Series(["a", *(f"c{i}" for i in range(253))], dtype=dtype)
+    lf = pl.LazyFrame({"s": values}, schema={"s": dtype})
+
+    with pl.Config(streaming_chunk_size=1):
+        result = lf.select(pl.col("s").replace(mapping)).collect(engine=engine)
+
+    assert_frame_equal(result, pl.DataFrame({"s": [expected] * 8}, schema={"s": dtype}))
+    assert cats.to_series().len() == seed.len() + 1
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_enum_absent_old_raises(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": pl.Enum(["a", "b", "c"])})
+    for expr in [
+        pl.col("s").replace("absent", "a"),
+        pl.col("s").replace(["absent", "b"], "a"),
+        pl.col("s").replace({"absent": "a", "b": "a"}),
+        pl.col("s").replace_strict({"absent": "x", "a": "y", "b": "z"}, default="d"),
+    ]:
+        with pytest.raises(
+            InvalidOperationError, match="conversion from `str` to `enum` failed"
+        ):
+            lf.select(expr).collect(engine=engine)
 
 
 def test_replace_invalid_old_dtype() -> None:
@@ -249,6 +330,7 @@ def test_replace_fast_path_many_to_one() -> None:
         ([2, 2], 100),
         ([2, 2], [100, 200]),
         ([2, 2], [100, 100]),
+        (["2", "02"], [100, 200]),
     ],
 )
 def test_replace_duplicates_old(old: list[int], new: int | list[int]) -> None:

@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
+from uuid import uuid4
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType, PolarsDataType
 
 
 def test_fill_null_minimal_upcast_4056() -> None:
@@ -27,6 +33,84 @@ def test_fill_enum_upcast() -> None:
     expected = pl.Series(["a", "b", "b"], dtype=dtype)
     assert s_filled.dtype == dtype
     assert_series_equal(s_filled, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_fill_null_enum_values(engine: EngineType) -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    schema: dict[str, PolarsDataType] = {"s": dtype, "f": pl.String}
+    lf = pl.LazyFrame({"s": ["a", None], "f": ["absent", "c"]}, schema=schema)
+
+    # only the values that fill a null should be in the Enum.
+    for fill in ["c", pl.col("f")]:
+        result = lf.select(pl.col("s").fill_null(fill)).collect(engine=engine)
+        assert_frame_equal(result, pl.DataFrame({"s": ["a", "c"]}, schema={"s": dtype}))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="conversion from `str` to `enum` failed",
+    ):
+        lf.select(pl.col("s").fill_null("absent")).collect(engine=engine)
+
+    s = pl.Series(["a", "b"], dtype=dtype)
+    assert_series_equal(s.fill_null("absent"), s)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_fill_null_categorical_adds_only_used_values(
+    category_mapping: pl.Categories, engine: EngineType
+) -> None:
+    cats = category_mapping
+    dtype = pl.Categorical(cats)
+    lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": dtype})
+    lf_null = pl.LazyFrame({"s": ["a", None]}, schema={"s": dtype})
+    unused, used = f"unused-{uuid4()}", f"used-{uuid4()}"
+
+    result = lf.select(pl.col("s").fill_null(unused)).collect(engine=engine)
+    assert_frame_equal(result, lf.collect(engine=engine))
+    assert unused not in cats
+
+    result = lf_null.select(pl.col("s").fill_null(used)).collect(engine=engine)
+    assert_frame_equal(result, pl.DataFrame({"s": ["a", used]}, schema={"s": dtype}))
+    assert used in cats
+
+    # Of a fill column, only the values at the nulls are output.
+    unused_col, used_col = (f"{name}-{uuid4()}" for name in ("unused", "used"))
+    lf_fill = pl.LazyFrame(
+        {"s": ["a", None], "f": [unused_col, used_col]},
+        schema={"s": dtype, "f": pl.String},
+    )
+    result = lf_fill.select(pl.col("s").fill_null(pl.col("f"))).collect(engine=engine)
+    assert_frame_equal(
+        result, pl.DataFrame({"s": ["a", used_col]}, schema={"s": dtype})
+    )
+    assert used_col in cats
+    assert unused_col not in cats
+
+    # A scalar fill column is cast once, not masked to the nulls.
+    scalar = f"scalar-{uuid4()}"
+    lf_scalar = lf_null.with_columns(f=pl.lit(scalar))
+    result = lf_scalar.select(pl.col("s").fill_null(pl.col("f"))).collect(engine=engine)
+    assert_frame_equal(result, pl.DataFrame({"s": ["a", scalar]}, schema={"s": dtype}))
+    assert scalar in cats
+
+
+def test_fill_null_categorical_scalar_with_string_series() -> None:
+    dtype = pl.Categorical(pl.Categories.random())
+    result = pl.select(
+        pl.lit(None, dtype=dtype).fill_null(pl.lit(pl.Series(["x", "y"])))
+    )
+    assert_series_equal(
+        result.to_series(), pl.Series("literal", ["x", "y"], dtype=dtype)
+    )
+
+
+def test_fill_null_categorical_full_categories_raises() -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    s = pl.Series([f"c{i}" for i in range(255)] + [None], dtype=pl.Categorical(cats))
+    with pytest.raises(ComputeError, match="more categories than the maximum"):
+        s.fill_null("new")
+    assert s.fill_null("c0")[-1] == "c0"
 
 
 def test_fill_null_static_schema_4843() -> None:

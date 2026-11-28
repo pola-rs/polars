@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType, PolarsDataType
 
 
 def test_replace_strict_incomplete_mapping() -> None:
@@ -58,10 +61,32 @@ def test_replace_strict_mapping_null_with_default() -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    ("dtype", "value", "absent"),
+    [
+        (pl.Int64, 1, 7),
+        (pl.String, "a", "z"),
+        (pl.Categorical(pl.Categories.random()), "a", "z"),
+    ],
+    ids=["int", "str", "cat"],
+)
+def test_replace_strict_null_in_old_single_new(
+    dtype: PolarsDataType, value: Any, absent: Any
+) -> None:
+    s = pl.Series([value, None], dtype=dtype)
+    expected = pl.Series(["x", "x"])
+    assert_series_equal(s.replace_strict([value, None], "x"), expected)
+    assert_series_equal(s.replace_strict([value, absent, None], "x"), expected)
+    s_null = pl.Series([None, None], dtype=dtype)
+    assert_series_equal(s_null.replace_strict([absent, None], "x"), expected)
+
+
 def test_replace_strict_empty() -> None:
     lf = pl.LazyFrame({"a": [None, None]})
     result = lf.select(pl.col("a").replace_strict({}))
     assert_frame_equal(lf, result)
+    result = lf.select(pl.col("a").replace_strict({}, return_dtype=pl.String))
+    assert_frame_equal(result, lf.cast(pl.String))
 
 
 def test_replace_strict_fast_path_many_to_one_default() -> None:
@@ -134,6 +159,62 @@ def test_replace_strict_str_to_cat() -> None:
     assert_series_equal(result, expected, categorical_as_str=True)
 
 
+def test_replace_strict_extension_keys_to_categorical() -> None:
+    s = pl.Series(["a", "b"], dtype=pl.Extension("test.replace.key", pl.String))
+    result = s.replace_strict(
+        {"a": "x", "b": "y"}, default=None, return_dtype=pl.Categorical
+    )
+    assert_series_equal(
+        result, pl.Series(["x", "y"], dtype=pl.Categorical), categorical_as_str=True
+    )
+
+
+@pytest.mark.parametrize("map_keys", [False, True])
+@pytest.mark.parametrize("with_default", [False, True])
+def test_replace_strict_only_adds_used_output_categories(
+    map_keys: bool, with_default: bool
+) -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    cat = pl.Categorical(cats)
+    seed = pl.Series([f"c{i}" for i in range(254)], dtype=cat)
+    entries = pl.Series(
+        [[{"key": "used", "value": "v"}], [{"key": "unused", "value": "w"}]]
+    )
+    dtype = pl.Map(cat, pl.String) if map_keys else cat
+    new = pl.lit(entries).implode() if map_keys else ["used", "unused"]
+    kwargs: dict[str, Any] = {"default": "unused-default"} if with_default else {}
+
+    # a call that raises adds nothing either.
+    for values in ["used", ["used", "unused"]]:
+        with pytest.raises(InvalidOperationError, match="incomplete mapping"):
+            pl.Series([1, 3]).replace_strict([1, 2], values, return_dtype=cat)
+    assert cats.to_series().len() == seed.len()
+
+    result = pl.Series([1]).replace_strict([1, 2], new, return_dtype=dtype, **kwargs)
+    assert result.dtype == dtype
+    assert "used" in cats
+    assert "unused" not in cats
+    assert cats.to_series().len() == seed.len() + 1
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_strict_only_adds_used_default_categories(engine: EngineType) -> None:
+    cats = pl.Categories.random()
+    dtype = pl.Categorical(cats)
+    lf = pl.LazyFrame({"s": [1, 2, 3], "d": ["d1", "d2", "d3"]})
+    cases: list[tuple[list[int], str | list[str], str | pl.Expr, list[str]]] = [
+        ([1, 2, 3], "x", "unused", ["x"] * 3),
+        ([1, 3], "x", pl.col("d"), ["x", "d2", "x"]),
+        ([1, 2], ["x", "y"], pl.col("d"), ["x", "y", "d3"]),
+        ([], [], "d", ["d"] * 3),
+    ]
+    for old, new, default, expected in cases:
+        expr = pl.col("s").replace_strict(old, new, default=default, return_dtype=dtype)
+        result = lf.select(expr).collect(engine=engine)
+        assert_frame_equal(result, pl.DataFrame({"s": expected}, schema={"s": dtype}))
+    assert sorted(cats.to_series().to_list()) == ["d", "d2", "d3", "x", "y"]
+
+
 def test_replace_strict_enum_to_new_enum() -> None:
     s = pl.Series(["a", "b", "c"], dtype=pl.Enum(["a", "b", "c", "d"]))
     old = ["a", "b"]
@@ -145,6 +226,147 @@ def test_replace_strict_enum_to_new_enum() -> None:
 
     expected = pl.Series(["c", "e", None], dtype=new_dtype)
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_strict_categorical_absent_old_adds_no_categories(
+    engine: EngineType,
+) -> None:
+    cats = pl.Categories.random()
+    dtype = pl.Categorical(cats)
+    lf = pl.LazyFrame({"s": ["a", "b", None]}, schema={"s": dtype})
+    lf_null = pl.LazyFrame({"s": [None, None]}, schema={"s": dtype})
+    # With `return_dtype=dtype`, the `new` value "y" of the absent "x" is not added.
+    cases: list[tuple[pl.LazyFrame, pl.Expr, list[str | None], PolarsDataType]] = [
+        (
+            lf,
+            pl.col("s").replace_strict({"x": "1", "a": "2", "b": "3"}),
+            ["2", "3", None],
+            pl.String,
+        ),
+        (
+            lf,
+            pl.col("s").replace_strict({"x": "1", "a": "2"}, default="0"),
+            ["2", "0", "0"],
+            pl.String,
+        ),
+        (
+            lf,
+            pl.col("s").replace_strict({"x": "1", "y": "2"}, default="0"),
+            ["0", "0", "0"],
+            pl.String,
+        ),
+        (lf_null, pl.col("s").replace_strict({"x": "1"}), [None, None], pl.String),
+        (
+            lf_null,
+            pl.col("s").replace_strict({"x": "1", "y": "2"}),
+            [None, None],
+            pl.String,
+        ),
+        (
+            lf,
+            pl.col("s").replace_strict(
+                {"x": "y", "a": "b", "b": "a"}, return_dtype=dtype
+            ),
+            ["b", "a", None],
+            dtype,
+        ),
+        (
+            lf,
+            pl.col("s").replace_strict(
+                {"x": "y", "a": "b"}, default="a", return_dtype=dtype
+            ),
+            ["b", "a", "a"],
+            dtype,
+        ),
+        (
+            lf,
+            pl.col("s").replace_strict("x", "y", default="a", return_dtype=dtype),
+            ["a", "a", "a"],
+            dtype,
+        ),
+        (
+            lf_null,
+            pl.col("s").replace_strict("x", "y", return_dtype=dtype),
+            [None, None],
+            dtype,
+        ),
+    ]
+    for frame, expr, expected, out_dtype in cases:
+        result = frame.select(expr).collect(engine=engine)
+        assert_frame_equal(
+            result, pl.DataFrame({"s": expected}, schema={"s": out_dtype})
+        )
+    with pytest.raises(InvalidOperationError, match="incomplete mapping"):
+        lf.select(pl.col("s").replace_strict({"x": "1"})).collect(engine=engine)
+    assert cats.to_series().to_list() == ["a", "b"]
+
+
+@pytest.mark.parametrize("new_dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 1)])
+def test_replace_strict_categorical_nested_value_after_key_filter(
+    new_dtype: PolarsDataType,
+) -> None:
+    s = pl.Series(["a", None], dtype=pl.Categorical(pl.Categories.random()))
+    new = pl.Series([[1], [2]], dtype=new_dtype)
+    result = s.replace_strict(["a", "absent"], pl.lit(new).implode())
+    assert_series_equal(result, pl.Series([[1], None], dtype=new_dtype))
+
+
+@pytest.mark.parametrize("register_keys", [False, True])
+@pytest.mark.parametrize("with_default", [False, True])
+def test_replace_strict_all_null_categorical_resolves_dtype(
+    register_keys: bool, with_default: bool
+) -> None:
+    dtype = pl.Categorical(pl.Categories.random())
+    s = pl.Series([None, None], dtype=dtype)
+    if register_keys:
+        pl.Series(["x", "y"], dtype=dtype)
+    label = pl.Categorical(pl.Categories.random())
+    kwargs: dict[str, Any] = {"default": None} if with_default else {}
+    cases: list[tuple[list[Any], PolarsDataType, PolarsDataType]] = [
+        ([[1], [2]], pl.List, pl.List(pl.Int64)),
+        (
+            [{"xs": [1], "label": "a"}, {"xs": [2], "label": "b"}],
+            pl.Struct({"xs": pl.List, "label": label}),
+            pl.Struct({"xs": pl.List(pl.Int64), "label": label}),
+        ),
+    ]
+    for new, return_dtype, expected in cases:
+        values = pl.lit(pl.Series(new)).implode()
+        result = s.replace_strict(
+            ["x", "y"], values, return_dtype=return_dtype, **kwargs
+        )
+        assert_series_equal(result, pl.Series([None, None], dtype=expected))
+
+
+@pytest.mark.may_fail_lazy_schema  # reason: the schema of `pl.List` stays `List(Null)`
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("categorical", [False, True])
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        (["a", "b"], [["1"], ["2"]]),
+        (["a", "z"], [["1"], ["s"]]),
+        (["a", "b", "a", "z"], [["1"], ["2"], ["1"], ["s"]]),
+    ],
+)
+def test_replace_strict_default_dtype_does_not_depend_on_use(
+    values: list[str],
+    expected: list[list[str]],
+    categorical: bool,
+    engine: EngineType,
+) -> None:
+    dtype = pl.Categorical(pl.Categories.random()) if categorical else pl.String
+    lf = pl.LazyFrame({"s": values}, schema={"s": dtype})
+    expr = pl.col("s").replace_strict(
+        {"a": [1], "b": [2]}, default=pl.lit(["s"]), return_dtype=pl.List
+    )
+    # Each value is a morsel, so the default is used in some and not in others.
+    with pl.Config(streaming_chunk_size=1):
+        result = lf.select(expr).collect(engine=engine)
+    assert_frame_equal(
+        result, pl.DataFrame({"s": expected}, schema={"s": pl.List(pl.String)})
+    )
 
 
 def test_replace_strict_int_to_int_null() -> None:
@@ -434,3 +656,61 @@ def test_replace_strict_str_enum_27060() -> None:
     enum = pl.Enum(["A", "B"])
     out = pl.Series(["A", "B"]).cast(enum).replace_strict({"A": "X", "B": "Y"})
     assert_series_equal(out, pl.Series(["X", "Y"]))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("register_absent", [False, True])
+def test_replace_strict_validates_unused_replacements(
+    engine: EngineType, register_absent: bool
+) -> None:
+    cats = pl.Categories.random()
+    cat = pl.Categorical(cats)
+    if register_absent:
+        pl.Series(["absent"], dtype=cat)
+    lf = pl.LazyFrame({"s": ["a"], "i": [1]}, schema={"s": cat, "i": pl.Int64})
+    code_n = pl.Struct({"code": cat, "n": pl.UInt8})
+    used, unused = {"code": "used", "n": "1"}, {"code": "unused", "n": "bad"}
+    structs = pl.lit(pl.Series([used, unused])).implode()
+    entries = [[{"key": "x", "value": used}], [{"key": "y", "value": unused}]]
+    arrays = pl.Series(
+        [["x"]], dtype=pl.Array(pl.Categorical(pl.Categories.random()), 1)
+    )
+    u8_error = "conversion from `str` to `u8` failed"
+    for expr, match in [
+        (
+            pl.col("s").replace_strict(
+                {"a": "1", "absent": "bad"}, return_dtype=pl.UInt8
+            ),
+            u8_error,
+        ),
+        (
+            pl.col("s").replace_strict(
+                {"absent": "yes"}, default=False, return_dtype=pl.Boolean
+            ),
+            "casting from Utf8View to Boolean not supported",
+        ),
+        (
+            pl.col("s").replace_strict(["a", "absent"], structs, return_dtype=code_n),
+            u8_error,
+        ),
+        (
+            pl.col("i").replace_strict(
+                [1, 2],
+                pl.lit(pl.Series(entries)).implode(),
+                return_dtype=pl.Map(pl.String, code_n),
+            ),
+            u8_error,
+        ),
+        (
+            pl.col("i").replace_strict(
+                [2],
+                pl.lit(arrays).implode(),
+                default=None,
+                return_dtype=pl.Array(cat, 1),
+            ),
+            "cannot cast Array inner type",
+        ),
+    ]:
+        with pytest.raises(InvalidOperationError, match=match):
+            lf.select(expr).collect(engine=engine)
+    assert "used" not in cats
