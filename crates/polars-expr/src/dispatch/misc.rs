@@ -198,6 +198,19 @@ pub(super) fn mean_horizontal(s: &mut [Column], ignore_nulls: bool) -> PolarsRes
     polars_ops::prelude::mean_horizontal(s, null_strategy).map(Option::unwrap)
 }
 
+pub(super) fn var_horizontal(
+    s: &mut [Column],
+    ignore_nulls: bool,
+    ddof: u8,
+) -> PolarsResult<Column> {
+    let null_strategy = if ignore_nulls {
+        NullStrategy::Ignore
+    } else {
+        NullStrategy::Propagate
+    };
+    polars_ops::prelude::var_horizontal(s, null_strategy, ddof).map(Option::unwrap)
+}
+
 pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
     Ok(s.drop_nulls())
 }

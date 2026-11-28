@@ -261,6 +261,50 @@ def mean_horizontal(
     return wrap_expr(plr.mean_horizontal(pyexprs, ignore_nulls))
 
 
+def var_horizontal(
+    *exprs: IntoExpr | Iterable[IntoExpr], ignore_nulls: bool = True, ddof: int = 1
+) -> Expr:
+    """
+    Compute the variance of all values horizontally across columns.
+
+    Parameters
+    ----------
+    *exprs
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
+    ignore_nulls
+        Ignore null values (default).
+        If set to `False`, any null value in the input will lead to a null output.
+    ddof
+        Delta Degrees of Freedom (ddof): the divisor is N - ddof,
+        where N is the number of non-null values in each row.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [2, 7, 3],
+    ...         "b": [4, 5, None],
+    ...         "c": [3, 4, 9],
+    ...         "d": ["x", "y", "z"],
+    ...     }
+    ... )
+    >>> df.with_columns(var=pl.var_horizontal("a", "b", "c"))
+    shape: (3, 5)
+    ┌─────┬──────┬─────┬─────┬──────────┐
+    │ a   ┆ b    ┆ c   ┆ d   ┆ var      │
+    │ --- ┆ ---  ┆ --- ┆ --- ┆ ---      │
+    │ i64 ┆ i64  ┆ i64 ┆ str ┆ f64      │
+    ╞═════╪══════╪═════╪═════╪══════════╡
+    │ 2   ┆ 4    ┆ 3   ┆ x   ┆ 1.0      │
+    │ 7   ┆ 5    ┆ 4   ┆ y   ┆ 2.333333 │
+    │ 3   ┆ null ┆ 9   ┆ z   ┆ 18.0     │
+    └─────┴──────┴─────┴─────┴──────────┘
+    """
+    pyexprs = parse_into_list_of_expressions(*exprs)
+    return wrap_expr(plr.var_horizontal(pyexprs, ignore_nulls, ddof))
+
+
 def cum_sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     """
     Cumulatively sum all values horizontally across columns.

@@ -2155,6 +2155,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::MeanHorizontal { ignore_nulls } => {
                     ("mean_horizontal", ignore_nulls).into_py_any(py)
                 },
+                IRFunctionExpr::VarHorizontal { ignore_nulls, ddof } => {
+                    ("var_horizontal", ignore_nulls, ddof).into_py_any(py)
+                },
                 IRFunctionExpr::MinHorizontal => ("min_horizontal",).into_py_any(py),
                 // Tuples consumed by external engines (e.g., cudf-polars):
                 // Mean/Std/Var: (EwmFunction, alpha, adjust, bias, min_samples, ignore_nulls)
