@@ -469,9 +469,11 @@ pub(super) fn finish_page(
     }
 }
 
+/// The number of values of a data page, or 0 for other pages. Errors if it is negative, as the
+/// decoders read it as a `usize`.
 pub(super) fn get_page_num_values(header: &ParquetPageHeader) -> ParquetResult<i32> {
     let type_ = header.type_.try_into()?;
-    Ok(match type_ {
+    let num_values = match type_ {
         PageType::DataPage => {
             header
                 .data_page_header
@@ -495,5 +497,11 @@ pub(super) fn get_page_num_values(header: &ParquetPageHeader) -> ParquetResult<i
                 .num_values
         },
         _ => 0,
-    })
+    };
+    if num_values < 0 {
+        return Err(ParquetError::oos(format!(
+            "The data page has a negative number of values ({num_values})"
+        )));
+    }
+    Ok(num_values)
 }

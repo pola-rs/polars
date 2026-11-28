@@ -499,18 +499,38 @@ fn push_items_with_nulls(
     min_def: u16,
     batched_collector: &mut BatchedNestedDecoder<'_>,
 ) -> ParquetResult<()> {
+    let leaf_def = push_level_items(
+        levels,
+        valid_defs,
+        min_def,
+        defs.len(),
+        |nest, valid_def| nest.push_validities(defs.iter().map(|&def| def >= valid_def)),
+    );
+    batched_collector.push_validities(defs.iter().map(|&def| def >= leaf_def))
+}
+
+/// Pushes `num_items` items to each level of a column without a list, whose values' lowest
+/// definition level is `min_def`. A struct's items are all valid if it is required or `min_def`
+/// reaches its valid definition level `valid_def`, else `push_validities(nest, valid_def)` pushes
+/// them. The leaf's validity is left to the caller: returns the level at which it is valid.
+#[inline(always)]
+fn push_level_items(
+    levels: &mut [Nested],
+    valid_defs: &[u16],
+    min_def: u16,
+    num_items: usize,
+    mut push_validities: impl FnMut(&mut Nested, u16),
+) -> u16 {
     let (leaf, structs) = levels.split_last_mut().unwrap();
     for (nest, &valid_def) in structs.iter_mut().zip(valid_defs) {
-        if min_def >= valid_def {
-            nest.push_n_valids(defs.len());
+        if min_def >= valid_def || !nest.is_nullable() {
+            nest.push_n_valids(num_items);
         } else {
-            nest.push_validities(defs.iter().map(|&def| def >= valid_def));
+            push_validities(nest, valid_def);
         }
     }
-    leaf.push_n_valids(defs.len());
-
-    let leaf_def = valid_defs[structs.len()];
-    batched_collector.push_validities(defs.iter().map(|&def| def >= leaf_def))
+    leaf.push_n_valids(num_items);
+    valid_defs[structs.len()]
 }
 
 /// Collects the leading values of a page of a column without a list, e.g. of structs, in bulk, and
@@ -531,30 +551,27 @@ fn collect_rows_without_list(
 
 /// Collects the rows `mask` keeps of a page without a list, where each value is a row. If any
 /// value is null, returns the validity of all the page's values, for the decoder to filter.
+/// `defs` is empty if no level is nullable, as all its values would be 0.
 fn collect_masked_rows_without_list(
     defs: &[u16],
     mask: &Bitmap,
     nested: &mut [Nested],
     def_levels: &[u16],
 ) -> Option<Bitmap> {
-    let valid_defs = &def_levels[1..];
-    let num_rows = mask.set_bits();
     let min_def = defs.iter().copied().min().unwrap_or(u16::MAX);
     let is_valid = |valid_def: u16| {
         Bitmap::from_trusted_len_iter(defs.iter().map(move |&def| def >= valid_def))
     };
-
-    let (leaf, structs) = nested.split_last_mut().unwrap();
-    for (nest, &valid_def) in structs.iter_mut().zip(valid_defs) {
-        if min_def >= valid_def || !nest.is_nullable() {
-            nest.push_n_valids(num_rows);
-        } else {
-            nest.push_validity_bitmap(&filter_boolean_kernel(&is_valid(valid_def), mask));
-        }
-    }
-    leaf.push_n_valids(num_rows);
-
-    let leaf_def = valid_defs[structs.len()];
+    let num_rows = mask.set_bits();
+    let leaf_def = push_level_items(
+        nested,
+        &def_levels[1..],
+        min_def,
+        num_rows,
+        |nest, valid_def| {
+            nest.push_validity_bitmap(&filter_boolean_kernel(&is_valid(valid_def), mask))
+        },
+    );
     (min_def < leaf_def).then(|| is_valid(leaf_def))
 }
 
@@ -755,6 +772,7 @@ impl NestedState {
 fn collect_level_values(
     target: &mut Vec<u16>,
     hybrid_rle: HybridRleDecoder<'_>,
+    column: &str,
 ) -> ParquetResult<()> {
     let num_levels = hybrid_rle.len();
     let end_length = target.len() + num_levels;
@@ -774,9 +792,9 @@ fn collect_level_values(
     }
 
     if target.len() != end_length {
-        return Err(ParquetError::oos(
-            "the page has fewer definition or repetition levels than values",
-        ));
+        return Err(ParquetError::oos(format!(
+            "a page of column '{column}' has fewer definition or repetition levels than values",
+        )));
     }
     Ok(())
 }
@@ -865,6 +883,9 @@ fn collect_value<const HAS_FIXED_SIZE_LIST: bool>(
     Ok(())
 }
 
+/// Decodes the levels of a page into `nested` and `batched_collector`, collecting the rows that
+/// `state` and `top_level_filter` select. Returns whether the filter ran out before the page's
+/// levels did. Rows after a range are meant to be dropped, but a mask must cover every row.
 #[allow(clippy::too_many_arguments)]
 fn decode_nested<const HAS_FIXED_SIZE_LIST: bool>(
     mut current_def_levels: &[u16],
@@ -889,12 +910,12 @@ fn decode_nested<const HAS_FIXED_SIZE_LIST: bool>(
         // Handle skips
         if let Some(ref mut num_skips) = state.num_skips {
             // A local count and equal-length slices keep the loop free of stores and bounds checks.
-            let rep_levels = &current_rep_levels[..current_def_levels.len()];
+            let page_rep_levels = &current_rep_levels[..current_def_levels.len()];
             let mut remaining = *num_skips;
             let mut num_skipped_values = 0;
             let mut i = 0;
-            while i < current_def_levels.len() && (remaining > 0 || rep_levels[i] != 0) {
-                remaining -= usize::from(rep_levels[i] == 0);
+            while i < current_def_levels.len() && (remaining > 0 || page_rep_levels[i] != 0) {
+                remaining -= usize::from(page_rep_levels[i] == 0);
 
                 // @NOTE:
                 // We don't need to account for higher def-levels that imply extra values, since we
@@ -999,12 +1020,15 @@ impl<D: utils::Decoder> PageDecoder<D> {
                 descriptor.max_def_level, descriptor.max_rep_level,
             )));
         }
+        let column = descriptor.primitive_type.field_info.name.clone();
 
         let mut current_def_levels = Vec::<u16>::new();
         let mut current_rep_levels = Vec::<u16>::new();
 
         // Without a list, the kept rows are the values to decode. A list under a mask reserves
-        // the kept rows' share of the values, and grows if those rows hold more.
+        // the kept rows' share of the values, and grows if those rows hold more. The values are
+        // not shrunk to fit afterwards, unlike the offsets: their unused capacity, at most that
+        // share or (as growth doubles) what the kept rows need, is never written.
         let num_values = self.iter.total_num_values();
         let capacity = match &filter {
             _ if max_rep_level == 0 => Filter::opt_num_rows(&filter, num_values),
@@ -1059,10 +1083,10 @@ impl<D: utils::Decoder> PageDecoder<D> {
             let page_mask = match &row_mask {
                 Some(row_mask) => {
                     let num_rows = page.num_values();
-                    if num_page_rows + num_rows > row_mask.len() {
-                        return Err(ParquetError::oos(
-                            "the column chunk has more rows than the filter mask",
-                        ));
+                    if num_rows > row_mask.len() - num_page_rows {
+                        return Err(ParquetError::oos(format!(
+                            "column '{column}' has more rows than the filter mask",
+                        )));
                     }
                     let page_mask = row_mask.clone().sliced(num_page_rows, num_rows);
                     num_page_rows += num_rows;
@@ -1081,7 +1105,11 @@ impl<D: utils::Decoder> PageDecoder<D> {
             current_def_levels.clear();
             current_rep_levels.clear();
 
-            collect_level_values(&mut current_def_levels, def_iter)?;
+            // Without a nullable level, the definition levels are all 0, which a row mask
+            // doesn't need.
+            if page_mask.is_none() || max_def_level > 0 {
+                collect_level_values(&mut current_def_levels, def_iter, &column)?;
+            }
 
             let (leaf_validity, leaf_filter) = if let Some(page_mask) = page_mask {
                 let leaf_validity = collect_masked_rows_without_list(
@@ -1092,7 +1120,7 @@ impl<D: utils::Decoder> PageDecoder<D> {
                 );
                 (leaf_validity, page_mask)
             } else {
-                collect_level_values(&mut current_rep_levels, rep_iter)?;
+                collect_level_values(&mut current_rep_levels, rep_iter, &column)?;
                 let mut leaf_filter = BitmapBuilder::with_capacity(num_levels);
                 let mut leaf_validity = BitmapBuilder::with_capacity(num_levels);
 
@@ -1116,9 +1144,9 @@ impl<D: utils::Decoder> PageDecoder<D> {
                     &rep_levels,
                 )?;
                 if mask_len.is_some() && has_more_rows {
-                    return Err(ParquetError::oos(
-                        "the column chunk has more rows than the filter mask",
-                    ));
+                    return Err(ParquetError::oos(format!(
+                        "column '{column}' has more rows than the filter mask",
+                    )));
                 }
                 // A row may continue on the next page, so the last one is only checked for excess
                 // children.
@@ -1153,7 +1181,7 @@ impl<D: utils::Decoder> PageDecoder<D> {
             };
             if missing_rows != 0 {
                 return Err(ParquetError::oos(format!(
-                    "the column chunk has {} rows where {mask_len} were expected",
+                    "column '{column}' has {} rows where {mask_len} were expected",
                     mask_len - missing_rows,
                 )));
             }

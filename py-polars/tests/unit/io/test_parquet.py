@@ -2338,20 +2338,57 @@ def test_read_parquet_struct_chunk_shorter_than_row_group_raises(
     tmp_path: Path,
 ) -> None:
     # Make `s.a` hold 999 values in a row group of 1000 rows: in its page header (the
-    # i32 `num_values`) and its column metadata (the third i64 1000, after the file's
-    # `num_rows` and the `num_values` of `idx`).
+    # i32 `num_values`) and its column metadata (the i64 `num_values`, which follows
+    # `path_in_schema`, a list of the 2 strings "s" and "a").
     path = tmp_path / "short_chunk.parquet"
     data = _write_half_null_struct(path)
-    page_num_values, i64_1000 = b"\x15\xd0\x0f", b"\x16\xd0\x0f"
-    assert data.count(page_num_values) == 2
-    assert data.count(i64_1000) == 4
+    page_offset = pq.ParquetFile(path).metadata.row_group(0).column(1).data_page_offset
+    path_in_schema = b"\x28\x01s\x01a"
+    assert data.count(path_in_schema) == 1
 
-    data[data.rindex(page_num_values) + 1] = 0xCE
-    i64_offsets = [m.start() for m in re.finditer(re.escape(i64_1000), data)]
-    data[i64_offsets[2] + 1] = 0xCE
+    for num_values, start in (
+        (b"\x15\xd0\x0f", page_offset),
+        (b"\x16\xd0\x0f", data.index(path_in_schema)),
+    ):
+        data[data.index(num_values, start) + 1] = 0xCE  # zigzag varint 1000 -> 999
     path.write_bytes(data)
-    assert pq.ParquetFile(path).metadata.row_group(0).column(1).num_values == 999
-    _assert_reads_raise(path, r"has \d+ rows where \d+ were expected")
+    metadata = pq.ParquetFile(path).metadata
+    assert metadata.num_rows == 1000
+    assert [metadata.row_group(0).column(i).num_values for i in (0, 1)] == [1000, 999]
+    _assert_reads_raise(path, "has 999 rows where 1000 were expected")
+
+
+def test_read_parquet_negative_page_num_values_raises(tmp_path: Path) -> None:
+    # Set the i32 `num_values` in the header of the second page of `s.a` to -1000.
+    path = tmp_path / "negative_num_values.parquet"
+    pq.write_table(
+        pa.table(
+            {"idx": range(2000), "s": [{"a": i} for i in range(2000)]},
+            schema=pa.schema(
+                [
+                    pa.field("idx", pa.int32(), nullable=False),
+                    pa.field("s", pa.struct([pa.field("a", pa.int64())])),
+                ]
+            ),
+        ),
+        path,
+        compression="none",
+        data_page_version="1.0",
+        use_dictionary=False,
+        write_statistics=False,
+        write_batch_size=1000,
+        data_page_size=1,
+    )
+    column = pq.ParquetFile(path).metadata.row_group(0).column(1)
+    start = column.data_page_offset
+    end = start + column.total_compressed_size
+    data = bytearray(path.read_bytes())
+    page_num_values = b"\x15\xd0\x0f"
+    assert data.count(page_num_values, start, end) == 2
+
+    data[data.rindex(page_num_values, start, end) + 1] = 0xCF  # zigzag varint -> -1000
+    path.write_bytes(data)
+    _assert_reads_raise(path, r"negative number of values \(-1000\)")
 
 
 @pytest.mark.slow
